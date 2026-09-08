@@ -1,0 +1,21 @@
+{
+  "name": "self-hub",
+  "version": "1.0.0",
+  "description": "Self Hub — the Trinity Degree's Bond performance record. Fitness/BND-101 is the first module.",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node tests/api.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "16.4.5",
+    "express": "^5.2.1",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.14"
+  }
+}

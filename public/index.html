@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Self Hub — BND-101</title>
+<style>
+:root{
+  --bg:#14181d; --panel:#1b2129; --panel2:#212832; --line:#2c3540; --line2:#3a4552;
+  --ink:#e7ebef; --ink2:#9aa7b4; --ink3:#5d6a78;
+  --amber:#e0a458; --amber-dim:#8a6c3e; --amber-bg:#2b2013;
+  --red:#c9615a; --green:#7fae6e;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)}
+.wrap{max-width:760px;margin:0 auto;padding:12px}
+.trk{background:var(--bg);border-radius:12px;border:1px solid var(--line);overflow:hidden}
+.trk-head{padding:18px 20px 14px;border-bottom:1px solid var(--line);
+  display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.trk-head h1{font-size:15px;font-weight:500;letter-spacing:.04em;margin:0;color:var(--ink)}
+.trk-head .sub{font-family:var(--mono);font-size:11px;color:var(--ink3)}
+.trk-tabs{display:flex;gap:2px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto}
+.trk-tab{font-family:var(--sans);font-size:12.5px;color:var(--ink2);background:none;border:none;
+  padding:11px 14px;cursor:pointer;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
+.trk-tab:hover{color:var(--ink)}
+.trk-tab.on{color:var(--amber);border-bottom-color:var(--amber)}
+.trk-body{padding:18px 20px 22px}
+.trk-pane{display:none}
+.trk-pane.on{display:block}
+.trk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:16px}
+.trk-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px}
+.trk-card .lbl{font-size:10.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.trk-card .val{font-family:var(--mono);font-size:20px;color:var(--ink);font-weight:500}
+.trk-card .val.amber{color:var(--amber)}
+.trk-card .val.green{color:var(--green)}
+.trk-sec{margin-bottom:20px}
+.trk-sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);
+  font-weight:500;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.trk-phase{display:flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:16px;flex-wrap:wrap}
+.trk-phase-seg{flex:1;min-width:80px;padding:10px 12px;background:var(--panel);border-right:1px solid var(--line)}
+.trk-phase-seg.active{background:var(--amber-bg)}
+.trk-phase-seg .pn{font-family:var(--mono);font-size:10px;color:var(--ink3)}
+.trk-phase-seg.active .pn{color:var(--amber)}
+.trk-phase-seg .pt{font-size:12px;color:var(--ink2);margin-top:2px}
+.trk-phase-seg.active .pt{color:var(--ink)}
+.trk-row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.trk-field{flex:1;min-width:110px}
+.trk-field label{display:block;font-size:11px;color:var(--ink2);margin-bottom:5px}
+.trk-field input,.trk-field select{width:100%;background:var(--panel2);border:1px solid var(--line2);
+  border-radius:6px;color:var(--ink);padding:8px 10px;font-size:13px;font-family:var(--sans)}
+.trk-btn{background:var(--panel2);border:1px solid var(--line2);color:var(--ink);
+  padding:9px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:var(--sans)}
+.trk-btn.primary{background:var(--amber-bg);border-color:var(--amber-dim);color:var(--amber)}
+.trk-err{font-size:12px;color:var(--red);margin-top:4px;display:none}
+.trk-log{max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:8px}
+.trk-log table{width:100%;border-collapse:collapse;font-size:12px}
+.trk-log th{text-align:left;font-size:10px;text-transform:uppercase;color:var(--ink3);
+  padding:8px 10px;background:var(--panel);position:sticky;top:0;border-bottom:1px solid var(--line)}
+.trk-log td{padding:7px 10px;border-bottom:1px solid var(--line);color:var(--ink2);font-family:var(--mono);font-size:11.5px}
+.trk-log .empty{padding:24px;text-align:center;color:var(--ink3);font-family:var(--sans);font-size:13px}
+.trk-del{background:none;border:none;color:var(--ink3);cursor:pointer;font-size:14px}
+.trk-chart-wrap{position:relative;height:180px;margin-bottom:6px}
+.trk-note{font-size:11.5px;color:var(--ink3);line-height:1.5}
+.trk-prompt{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:14px;
+  font-family:var(--mono);font-size:11.5px;color:var(--ink2);line-height:1.6;white-space:pre-wrap;margin-bottom:10px}
+.trk-toast{position:fixed;bottom:16px;right:16px;background:var(--amber-bg);border:1px solid var(--amber-dim);
+  color:var(--amber);font-size:12px;padding:8px 14px;border-radius:6px;opacity:0;transition:.25s;pointer-events:none}
+.trk-toast.show{opacity:1}
+@media (max-width:480px){ .trk-body{padding:14px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="trk">
+  <div class="trk-head">
+    <h1>SELF HUB &middot; BND-101 THE STANDARD</h1>
+    <span class="sub">PERFORMANCE MODULE</span>
+  </div>
+  <div class="trk-tabs">
+    <button class="trk-tab on" data-tab="dash">Dashboard</button>
+    <button class="trk-tab" data-tab="log">Log</button>
+    <button class="trk-tab" data-tab="history">History</button>
+    <button class="trk-tab" data-tab="coach">Coach</button>
+  </div>
+  <div class="trk-body">
+
+    <div class="trk-pane on" data-pane="dash">
+      <div class="trk-phase" id="phaseBar"></div>
+      <div class="trk-grid" id="statGrid"></div>
+      <div class="trk-sec">
+        <h2>Bodyweight trend</h2>
+        <div class="trk-chart-wrap"><canvas id="bwChart"></canvas></div>
+        <p class="trk-note" id="bwNote"></p>
+      </div>
+      <div class="trk-sec">
+        <h2>Lift trend</h2>
+        <div class="trk-chart-wrap"><canvas id="liftChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="trk-pane" data-pane="log">
+      <div class="trk-sec">
+        <h2>Bodyweight / body fat</h2>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="bwDate"></div>
+          <div class="trk-field"><label>Bodyweight (lb)</label><input type="number" step="0.1" id="bwVal" placeholder="164.2"></div>
+          <div class="trk-field"><label>Body fat % (optional)</label><input type="number" step="0.1" id="bfVal" placeholder="11.5"></div>
+        </div>
+        <button class="trk-btn primary" id="bwSubmit">Log entry</button>
+        <div class="trk-err" id="bwErr">Enter a date and a bodyweight.</div>
+      </div>
+      <div class="trk-sec">
+        <h2>Lift</h2>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="liftDate"></div>
+          <div class="trk-field">
+            <label>Lift</label>
+            <select id="liftName">
+              <option>Back squat</option><option>Deadlift</option><option>Strict press</option>
+              <option>Bench press</option><option>Weighted pull-up</option><option>Clean</option><option>Snatch</option>
+            </select>
+          </div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Load (lb)</label><input type="number" step="1" id="liftLoad" placeholder="225"></div>
+          <div class="trk-field"><label>Reps</label><input type="number" step="1" id="liftReps" placeholder="5"></div>
+          <div class="trk-field"><label>RPE (optional)</label><input type="number" step="0.5" min="1" max="10" id="liftRpe" placeholder="8"></div>
+        </div>
+        <button class="trk-btn primary" id="liftSubmit">Log entry</button>
+        <div class="trk-err" id="liftErr">Enter a date, load and reps.</div>
+      </div>
+      <div class="trk-sec">
+        <h2>Benchmark</h2>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="bmDate"></div>
+          <div class="trk-field">
+            <label>Benchmark</label>
+            <select id="bmName">
+              <option>Fran</option><option>Murph</option><option>Grace</option><option>Helen</option><option>Diane</option>
+              <option>2k row</option><option>5k run</option><option>Other</option>
+            </select>
+          </div>
+          <div class="trk-field"><label>Result</label><input type="text" id="bmResult" placeholder="4:12"></div>
+        </div>
+        <button class="trk-btn primary" id="bmSubmit">Log entry</button>
+        <div class="trk-err" id="bmErr">Enter a date and a result.</div>
+      </div>
+      <div class="trk-sec">
+        <h2>Phase</h2>
+        <div class="trk-row">
+          <div class="trk-field">
+            <label>Current phase</label>
+            <select id="phaseSelect">
+              <option value="0">Phase 0 &middot; Assess</option>
+              <option value="1">Phase 1 &middot; Foundation build</option>
+              <option value="2">Phase 2 &middot; Shape build</option>
+              <option value="3">Phase 3 &middot; Sharpen</option>
+              <option value="4">Maintain</option>
+            </select>
+          </div>
+        </div>
+        <button class="trk-btn" id="phaseSubmit">Set phase</button>
+      </div>
+    </div>
+
+    <div class="trk-pane" data-pane="history">
+      <div class="trk-sec"><h2>Bodyweight log</h2>
+        <div class="trk-log"><table id="bwTable"><thead><tr><th>Date</th><th>Weight</th><th>BF%</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="trk-sec"><h2>Lift log</h2>
+        <div class="trk-log"><table id="liftTable"><thead><tr><th>Date</th><th>Lift</th><th>Load&times;Reps</th><th>RPE</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="trk-sec"><h2>Benchmark log</h2>
+        <div class="trk-log"><table id="bmTable"><thead><tr><th>Date</th><th>Benchmark</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="trk-pane" data-pane="coach">
+      <div class="trk-sec">
+        <h2>Weekly coach review</h2>
+        <p class="trk-note" style="margin-bottom:10px">Assembled server-side from your logged data. Copy into any AI assistant.</p>
+        <div class="trk-prompt" id="coachPrompt">Loading…</div>
+        <button class="trk-btn primary" id="copyPrompt">Copy prompt</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+<div class="trk-toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+(function(){
+  var API = '/api/fitness';
+
+  function todayISO(){ return new Date().toISOString().slice(0,10); }
+  function fmtDate(d){ var dt=new Date(d.slice(0,10)+'T00:00:00'); return dt.toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
+
+  function toast(msg){
+    var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 1800);
+  }
+
+  async function api(method, path, body){
+    var res = await fetch(API+path, {
+      method: method,
+      headers: {'Content-Type':'application/json'},
+      body: body? JSON.stringify(body): undefined
+    });
+    if(res.status===401){ toast('Sign in required — reload and enter your credentials'); throw new Error('401'); }
+    if(res.status===204) return null;
+    var data = await res.json().catch(function(){ return null; });
+    if(!res.ok){ throw new Error((data&&data.error)||('HTTP '+res.status)); }
+    return data;
+  }
+
+  // ---- tabs ----
+  document.querySelectorAll('.trk-tab').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.trk-tab').forEach(function(b){ b.classList.remove('on'); });
+      document.querySelectorAll('.trk-pane').forEach(function(p){ p.classList.remove('on'); });
+      btn.classList.add('on');
+      document.querySelector('.trk-pane[data-pane="'+btn.dataset.tab+'"]').classList.add('on');
+      if(btn.dataset.tab==='coach') loadCoachPrompt();
+    });
+  });
+
+  ['bwDate','liftDate','bmDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
+
+  // ---- log handlers ----
+  document.getElementById('bwSubmit').addEventListener('click', async function(){
+    var d=document.getElementById('bwDate').value, w=parseFloat(document.getElementById('bwVal').value);
+    var bf=document.getElementById('bfVal').value; bf = bf? parseFloat(bf): null;
+    var err=document.getElementById('bwErr');
+    if(!d || isNaN(w)){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      await api('POST','/bodyweight',{entry_date:d, weight_lb:w, body_fat_pct:bf});
+      document.getElementById('bwVal').value=''; document.getElementById('bfVal').value='';
+      await refresh(); toast('Logged');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
+  document.getElementById('liftSubmit').addEventListener('click', async function(){
+    var d=document.getElementById('liftDate').value, name=document.getElementById('liftName').value;
+    var load_=parseFloat(document.getElementById('liftLoad').value), reps=parseInt(document.getElementById('liftReps').value,10);
+    var rpe=document.getElementById('liftRpe').value; rpe = rpe? parseFloat(rpe): null;
+    var err=document.getElementById('liftErr');
+    if(!d || isNaN(load_) || isNaN(reps)){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      await api('POST','/lifts',{entry_date:d, lift:name, load_lb:load_, reps:reps, rpe:rpe});
+      document.getElementById('liftLoad').value=''; document.getElementById('liftReps').value=''; document.getElementById('liftRpe').value='';
+      await refresh(); toast('Logged');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
+  document.getElementById('bmSubmit').addEventListener('click', async function(){
+    var d=document.getElementById('bmDate').value, name=document.getElementById('bmName').value, res=document.getElementById('bmResult').value.trim();
+    var err=document.getElementById('bmErr');
+    if(!d || !res){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      await api('POST','/benchmarks',{entry_date:d, name:name, result:res});
+      document.getElementById('bmResult').value='';
+      await refresh(); toast('Logged');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
+  document.getElementById('phaseSubmit').addEventListener('click', async function(){
+    try{
+      await api('PUT','/profile',{phase: parseInt(document.getElementById('phaseSelect').value,10)});
+      await refresh(); toast('Phase updated');
+    }catch(e){ toast('Could not update: '+e.message); }
+  });
+
+  async function delEntry(kind, id){
+    try{ await api('DELETE','/'+kind+'/'+id); await refresh(); }
+    catch(e){ toast('Could not delete: '+e.message); }
+  }
+
+  // ---- state + rendering ----
+  var bwChartRef, liftChartRef;
+  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null };
+
+  async function refresh(){
+    var results = await Promise.all([
+      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary')
+    ]);
+    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4];
+    render();
+  }
+
+  function render(){
+    renderPhaseBar(); renderStats(); renderCharts(); renderTables();
+    document.getElementById('phaseSelect').value = String(cache.profile.phase);
+  }
+
+  function renderPhaseBar(){
+    var phases=[['0','Assess'],['1','Foundation'],['2','Shape'],['3','Sharpen'],['4','Maintain']];
+    var bar=document.getElementById('phaseBar'); bar.innerHTML='';
+    phases.forEach(function(p){
+      var seg=document.createElement('div');
+      seg.className='trk-phase-seg'+(String(cache.profile.phase)===p[0]?' active':'');
+      seg.innerHTML='<div class="pn">PHASE '+p[0]+'</div><div class="pt">'+p[1]+'</div>';
+      bar.appendChild(seg);
+    });
+  }
+
+  function renderStats(){
+    var grid=document.getElementById('statGrid'); grid.innerHTML='';
+    var s=cache.summary;
+    function card(label,val,cls){
+      var d=document.createElement('div'); d.className='trk-card';
+      d.innerHTML='<div class="lbl">'+label+'</div><div class="val'+(cls?' '+cls:'')+'">'+val+'</div>';
+      grid.appendChild(d);
+    }
+    card('Bodyweight (7d avg)', s.bodyweight_7day_avg_lb? s.bodyweight_7day_avg_lb+' lb':'—','amber');
+    card('Body fat', s.latest_body_fat_pct!=null? s.latest_body_fat_pct+'%':'—', (s.latest_body_fat_pct!=null && s.latest_body_fat_pct<=10)?'green':'');
+    var sq=s.latest_lifts['Back squat'], dl=s.latest_lifts['Deadlift'];
+    card('Back squat', sq? sq.load_lb+'&times;'+sq.reps:'—');
+    card('Deadlift', dl? dl.load_lb+'&times;'+dl.reps:'—');
+    card('Entries logged', s.entry_counts.bodyweight+s.entry_counts.lifts);
+
+    var note=document.getElementById('bwNote');
+    if(s.bodyweight_weekly_rate_lb==null){ note.textContent='Log at least two bodyweight entries to see a trend.'; }
+    else{
+      var wk=s.bodyweight_weekly_rate_lb;
+      note.textContent='Rate since first entry: '+(wk>=0?'+':'')+wk+' lb/week. Lean-gain target is +0.25 to +0.5 lb/week.';
+    }
+  }
+
+  function renderCharts(){
+    var ctx1=document.getElementById('bwChart').getContext('2d');
+    if(bwChartRef) bwChartRef.destroy();
+    bwChartRef=new Chart(ctx1,{type:'line',data:{
+      labels:cache.bodyweight.map(function(x){return fmtDate(x.entry_date);}),
+      datasets:[{label:'Bodyweight (lb)',data:cache.bodyweight.map(function(x){return x.weight_lb;}),
+        borderColor:'#e0a458',backgroundColor:'rgba(224,164,88,.08)',fill:true,tension:.25,pointRadius:2}]
+    },options:chartOpts()});
+
+    var ctx2=document.getElementById('liftChart').getContext('2d');
+    var mains=['Back squat','Deadlift','Strict press'];
+    var colors=['#e0a458','#c9615a','#7fae6e'];
+    var allDates=[...new Set(cache.lifts.map(function(l){return l.entry_date;}))].sort();
+    var datasets=mains.map(function(m,i){
+      var byDate={}; cache.lifts.filter(function(l){return l.lift===m;}).forEach(function(l){ byDate[l.entry_date]=l.load_lb; });
+      return {label:m,data:allDates.map(function(d){return byDate[d]!=null?byDate[d]:null;}),
+        borderColor:colors[i],backgroundColor:'transparent',spanGaps:true,tension:.2,pointRadius:2};
+    });
+    if(liftChartRef) liftChartRef.destroy();
+    liftChartRef=new Chart(ctx2,{type:'line',data:{labels:allDates.map(fmtDate),datasets:datasets},options:chartOpts(true)});
+  }
+
+  function chartOpts(legend){
+    return {responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:!!legend,labels:{color:'#9aa7b4',font:{size:10}}}},
+      scales:{ x:{ticks:{color:'#5d6a78',font:{size:10}},grid:{color:'#2c3540'}},
+               y:{ticks:{color:'#5d6a78',font:{size:10}},grid:{color:'#2c3540'}} }};
+  }
+
+  function renderTables(){
+    fillTable('bwTable', cache.bodyweight.slice().reverse(), function(x){
+      return [fmtDate(x.entry_date), x.weight_lb+' lb', x.body_fat_pct!=null?x.body_fat_pct+'%':'—'];
+    }, 'bodyweight');
+    fillTable('liftTable', cache.lifts.slice().reverse(), function(x){
+      return [fmtDate(x.entry_date), x.lift, x.load_lb+'&times;'+x.reps, x.rpe!=null?x.rpe:'—'];
+    }, 'lifts');
+    fillTable('bmTable', cache.benchmarks.slice().reverse(), function(x){
+      return [fmtDate(x.entry_date), x.name, x.result];
+    }, 'benchmarks');
+  }
+
+  function fillTable(tableId, rows, mapper, kind){
+    var tbody=document.getElementById(tableId).querySelector('tbody');
+    tbody.innerHTML='';
+    if(!rows.length){
+      var cols=document.getElementById(tableId).querySelectorAll('th').length;
+      tbody.innerHTML='<tr><td colspan="'+cols+'" class="empty">No entries yet.</td></tr>';
+      return;
+    }
+    rows.forEach(function(r){
+      var cells=mapper(r);
+      var tr=document.createElement('tr');
+      tr.innerHTML=cells.map(function(c){return '<td>'+c+'</td>';}).join('')+
+        '<td><button class="trk-del" data-id="'+r.id+'" data-kind="'+kind+'" aria-label="Delete">&times;</button></td>';
+      tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.trk-del').forEach(function(b){
+      b.addEventListener('click', function(){ delEntry(b.dataset.kind, b.dataset.id); });
+    });
+  }
+
+  async function loadCoachPrompt(){
+    document.getElementById('coachPrompt').textContent='Loading…';
+    try{
+      var r = await api('GET','/coach-prompt');
+      document.getElementById('coachPrompt').textContent = r.prompt;
+    }catch(e){ document.getElementById('coachPrompt').textContent='Could not load: '+e.message; }
+  }
+
+  document.getElementById('copyPrompt').addEventListener('click', function(){
+    var txt=document.getElementById('coachPrompt').textContent;
+    if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(function(){ toast('Copied'); }); }
+  });
+
+  refresh().catch(function(e){ toast('Could not load: '+e.message); });
+})();
+</script>
+</body>
+</html>
