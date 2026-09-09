@@ -96,6 +96,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       </div>
       <div class="trk-sec">
         <h2>Lift trend</h2>
+        <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
+          <select id="liftChartFilter"><option value="__mains__">Main lifts (Back Squat / Deadlift / Strict Press)</option></select>
+        </div>
         <div class="trk-chart-wrap"><canvas id="liftChart"></canvas></div>
       </div>
     </div>
@@ -185,6 +188,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-log"><table id="bwTable"><thead><tr><th>Date</th><th>Weight</th><th>BF%</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="trk-sec"><h2>Lift log</h2>
+        <div class="trk-field" style="margin-bottom:8px"><label>Filter</label>
+          <select id="liftLogFilter"><option value="__all__">All lifts</option></select>
+        </div>
         <div class="trk-log"><table id="liftTable"><thead><tr><th>Date</th><th>Lift</th><th>Load&times;Reps</th><th>RPE</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="trk-sec"><h2>Benchmark log</h2>
@@ -301,6 +307,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   var bwChartRef, liftChartRef;
   var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null };
 
+  (function populateLiftFilters(){
+    var names = Array.prototype.map.call(document.getElementById('liftName').options, function(o){ return o.value; });
+    var chartSel = document.getElementById('liftChartFilter');
+    var logSel = document.getElementById('liftLogFilter');
+    names.forEach(function(n){
+      var o1=document.createElement('option'); o1.value=n; o1.textContent=n; chartSel.appendChild(o1);
+      var o2=document.createElement('option'); o2.value=n; o2.textContent=n; logSel.appendChild(o2);
+    });
+    chartSel.addEventListener('change', renderCharts);
+    logSel.addEventListener('change', renderTables);
+  })();
+
   async function refresh(){
     var results = await Promise.all([
       api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary')
@@ -358,13 +376,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     },options:chartOpts()});
 
     var ctx2=document.getElementById('liftChart').getContext('2d');
-    var mains=['Back Squat','Deadlift','Strict Press'];
+    var filterVal = document.getElementById('liftChartFilter').value;
     var colors=['#e0a458','#c9615a','#7fae6e'];
-    var allDates=[...new Set(cache.lifts.map(function(l){return l.entry_date;}))].sort();
-    var datasets=mains.map(function(m,i){
+    var chartLifts = filterVal==='__mains__' ? ['Back Squat','Deadlift','Strict Press'] : [filterVal];
+    var relevant = cache.lifts.filter(function(l){ return chartLifts.indexOf(l.lift) !== -1; });
+    var allDates=[...new Set(relevant.map(function(l){return l.entry_date;}))].sort();
+    var datasets=chartLifts.map(function(m,i){
       var byDate={}; cache.lifts.filter(function(l){return l.lift===m;}).forEach(function(l){ byDate[l.entry_date]=l.load_lb; });
       return {label:m,data:allDates.map(function(d){return byDate[d]!=null?byDate[d]:null;}),
-        borderColor:colors[i],backgroundColor:'transparent',spanGaps:true,tension:.2,pointRadius:2};
+        borderColor:colors[i % colors.length],backgroundColor:'transparent',spanGaps:true,tension:.2,pointRadius:2};
     });
     if(liftChartRef) liftChartRef.destroy();
     liftChartRef=new Chart(ctx2,{type:'line',data:{labels:allDates.map(fmtDate),datasets:datasets},options:chartOpts(true)});
@@ -381,7 +401,10 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     fillTable('bwTable', cache.bodyweight.slice().reverse(), function(x){
       return [fmtDate(x.entry_date), x.weight_lb+' lb', x.body_fat_pct!=null?x.body_fat_pct+'%':'—'];
     }, 'bodyweight');
-    fillTable('liftTable', cache.lifts.slice().reverse(), function(x){
+    var logFilterVal = document.getElementById('liftLogFilter').value;
+    var liftRows = cache.lifts.slice().reverse();
+    if(logFilterVal !== '__all__'){ liftRows = liftRows.filter(function(x){ return x.lift===logFilterVal; }); }
+    fillTable('liftTable', liftRows, function(x){
       return [fmtDate(x.entry_date), x.lift, x.load_lb+'&times;'+x.reps, x.rpe!=null?x.rpe:'—'];
     }, 'lifts');
     fillTable('bmTable', cache.benchmarks.slice().reverse(), function(x){
