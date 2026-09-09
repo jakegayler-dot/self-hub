@@ -193,6 +193,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         </div>
         <div class="trk-log"><table id="liftTable"><thead><tr><th>Date</th><th>Lift</th><th>Load&times;Reps</th><th>RPE</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
+      <div class="trk-sec"><h2>Manage lift names</h2>
+        <p class="trk-note" style="margin-bottom:8px">Rename a lift across every logged entry — use this to merge duplicates, e.g. rename "Shoulder Press" into "Strict Press".</p>
+        <div class="trk-log"><table id="liftNamesTable"><thead><tr><th>Lift</th><th>Entries</th><th>Rename to</th><th></th></tr></thead><tbody></tbody></table></div>
+        <datalist id="liftNamesDatalist"></datalist>
+      </div>
       <div class="trk-sec"><h2>Benchmark log</h2>
         <div class="trk-log"><table id="bmTable"><thead><tr><th>Date</th><th>Benchmark</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
@@ -311,13 +316,25 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     var names = Array.prototype.map.call(document.getElementById('liftName').options, function(o){ return o.value; });
     var chartSel = document.getElementById('liftChartFilter');
     var logSel = document.getElementById('liftLogFilter');
+    var datalist = document.getElementById('liftNamesDatalist');
     names.forEach(function(n){
       var o1=document.createElement('option'); o1.value=n; o1.textContent=n; chartSel.appendChild(o1);
       var o2=document.createElement('option'); o2.value=n; o2.textContent=n; logSel.appendChild(o2);
+      var o3=document.createElement('option'); o3.value=n; datalist.appendChild(o3);
     });
     chartSel.addEventListener('change', renderCharts);
     logSel.addEventListener('change', renderTables);
   })();
+
+  async function renameLift(from, to){
+    to = (to||'').trim();
+    if(!to || to===from) return;
+    try{
+      var r = await api('PUT','/lifts/rename', {from:from, to:to});
+      await refresh();
+      toast(r.renamed+' entr'+(r.renamed===1?'y':'ies')+' renamed to "'+to+'"');
+    }catch(e){ toast('Could not rename: '+e.message); }
+  }
 
   async function refresh(){
     var results = await Promise.all([
@@ -328,7 +345,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   }
 
   function render(){
-    renderPhaseBar(); renderStats(); renderCharts(); renderTables();
+    renderPhaseBar(); renderStats(); renderCharts(); renderTables(); renderLiftNames();
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
   }
 
@@ -395,6 +412,29 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       plugins:{legend:{display:!!legend,labels:{color:'#9aa7b4',font:{size:10}}}},
       scales:{ x:{ticks:{color:'#5d6a78',font:{size:10}},grid:{color:'#2c3540'}},
                y:{ticks:{color:'#5d6a78',font:{size:10}},grid:{color:'#2c3540'}} }};
+  }
+
+  function renderLiftNames(){
+    var counts = {};
+    cache.lifts.forEach(function(l){ counts[l.lift] = (counts[l.lift]||0)+1; });
+    var names = Object.keys(counts).sort(function(a,b){ return a.localeCompare(b); });
+    var tbody = document.getElementById('liftNamesTable').querySelector('tbody');
+    tbody.innerHTML='';
+    if(!names.length){
+      tbody.innerHTML='<tr><td colspan="4" class="empty">No lifts logged yet.</td></tr>';
+      return;
+    }
+    names.forEach(function(n){
+      var tr=document.createElement('tr');
+      tr.innerHTML = '<td>'+n+'</td><td>'+counts[n]+'</td>'+
+        '<td><input type="text" class="rename-input" list="liftNamesDatalist" value="'+n.replace(/"/g,'&quot;')+'" style="width:100%"></td>'+
+        '<td><button class="trk-btn rename-btn">Rename</button></td>';
+      tbody.appendChild(tr);
+      tr.querySelector('.rename-btn').addEventListener('click', function(){
+        var newVal = tr.querySelector('.rename-input').value;
+        renameLift(n, newVal);
+      });
+    });
   }
 
   function renderTables(){

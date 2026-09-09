@@ -87,6 +87,22 @@ router.delete('/lifts/:id', async (req, res) => {
   res.status(204).end();
 });
 
+// rename/merge a lift name across all logged entries (e.g. merge "Shoulder Press" into "Strict Press")
+router.put('/lifts/rename', async (req, res) => {
+  const { from, to } = req.body;
+  if (!from || !to || typeof from !== 'string' || typeof to !== 'string') {
+    return res.status(400).json({ error: 'from and to are required' });
+  }
+  if (from === to) {
+    return res.json({ renamed: 0 });
+  }
+  const { rowCount } = await pool.query(
+    'UPDATE fitness_lifts SET lift = $1 WHERE lift = $2',
+    [to, from]
+  );
+  res.json({ renamed: rowCount });
+});
+
 // ---- benchmarks ----
 router.get('/benchmarks', async (req, res) => {
   const { rows } = await pool.query(

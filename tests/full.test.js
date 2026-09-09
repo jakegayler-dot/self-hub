@@ -43,6 +43,23 @@ setTimeout(async () => {
   r = await fetch(base + '/api/fitness/summary', { headers: { Authorization: auth } });
   console.log('summary via full app:', r.status, JSON.stringify(await r.json()));
 
+  // lift rename/merge
+  r = await fetch(base + '/api/fitness/lifts', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth },
+    body: JSON.stringify({ entry_date: '2026-09-08', lift: 'Shoulder Press', load_lb: 115, reps: 5 })
+  });
+  console.log('post lift (Shoulder Press):', r.status);
+
+  r = await fetch(base + '/api/fitness/lifts/rename', {
+    method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: auth },
+    body: JSON.stringify({ from: 'Shoulder Press', to: 'Strict Press' })
+  });
+  console.log('rename lift:', r.status, JSON.stringify(await r.json()));
+
+  r = await fetch(base + '/api/fitness/lifts', { headers: { Authorization: auth } });
+  const liftsAfterRename = await r.json();
+  console.log('lift names after rename:', liftsAfterRename.map(l => l.lift));
+
   console.log('FULL INTEGRATION TEST COMPLETE');
   process.exit(0);
 }, 400);
