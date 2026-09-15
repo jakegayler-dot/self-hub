@@ -1,9 +1,15 @@
 // HTTP Basic Auth via environment variables — same approach as Cattle Manager.
 // Set SELF_HUB_USER and SELF_HUB_PASS in Railway's environment variables.
+//
+// SENTINEL_USER / SENTINEL_PASS are optional, separate credentials for the
+// future Sentinel service, so it never needs your own personal login and
+// can be rotated or revoked independently.
 
 function basicAuth(req, res, next) {
   const user = process.env.SELF_HUB_USER;
   const pass = process.env.SELF_HUB_PASS;
+  const sentinelUser = process.env.SENTINEL_USER;
+  const sentinelPass = process.env.SENTINEL_PASS;
 
   // If credentials aren't configured, fail closed rather than leaving the app open.
   if (!user || !pass) {
@@ -20,6 +26,11 @@ function basicAuth(req, res, next) {
     const reqUser = decoded.slice(0, sep);
     const reqPass = decoded.slice(sep + 1);
     if (reqUser === user && reqPass === pass) {
+      next();
+      return;
+    }
+    if (sentinelUser && sentinelPass && reqUser === sentinelUser && reqPass === sentinelPass) {
+      req.isSentinel = true;
       next();
       return;
     }

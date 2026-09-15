@@ -18,6 +18,8 @@ require.cache['pg-mem-shim'] = { id: 'pg-mem-shim', filename: 'pg-mem-shim', loa
 process.env.DATABASE_URL = 'postgres://fake/fake';
 process.env.SELF_HUB_USER = 'jake';
 process.env.SELF_HUB_PASS = 'testpass123';
+process.env.SENTINEL_USER = 'sentinel';
+process.env.SENTINEL_PASS = 'sentinelpass456';
 process.env.PORT = '8842';
 
 const { runMigrations, pool } = require('../server/db');
@@ -77,9 +79,42 @@ async function main() {
     r = await req('POST', '/api/fitness/lifts', { entry_date: '2026-09-08', lift: 'Back squat', load_lb: 225, reps: 5, rpe: 8 }, auth);
     console.log('lift post:', r.status);
 
+    // benchmark lifts: seeded defaults + custom add/remove
+    r = await req('GET', '/api/fitness/benchmark-lifts', null, auth);
+    const seededBench = await r.json();
+    console.log('benchmark lifts seeded, includes Back Squat:', seededBench.includes('Back Squat'));
+
+    r = await req('POST', '/api/fitness/benchmark-lifts', { lift: 'Back squat' }, auth);
+    console.log('benchmark lift add (custom-cased):', r.status);
+
+    r = await req('POST', '/api/fitness/lifts', { entry_date: '2026-09-01', lift: 'Back squat', load_lb: 205, reps: 8 }, auth);
+    console.log('lift post 2 (for e1RM check):', r.status);
+
+    r = await req('DELETE', '/api/fitness/benchmark-lifts/' + encodeURIComponent('Front Squat'), null, auth);
+    console.log('benchmark lift remove:', r.status);
+
+    r = await req('GET', '/api/fitness/benchmark-lifts', null, auth);
+    const benchAfter = await r.json();
+    console.log('benchmark lifts after edit, Front Squat removed:', !benchAfter.includes('Front Squat'), 'Back squat present:', benchAfter.includes('Back squat'));
+
     // log a benchmark
     r = await req('POST', '/api/fitness/benchmarks', { entry_date: '2026-09-08', name: 'Fran', result: '4:12' }, auth);
     console.log('benchmark post:', r.status);
+
+    // log clothing measurements
+    r = await req('POST', '/api/fitness/measurements', {
+      entry_date: '2026-09-08', arm_length: 22, bust: 37, shoulder: 18, length: 23,
+      waist: 29.5, seat_hips: 34, neck: 13.5, sleeve: 32, inseam_low: 29, inseam_high: 30
+    }, auth);
+    const measurementCreated = await r.json();
+    console.log('measurements post:', r.status);
+
+    // measurements with no fields at all -> 400
+    r = await req('POST', '/api/fitness/measurements', { entry_date: '2026-09-08' }, auth);
+    console.log('measurements post empty (expect 400):', r.status);
+
+    r = await req('GET', '/api/fitness/measurements', null, auth);
+    console.log('measurements list count:', (await r.json()).length);
 
     // set phase
     r = await req('PUT', '/api/fitness/profile', { phase: 1 }, auth);
@@ -90,6 +125,9 @@ async function main() {
     r = await req('GET', '/api/fitness/summary', null, auth);
     const summary = await r.json();
     console.log('summary:', JSON.stringify(summary, null, 2));
+    console.log('summary shoulder:waist ratio:', summary.shoulder_waist_ratio, '(expect ~0.61)');
+    console.log('summary measurement count:', summary.entry_counts.measurements);
+    console.log('summary benchmark lift best (Back squat, expect ~262.5 e1RM from 225x5):', summary.benchmark_lift_bests['Back squat']);
 
     // coach prompt
     r = await req('GET', '/api/fitness/coach-prompt', null, auth);
@@ -98,6 +136,32 @@ async function main() {
     console.log('coach prompt includes squat lift:', /Back squat 225x5/.test(cp.prompt));
     console.log('coach prompt includes body fat:', /9.8%/.test(cp.prompt));
     console.log('coach prompt includes benchmark:', /Fran — 4:12/.test(cp.prompt));
+    console.log('coach prompt includes measurements:', /waist 29.5/.test(cp.prompt) && /ratio 0.61/.test(cp.prompt));
+    console.log('coach prompt includes benchmark lift bests:', /Back squat: ~262.5 lb e1RM/.test(cp.prompt));
+
+    // Sentinel credentials authenticate too, via a separate pair
+    const sentinelAuth = 'Basic ' + Buffer.from('sentinel:sentinelpass456').toString('base64');
+    r = await req('GET', '/api/fitness/profile', null, sentinelAuth);
+    console.log('profile via sentinel creds:', r.status);
+
+    // coach notes: Sentinel's write-back channel
+    r = await req('POST', '/api/fitness/coach-notes', { entry_date: '2026-09-09', note: 'Gaining on pace, add a 3rd delt accessory.' }, sentinelAuth);
+    const noteCreated = await r.json();
+    console.log('coach note post via sentinel:', r.status, 'source:', noteCreated.source);
+
+    r = await req('POST', '/api/fitness/coach-notes', { entry_date: '' }, auth);
+    console.log('coach note post invalid (expect 400):', r.status);
+
+    r = await req('GET', '/api/fitness/coach-notes', null, auth);
+    const notes = await r.json();
+    console.log('coach notes count:', notes.length);
+
+    r = await req('GET', '/api/fitness/coach-prompt', null, auth);
+    const cpWithNote = await r.json();
+    console.log('coach prompt now includes prior note:', /delt accessory/.test(cpWithNote.prompt));
+
+    r = await req('DELETE', '/api/fitness/coach-notes/' + noteCreated.id, null, auth);
+    console.log('delete coach note:', r.status);
 
     // list + delete
     r = await req('GET', '/api/fitness/bodyweight', null, auth);

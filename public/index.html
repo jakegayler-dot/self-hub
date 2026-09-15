@@ -54,7 +54,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   padding:9px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:var(--sans)}
 .trk-btn.primary{background:var(--amber-bg);border-color:var(--amber-dim);color:var(--amber)}
 .trk-err{font-size:12px;color:var(--red);margin-top:4px;display:none}
-.trk-log{max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:8px}
+.trk-log{max-height:280px;overflow-y:auto;overflow-x:auto;border:1px solid var(--line);border-radius:8px}
 .trk-log table{width:100%;border-collapse:collapse;font-size:12px}
 .trk-log th{text-align:left;font-size:10px;text-transform:uppercase;color:var(--ink3);
   padding:8px 10px;background:var(--panel);position:sticky;top:0;border-bottom:1px solid var(--line)}
@@ -101,6 +101,29 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         </div>
         <div class="trk-chart-wrap"><canvas id="liftChart"></canvas></div>
       </div>
+      <div class="trk-sec">
+        <h2>Measurement trend</h2>
+        <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
+          <select id="measureChartFilter">
+            <option value="shoulder">Shoulder</option>
+            <option value="waist">Waist</option>
+            <option value="bust">Bust</option>
+            <option value="arm_length">Arm length</option>
+            <option value="shoulder_waist_ratio">Shoulder:waist ratio</option>
+            <option value="seat_hips">Seat/hips</option>
+            <option value="neck">Neck</option>
+            <option value="sleeve">Sleeve</option>
+            <option value="length">Length</option>
+          </select>
+        </div>
+        <div class="trk-chart-wrap"><canvas id="measureChart"></canvas></div>
+      </div>
+      <div class="trk-sec">
+        <h2>Strength profile</h2>
+        <p class="trk-note" style="margin-bottom:8px">Best estimated 1RM (Epley) for each benchmark lift, relative to bodyweight, averaged by movement pattern. Lowest bars are your current weak points. Rough by nature — patterns are a simplification and one lift can span more than one.</p>
+        <div class="trk-chart-wrap"><canvas id="strengthChart"></canvas></div>
+        <p class="trk-note" id="strengthNote"></p>
+      </div>
     </div>
 
     <div class="trk-pane" data-pane="log">
@@ -120,25 +143,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <div class="trk-field"><label>Date</label><input type="date" id="liftDate"></div>
           <div class="trk-field">
             <label>Lift</label>
-            <select id="liftName">
-              <option>Alternating DB Bench Press</option><option>Back Rack Lunges</option><option>Back Squat</option><option>Barbell Curl 21s</option>
-              <option>Barbell Drag Curls</option><option>Barbell Incline Bench Press</option><option>Barbell Romanian Deadlift</option><option>Barbell Skull Crushers</option>
-              <option>Behind the Neck Barbell Strict Press + Barbell Strict Press</option><option>Bench Press</option><option>Bent Over Row</option><option>Box Squat</option>
-              <option>Clean</option><option>Clean &amp; Jerk</option><option>Clean + Pause Split Jerk</option><option>Clean Pull</option>
-              <option>Clean Pull + Clean + Jerk</option><option>DB Box Step-Ups</option><option>DB Preacher Curl</option><option>Deadlift</option>
-              <option>Double DB Standing Bent Over Row</option><option>Elevated Toe Double DB Romanian Deadlift</option><option>Front Squat</option><option>Front Squat + Back Squat</option>
-              <option>Hang Squat Clean</option><option>Hex Press</option><option>In The Hole Front Squat</option><option>Incline Bench DB Chest Fly</option>
-              <option>Lat Pulldowns</option><option>Muscle Clean</option><option>Muscle Clean + High Hang Power Clean</option><option>Muscle Clean + Tall Clean</option>
-              <option>Overhead Squat</option><option>Pause Front Squat + Front Squat</option><option>Pause High Hang Power Snatch + Overhead Squat</option><option>Pause Snatch Balance</option>
-              <option>Power Clean</option><option>Power Snatch</option><option>Push Press</option><option>Romanian Deadlift</option>
-              <option>Seated Press</option><option>Seated Strict Shoulder Press</option><option>Shoulder Press</option><option>Snatch</option>
-              <option>Snatch Balance</option><option>Snatch Balance + Overhead Squats</option><option>Snatch Deadlift to Mid Thigh + Snatch High Pull + Snatch</option><option>Snatch Pull</option>
-              <option>Snatch Pull + Power Snatch + Snatch High Pull + Snatch</option><option>Snatch Pull + Snatch</option><option>Snatch Pull + Snatch + Snatch High Pull + Snatch</option><option>Snatch Pull + Snatch High Pull + Power Snatch</option>
-              <option>Snatch Push Press + Overhead Squat</option><option>Split Jerk</option><option>Squat Pause Clean</option><option>Standing KB Crush Grip Bicep Curl</option>
-              <option>Standing KB Crush Grip French Press</option><option>Strict Press</option><option>Strict Pull-Ups</option><option>Sumo Deadlift</option>
-              <option>Sumo Deadlift + Deadlift</option><option>Tempo Heel Elevated Back Squat</option><option>Thruster</option><option>Weighted Pull-Up</option>
-              <option>Wide Grip Bench Press + DB Single Arm Bench Press</option>
-            </select>
+            <input type="text" id="liftName" list="liftNamesDatalist" placeholder="Start typing — pick a match or add a new one">
           </div>
         </div>
         <div class="trk-row">
@@ -147,7 +152,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <div class="trk-field"><label>RPE (optional)</label><input type="number" step="0.5" min="1" max="10" id="liftRpe" placeholder="8"></div>
         </div>
         <button class="trk-btn primary" id="liftSubmit">Log entry</button>
-        <div class="trk-err" id="liftErr">Enter a date, load and reps.</div>
+        <div class="trk-err" id="liftErr">Enter a date, lift name, load and reps.</div>
       </div>
       <div class="trk-sec">
         <h2>Benchmark</h2>
@@ -164,6 +169,31 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         </div>
         <button class="trk-btn primary" id="bmSubmit">Log entry</button>
         <div class="trk-err" id="bmErr">Enter a date and a result.</div>
+      </div>
+      <div class="trk-sec">
+        <h2>Clothing measurements</h2>
+        <p class="trk-note" style="margin-bottom:10px">All in inches. Leave any field blank to skip it — only the date and one measurement are required.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="mDate"></div>
+          <div class="trk-field"><label>Arm length</label><input type="number" step="0.1" id="mArmLength" placeholder="22"></div>
+          <div class="trk-field"><label>Bust</label><input type="number" step="0.1" id="mBust" placeholder="37"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Shoulder</label><input type="number" step="0.1" id="mShoulder" placeholder="18"></div>
+          <div class="trk-field"><label>Length</label><input type="number" step="0.1" id="mLength" placeholder="23"></div>
+          <div class="trk-field"><label>Waist</label><input type="number" step="0.1" id="mWaist" placeholder="29.5"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Seat/hips</label><input type="number" step="0.1" id="mSeatHips" placeholder="34"></div>
+          <div class="trk-field"><label>Neck</label><input type="number" step="0.1" id="mNeck" placeholder="13.5"></div>
+          <div class="trk-field"><label>Sleeve</label><input type="number" step="0.1" id="mSleeve" placeholder="32"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Inseam low</label><input type="number" step="0.1" id="mInseamLow" placeholder="29"></div>
+          <div class="trk-field"><label>Inseam high</label><input type="number" step="0.1" id="mInseamHigh" placeholder="30"></div>
+        </div>
+        <button class="trk-btn primary" id="mSubmit">Log entry</button>
+        <div class="trk-err" id="mErr">Enter a date and at least one measurement.</div>
       </div>
       <div class="trk-sec">
         <h2>Phase</h2>
@@ -194,12 +224,35 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-log"><table id="liftTable"><thead><tr><th>Date</th><th>Lift</th><th>Load&times;Reps</th><th>RPE</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="trk-sec"><h2>Manage lift names</h2>
-        <p class="trk-note" style="margin-bottom:8px">Rename a lift across every logged entry — use this to merge duplicates, e.g. rename "Shoulder Press" into "Strict Press".</p>
-        <div class="trk-log"><table id="liftNamesTable"><thead><tr><th>Lift</th><th>Entries</th><th>Rename to</th><th></th></tr></thead><tbody></tbody></table></div>
-        <datalist id="liftNamesDatalist"></datalist>
+        <p class="trk-note" style="margin-bottom:8px">Rename a lift across every logged entry — use this to merge duplicates, e.g. rename "Shoulder Press" into "Strict Press". Check "Benchmark" for the key indicator lifts you want driving the Strength profile breakdown below.</p>
+        <div class="trk-log"><table id="liftNamesTable"><thead><tr><th>Lift</th><th>Entries</th><th>Benchmark</th><th>Rename to</th><th></th></tr></thead><tbody></tbody></table></div>
+        <datalist id="liftNamesDatalist">
+          <option>Alternating DB Bench Press</option><option>Back Rack Lunges</option><option>Back Squat</option><option>Barbell Curl 21s</option>
+          <option>Barbell Drag Curls</option><option>Barbell Incline Bench Press</option><option>Barbell Romanian Deadlift</option><option>Barbell Skull Crushers</option>
+          <option>Behind the Neck Barbell Strict Press + Barbell Strict Press</option><option>Bench Press</option><option>Bent Over Row</option><option>Box Squat</option>
+          <option>Clean</option><option>Clean &amp; Jerk</option><option>Clean + Pause Split Jerk</option><option>Clean Pull</option>
+          <option>Clean Pull + Clean + Jerk</option><option>DB Box Step-Ups</option><option>DB Preacher Curl</option><option>Deadlift</option>
+          <option>Double DB Standing Bent Over Row</option><option>Elevated Toe Double DB Romanian Deadlift</option><option>Front Squat</option><option>Front Squat + Back Squat</option>
+          <option>Hang Squat Clean</option><option>Hex Press</option><option>In The Hole Front Squat</option><option>Incline Bench DB Chest Fly</option>
+          <option>Lat Pulldowns</option><option>Muscle Clean</option><option>Muscle Clean + High Hang Power Clean</option><option>Muscle Clean + Tall Clean</option>
+          <option>Overhead Squat</option><option>Pause Front Squat + Front Squat</option><option>Pause High Hang Power Snatch + Overhead Squat</option><option>Pause Snatch Balance</option>
+          <option>Power Clean</option><option>Power Snatch</option><option>Push Press</option><option>Romanian Deadlift</option>
+          <option>Seated Press</option><option>Seated Strict Shoulder Press</option><option>Shoulder Press</option><option>Snatch</option>
+          <option>Snatch Balance</option><option>Snatch Balance + Overhead Squats</option><option>Snatch Deadlift to Mid Thigh + Snatch High Pull + Snatch</option><option>Snatch Pull</option>
+          <option>Snatch Pull + Power Snatch + Snatch High Pull + Snatch</option><option>Snatch Pull + Snatch</option><option>Snatch Pull + Snatch + Snatch High Pull + Snatch</option><option>Snatch Pull + Snatch High Pull + Power Snatch</option>
+          <option>Snatch Push Press + Overhead Squat</option><option>Split Jerk</option><option>Squat Pause Clean</option><option>Standing KB Crush Grip Bicep Curl</option>
+          <option>Standing KB Crush Grip French Press</option><option>Strict Press</option><option>Strict Pull-Ups</option><option>Sumo Deadlift</option>
+          <option>Sumo Deadlift + Deadlift</option><option>Tempo Heel Elevated Back Squat</option><option>Thruster</option><option>Weighted Pull-Up</option>
+          <option>Wide Grip Bench Press + DB Single Arm Bench Press</option>
+        </datalist>
       </div>
       <div class="trk-sec"><h2>Benchmark log</h2>
         <div class="trk-log"><table id="bmTable"><thead><tr><th>Date</th><th>Benchmark</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="trk-sec"><h2>Measurements log</h2>
+        <div class="trk-log"><table id="mTable"><thead><tr>
+          <th>Date</th><th>Arm</th><th>Bust</th><th>Shoulder</th><th>Length</th><th>Waist</th><th>Seat/hips</th><th>Neck</th><th>Sleeve</th><th>Inseam</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
       </div>
     </div>
 
@@ -209,6 +262,17 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <p class="trk-note" style="margin-bottom:10px">Assembled server-side from your logged data. Copy into any AI assistant.</p>
         <div class="trk-prompt" id="coachPrompt">Loading…</div>
         <button class="trk-btn primary" id="copyPrompt">Copy prompt</button>
+      </div>
+      <div class="trk-sec">
+        <h2>Coach notes</h2>
+        <p class="trk-note" style="margin-bottom:10px">Paste a coaching response back here now, or this is where Sentinel will write directly once it exists — either way it carries forward into next week's prompt above.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="cnDate"></div>
+          <div class="trk-field" style="flex:1"><label>Note</label><input type="text" id="cnNote" placeholder="e.g. Gaining on pace, add a 3rd delt accessory"></div>
+        </div>
+        <button class="trk-btn primary" id="cnSubmit">Save note</button>
+        <div class="trk-err" id="cnErr">Enter a date and a note.</div>
+        <div class="trk-log"><table id="cnTable"><thead><tr><th>Date</th><th>Source</th><th>Note</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
     </div>
 
@@ -254,7 +318,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     });
   });
 
-  ['bwDate','liftDate','bmDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
+  ['bwDate','liftDate','bmDate','cnDate','mDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
 
   // ---- log handlers ----
   document.getElementById('bwSubmit').addEventListener('click', async function(){
@@ -271,11 +335,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   });
 
   document.getElementById('liftSubmit').addEventListener('click', async function(){
-    var d=document.getElementById('liftDate').value, name=document.getElementById('liftName').value;
+    var d=document.getElementById('liftDate').value, name=document.getElementById('liftName').value.trim();
     var load_=parseFloat(document.getElementById('liftLoad').value), reps=parseInt(document.getElementById('liftReps').value,10);
     var rpe=document.getElementById('liftRpe').value; rpe = rpe? parseFloat(rpe): null;
     var err=document.getElementById('liftErr');
-    if(!d || isNaN(load_) || isNaN(reps)){ err.style.display='block'; return; }
+    if(!d || !name || isNaN(load_) || isNaN(reps)){ err.style.display='block'; return; }
     err.style.display='none';
     try{
       await api('POST','/lifts',{entry_date:d, lift:name, load_lb:load_, reps:reps, rpe:rpe});
@@ -296,6 +360,37 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }catch(e){ toast('Could not save: '+e.message); }
   });
 
+  document.getElementById('mSubmit').addEventListener('click', async function(){
+    var d=document.getElementById('mDate').value;
+    var fieldIds={arm_length:'mArmLength',bust:'mBust',shoulder:'mShoulder',length:'mLength',waist:'mWaist',
+      seat_hips:'mSeatHips',neck:'mNeck',sleeve:'mSleeve',inseam_low:'mInseamLow',inseam_high:'mInseamHigh'};
+    var body={entry_date:d}; var any=false;
+    Object.keys(fieldIds).forEach(function(f){
+      var v=document.getElementById(fieldIds[f]).value;
+      if(v!==''){ body[f]=parseFloat(v); any=true; }
+    });
+    var err=document.getElementById('mErr');
+    if(!d || !any){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      await api('POST','/measurements', body);
+      Object.values(fieldIds).forEach(function(id){ document.getElementById(id).value=''; });
+      await refresh(); toast('Logged');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
+  document.getElementById('cnSubmit').addEventListener('click', async function(){
+    var d=document.getElementById('cnDate').value, note=document.getElementById('cnNote').value.trim();
+    var err=document.getElementById('cnErr');
+    if(!d || !note){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      await api('POST','/coach-notes',{entry_date:d, note:note, source:'manual'});
+      document.getElementById('cnNote').value='';
+      await refresh(); toast('Saved');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
   document.getElementById('phaseSubmit').addEventListener('click', async function(){
     try{
       await api('PUT','/profile',{phase: parseInt(document.getElementById('phaseSelect').value,10)});
@@ -309,22 +404,21 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   }
 
   // ---- state + rendering ----
-  var bwChartRef, liftChartRef;
-  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null };
+  var bwChartRef, liftChartRef, measureChartRef, strengthChartRef;
+  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[] };
 
   (function populateLiftFilters(){
-    var names = Array.prototype.map.call(document.getElementById('liftName').options, function(o){ return o.value; });
+    var names = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
     var chartSel = document.getElementById('liftChartFilter');
     var logSel = document.getElementById('liftLogFilter');
-    var datalist = document.getElementById('liftNamesDatalist');
     names.forEach(function(n){
       var o1=document.createElement('option'); o1.value=n; o1.textContent=n; chartSel.appendChild(o1);
       var o2=document.createElement('option'); o2.value=n; o2.textContent=n; logSel.appendChild(o2);
-      var o3=document.createElement('option'); o3.value=n; datalist.appendChild(o3);
     });
     chartSel.addEventListener('change', renderCharts);
     logSel.addEventListener('change', renderTables);
   })();
+  document.getElementById('measureChartFilter').addEventListener('change', renderMeasureChart);
 
   async function renameLift(from, to){
     to = (to||'').trim();
@@ -338,14 +432,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   async function refresh(){
     var results = await Promise.all([
-      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary')
+      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), api('GET','/coach-notes'), api('GET','/measurements'), api('GET','/benchmark-lifts')
     ]);
-    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4];
+    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7];
     render();
   }
 
   function render(){
-    renderPhaseBar(); renderStats(); renderCharts(); renderTables(); renderLiftNames();
+    renderPhaseBar(); renderStats(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile();
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
   }
 
@@ -373,6 +467,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     var sq=s.latest_lifts['Back Squat'], dl=s.latest_lifts['Deadlift'];
     card('Back Squat', sq? sq.load_lb+'&times;'+sq.reps:'—');
     card('Deadlift', dl? dl.load_lb+'&times;'+dl.reps:'—');
+    card('Shoulder:waist', s.shoulder_waist_ratio!=null? s.shoulder_waist_ratio:'—', (s.shoulder_waist_ratio!=null && s.shoulder_waist_ratio>=1.6)?'green':'');
     card('Entries logged', s.entry_counts.bodyweight+s.entry_counts.lifts);
 
     var note=document.getElementById('bwNote');
@@ -407,6 +502,106 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     liftChartRef=new Chart(ctx2,{type:'line',data:{labels:allDates.map(fmtDate),datasets:datasets},options:chartOpts(true)});
   }
 
+  // Biomechanical movement-pattern taxonomy — a simplification, not exact
+  // exercise science. Covers the default 65-lift list; anything typed in
+  // that isn't here falls through to keyword matching, then Uncategorized.
+  var LIFT_PATTERN = {
+    'Alternating DB Bench Press':'Push Horizontal','Back Rack Lunges':'Squat','Back Squat':'Squat',
+    'Barbell Curl 21s':'Accessory','Barbell Drag Curls':'Accessory','Barbell Incline Bench Press':'Push Horizontal',
+    'Barbell Romanian Deadlift':'Hinge','Barbell Skull Crushers':'Accessory',
+    'Behind the Neck Barbell Strict Press + Barbell Strict Press':'Push Vertical','Bench Press':'Push Horizontal',
+    'Bent Over Row':'Pull Horizontal','Box Squat':'Squat','Clean':'Olympic','Clean & Jerk':'Olympic',
+    'Clean + Pause Split Jerk':'Olympic','Clean Pull':'Hinge','Clean Pull + Clean + Jerk':'Olympic',
+    'DB Box Step-Ups':'Squat','DB Preacher Curl':'Accessory','Deadlift':'Hinge',
+    'Double DB Standing Bent Over Row':'Pull Horizontal','Elevated Toe Double DB Romanian Deadlift':'Hinge',
+    'Front Squat':'Squat','Front Squat + Back Squat':'Squat','Hang Squat Clean':'Olympic','Hex Press':'Push Horizontal',
+    'In The Hole Front Squat':'Squat','Incline Bench DB Chest Fly':'Accessory','Lat Pulldowns':'Pull Vertical',
+    'Muscle Clean':'Olympic','Muscle Clean + High Hang Power Clean':'Olympic','Muscle Clean + Tall Clean':'Olympic',
+    'Overhead Squat':'Squat','Pause Front Squat + Front Squat':'Squat','Pause High Hang Power Snatch + Overhead Squat':'Olympic',
+    'Pause Snatch Balance':'Olympic','Power Clean':'Olympic','Power Snatch':'Olympic','Push Press':'Push Vertical',
+    'Romanian Deadlift':'Hinge','Seated Press':'Push Vertical','Seated Strict Shoulder Press':'Push Vertical',
+    'Shoulder Press':'Push Vertical','Snatch':'Olympic','Snatch Balance':'Olympic','Snatch Balance + Overhead Squats':'Olympic',
+    'Snatch Deadlift to Mid Thigh + Snatch High Pull + Snatch':'Olympic','Snatch Pull':'Hinge',
+    'Snatch Pull + Power Snatch + Snatch High Pull + Snatch':'Olympic','Snatch Pull + Snatch':'Olympic',
+    'Snatch Pull + Snatch + Snatch High Pull + Snatch':'Olympic','Snatch Pull + Snatch High Pull + Power Snatch':'Olympic',
+    'Snatch Push Press + Overhead Squat':'Olympic','Split Jerk':'Push Vertical','Squat Pause Clean':'Olympic',
+    'Standing KB Crush Grip Bicep Curl':'Accessory','Standing KB Crush Grip French Press':'Accessory',
+    'Strict Press':'Push Vertical','Strict Pull-Ups':'Pull Vertical','Sumo Deadlift':'Hinge',
+    'Sumo Deadlift + Deadlift':'Hinge','Tempo Heel Elevated Back Squat':'Squat','Thruster':'Squat',
+    'Weighted Pull-Up':'Pull Vertical','Wide Grip Bench Press + DB Single Arm Bench Press':'Push Horizontal'
+  };
+  function liftPattern(name){
+    if(LIFT_PATTERN[name]) return LIFT_PATTERN[name];
+    var s=name.toLowerCase();
+    if(/squat|lunge|step-up/.test(s)) return 'Squat';
+    if(/deadlift/.test(s)) return 'Hinge';
+    if(/clean|snatch|jerk/.test(s)) return 'Olympic';
+    if(/bench|fly|dip/.test(s)) return 'Push Horizontal';
+    if(/press/.test(s)) return 'Push Vertical';
+    if(/pull-up|pullup|pulldown/.test(s)) return 'Pull Vertical';
+    if(/row/.test(s)) return 'Pull Horizontal';
+    if(/curl|tricep|skull crusher/.test(s)) return 'Accessory';
+    return 'Uncategorized';
+  }
+
+  function renderStrengthProfile(){
+    var bwLatest = cache.bodyweight.length ? Number(cache.bodyweight[cache.bodyweight.length-1].weight_lb) : null;
+    var note = document.getElementById('strengthNote');
+    if(!bwLatest){
+      note.textContent='Log a bodyweight entry to see this normalized.';
+    } else { note.textContent=''; }
+
+    var benchSet = new Set(cache.benchmarkLifts);
+    var byPattern = {};
+    var bestByLift = {};
+    cache.lifts.forEach(function(l){
+      if(!benchSet.has(l.lift)) return;
+      var e1rm = l.load_lb * (1 + l.reps/30);
+      if(!bestByLift[l.lift] || e1rm > bestByLift[l.lift]) bestByLift[l.lift] = e1rm;
+    });
+    Object.keys(bestByLift).forEach(function(lift){
+      var p = liftPattern(lift);
+      var ratio = bwLatest ? bestByLift[lift]/bwLatest : bestByLift[lift];
+      if(!byPattern[p]) byPattern[p]=[];
+      byPattern[p].push(ratio);
+    });
+    var patterns = Object.keys(byPattern).map(function(p){
+      var vals=byPattern[p];
+      var avg = vals.reduce(function(a,b){return a+b;},0)/vals.length;
+      return {pattern:p, score:Math.round(avg*100)/100};
+    }).sort(function(a,b){ return a.score-b.score; });
+
+    var ctx4=document.getElementById('strengthChart').getContext('2d');
+    if(strengthChartRef) strengthChartRef.destroy();
+    if(!patterns.length){
+      strengthChartRef=new Chart(ctx4,{type:'bar',data:{labels:[],datasets:[]},options:chartOpts()});
+      return;
+    }
+    strengthChartRef=new Chart(ctx4,{type:'bar',
+      data:{labels:patterns.map(function(p){return p.pattern;}),
+        datasets:[{label: bwLatest?'Best e1RM ÷ bodyweight':'Best e1RM (lb)', data:patterns.map(function(p){return p.score;}),
+          backgroundColor: patterns.map(function(p,i){ return i===0?'#c9615a': i===patterns.length-1?'#7fae6e':'#e0a458'; })}]},
+      options:Object.assign({indexAxis:'y'}, chartOpts())
+    });
+  }
+
+  function renderMeasureChart(){
+    var ctx3=document.getElementById('measureChart').getContext('2d');
+    var field = document.getElementById('measureChartFilter').value;
+    var rows = cache.measurements.filter(function(m){
+      if(field==='shoulder_waist_ratio') return m.shoulder!=null && m.waist!=null;
+      return m[field]!=null;
+    });
+    var data = field==='shoulder_waist_ratio'
+      ? rows.map(function(m){ return Math.round((Number(m.shoulder)/Number(m.waist))*100)/100; })
+      : rows.map(function(m){ return Number(m[field]); });
+    if(measureChartRef) measureChartRef.destroy();
+    measureChartRef=new Chart(ctx3,{type:'line',data:{
+      labels:rows.map(function(m){return fmtDate(m.entry_date);}),
+      datasets:[{label:field,data:data,borderColor:'#7fae6e',backgroundColor:'rgba(127,174,110,.08)',fill:true,spanGaps:true,tension:.2,pointRadius:2}]
+    },options:chartOpts()});
+  }
+
   function chartOpts(legend){
     return {responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:!!legend,labels:{color:'#9aa7b4',font:{size:10}}}},
@@ -418,15 +613,31 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     var counts = {};
     cache.lifts.forEach(function(l){ counts[l.lift] = (counts[l.lift]||0)+1; });
     var names = Object.keys(counts).sort(function(a,b){ return a.localeCompare(b); });
+
+    // grow the datalist + filter dropdowns with any lift name not already known (newly typed-in lifts)
+    var datalist = document.getElementById('liftNamesDatalist');
+    var chartSel = document.getElementById('liftChartFilter');
+    var logSel = document.getElementById('liftLogFilter');
+    var known = new Set(Array.prototype.map.call(datalist.options, function(o){ return o.value; }));
+    names.forEach(function(n){
+      if(known.has(n)) return;
+      known.add(n);
+      var o1=document.createElement('option'); o1.value=n; datalist.appendChild(o1);
+      var o2=document.createElement('option'); o2.value=n; o2.textContent=n; chartSel.appendChild(o2);
+      var o3=document.createElement('option'); o3.value=n; o3.textContent=n; logSel.appendChild(o3);
+    });
+
     var tbody = document.getElementById('liftNamesTable').querySelector('tbody');
     tbody.innerHTML='';
     if(!names.length){
-      tbody.innerHTML='<tr><td colspan="4" class="empty">No lifts logged yet.</td></tr>';
+      tbody.innerHTML='<tr><td colspan="5" class="empty">No lifts logged yet.</td></tr>';
       return;
     }
+    var benchSet = new Set(cache.benchmarkLifts);
     names.forEach(function(n){
       var tr=document.createElement('tr');
       tr.innerHTML = '<td>'+n+'</td><td>'+counts[n]+'</td>'+
+        '<td style="text-align:center"><input type="checkbox" class="bench-check"'+(benchSet.has(n)?' checked':'')+'></td>'+
         '<td><input type="text" class="rename-input" list="liftNamesDatalist" value="'+n.replace(/"/g,'&quot;')+'" style="width:100%"></td>'+
         '<td><button class="trk-btn rename-btn">Rename</button></td>';
       tbody.appendChild(tr);
@@ -434,7 +645,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         var newVal = tr.querySelector('.rename-input').value;
         renameLift(n, newVal);
       });
+      tr.querySelector('.bench-check').addEventListener('change', function(e){
+        toggleBenchmarkLift(n, e.target.checked);
+      });
     });
+  }
+
+  async function toggleBenchmarkLift(lift, on){
+    try{
+      if(on){ await api('POST','/benchmark-lifts',{lift:lift}); }
+      else{ await api('DELETE','/benchmark-lifts/'+encodeURIComponent(lift)); }
+      await refresh();
+    }catch(e){ toast('Could not update: '+e.message); }
   }
 
   function renderTables(){
@@ -450,6 +672,17 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     fillTable('bmTable', cache.benchmarks.slice().reverse(), function(x){
       return [fmtDate(x.entry_date), x.name, x.result];
     }, 'benchmarks');
+    fillTable('mTable', cache.measurements.slice().reverse(), function(x){
+      var inseam = (x.inseam_low!=null || x.inseam_high!=null) ? (x.inseam_low??'?')+'&ndash;'+(x.inseam_high??'?') : '—';
+      var v=function(f){ return x[f]!=null? x[f] : '—'; };
+      return [fmtDate(x.entry_date), v('arm_length'), v('bust'), v('shoulder'), v('length'), v('waist'), v('seat_hips'), v('neck'), v('sleeve'), inseam];
+    }, 'measurements');
+  }
+
+  function renderCoachNotes(){
+    fillTable('cnTable', cache.coachNotes, function(x){
+      return [fmtDate(x.entry_date), x.source, x.note];
+    }, 'coach-notes');
   }
 
   function fillTable(tableId, rows, mapper, kind){

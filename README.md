@@ -84,13 +84,19 @@ under `/api/fitness/*` are a real, live API right now:
 
 - `GET /api/fitness/summary` — the computed dashboard state (7-day average,
   weekly rate, latest lifts, entry counts)
-- `GET /api/fitness/coach-prompt` — the assembled coaching prompt
+- `GET /api/fitness/coach-prompt` — the assembled coaching prompt, including
+  Sentinel's own last 3 notes so it has continuity across sessions
+- `GET/POST/DELETE /api/fitness/coach-notes` — the write-back channel: this
+  is where Sentinel's output persists, distinct from the raw logs, and it
+  shows up in the app's Coach tab either way
 - Full CRUD on `/bodyweight`, `/lifts`, `/benchmarks`, `/profile`
 
-When Sentinel exists as a running service, it calls these same endpoints
-with the same Basic Auth credentials. Nothing here needs to be rebuilt —
-Sentinel becomes another authenticated client of this API, the same way
-your own browser is now.
+When Sentinel exists as a running service, it calls these same endpoints.
+Nothing here needs to be rebuilt — Sentinel becomes another authenticated
+client of this API, the same way your own browser is now. It authenticates
+with its own `SENTINEL_USER`/`SENTINEL_PASS` pair (see `.env.example`)
+rather than your personal login, so either credential can be rotated without
+touching the other.
 
 ## A security note from the build
 
