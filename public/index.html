@@ -120,7 +120,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       </div>
       <div class="trk-sec">
         <h2>Strength profile</h2>
-        <p class="trk-note" style="margin-bottom:8px">Best estimated 1RM (Epley) for each benchmark lift, relative to bodyweight, averaged by movement pattern. Lowest bars are your current weak points. Rough by nature — patterns are a simplification and one lift can span more than one.</p>
+        <p class="trk-note" style="margin-bottom:8px">Best estimated 1RM (Epley) for each benchmark lift, scored against a rough "typical intermediate" ratio for its pattern — 1.0 means about typical, not "strong" in absolute terms. This makes hinge and vertical-pull comparable even though a 2x-bodyweight deadlift and a 2x-bodyweight pull-up aren't the same rarity. Lowest bars are your current weak points relative to what's normal for that pattern. Still rough — the standards are general ballparks, not tailored to you, and patterns are a simplification.</p>
         <div class="trk-chart-wrap"><canvas id="strengthChart"></canvas></div>
         <p class="trk-note" id="strengthNote"></p>
       </div>
@@ -334,8 +334,19 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }catch(e){ toast('Could not save: '+e.message); }
   });
 
+  function normalizeLiftKey(s){ return s.toLowerCase().replace(/[^a-z0-9]/g,''); }
+
+  function resolveLiftName(typed){
+    var known = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
+    var key = normalizeLiftKey(typed);
+    for(var i=0;i<known.length;i++){
+      if(normalizeLiftKey(known[i])===key) return known[i];
+    }
+    return typed;
+  }
+
   document.getElementById('liftSubmit').addEventListener('click', async function(){
-    var d=document.getElementById('liftDate').value, name=document.getElementById('liftName').value.trim();
+    var d=document.getElementById('liftDate').value, name=resolveLiftName(document.getElementById('liftName').value.trim());
     var load_=parseFloat(document.getElementById('liftLoad').value), reps=parseInt(document.getElementById('liftReps').value,10);
     var rpe=document.getElementById('liftRpe').value; rpe = rpe? parseFloat(rpe): null;
     var err=document.getElementById('liftErr');
@@ -544,12 +555,23 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     return 'Uncategorized';
   }
 
+  // Rough "intermediate lifter" e1RM-to-bodyweight multiples per pattern —
+  // general strength-standard ballparks, not derived from your data or
+  // tailored to you. Used only so patterns compare on the same scale:
+  // a score of 1.0 means "about typical for an intermediate lifter in
+  // that pattern," not "typical strength" in some absolute sense.
+  // Pull Vertical assumes load_lb on weighted pull-ups is ADDED weight
+  // only (not bodyweight+added) — flag this if that's not how you log it.
+  var PATTERN_STANDARD = {
+    'Squat':1.5, 'Hinge':1.75, 'Push Vertical':0.7, 'Push Horizontal':1.15,
+    'Pull Vertical':0.25, 'Pull Horizontal':1.0, 'Olympic':0.85, 'Accessory':0.3,
+    'Uncategorized':1.0
+  };
+
   function renderStrengthProfile(){
     var bwLatest = cache.bodyweight.length ? Number(cache.bodyweight[cache.bodyweight.length-1].weight_lb) : null;
     var note = document.getElementById('strengthNote');
-    if(!bwLatest){
-      note.textContent='Log a bodyweight entry to see this normalized.';
-    } else { note.textContent=''; }
+    note.textContent = bwLatest ? '' : 'Log a bodyweight entry to see this normalized.';
 
     var benchSet = new Set(cache.benchmarkLifts);
     var byPattern = {};
@@ -562,8 +584,10 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     Object.keys(bestByLift).forEach(function(lift){
       var p = liftPattern(lift);
       var ratio = bwLatest ? bestByLift[lift]/bwLatest : bestByLift[lift];
+      var standard = PATTERN_STANDARD[p] || 1.0;
+      var score = bwLatest ? ratio/standard : ratio;
       if(!byPattern[p]) byPattern[p]=[];
-      byPattern[p].push(ratio);
+      byPattern[p].push(score);
     });
     var patterns = Object.keys(byPattern).map(function(p){
       var vals=byPattern[p];
@@ -579,7 +603,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }
     strengthChartRef=new Chart(ctx4,{type:'bar',
       data:{labels:patterns.map(function(p){return p.pattern;}),
-        datasets:[{label: bwLatest?'Best e1RM ÷ bodyweight':'Best e1RM (lb)', data:patterns.map(function(p){return p.score;}),
+        datasets:[{label: bwLatest?'Relative to typical intermediate (1.0 = typical)':'Best e1RM (lb)', data:patterns.map(function(p){return p.score;}),
           backgroundColor: patterns.map(function(p,i){ return i===0?'#c9615a': i===patterns.length-1?'#7fae6e':'#e0a458'; })}]},
       options:Object.assign({indexAxis:'y'}, chartOpts())
     });
