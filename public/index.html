@@ -82,6 +82,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     <button class="trk-tab on" data-tab="dash">Dashboard</button>
     <button class="trk-tab" data-tab="log">Log</button>
     <button class="trk-tab" data-tab="history">History</button>
+    <button class="trk-tab" data-tab="movements">Movements</button>
     <button class="trk-tab" data-tab="coach">Coach</button>
   </div>
   <div class="trk-body">
@@ -253,6 +254,23 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-log"><table id="mTable"><thead><tr>
           <th>Date</th><th>Arm</th><th>Bust</th><th>Shoulder</th><th>Length</th><th>Waist</th><th>Seat/hips</th><th>Neck</th><th>Sleeve</th><th>Inseam</th><th></th>
         </tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="trk-pane" data-pane="movements">
+      <div class="trk-sec">
+        <h2>Movement profile</h2>
+        <div class="trk-field" style="margin-bottom:12px"><label>Movement</label>
+          <input type="text" id="mvSelect" list="liftNamesDatalist" placeholder="Start typing a lift name…">
+        </div>
+        <div id="mvCard" class="trk-grid"></div>
+      </div>
+      <div class="trk-sec">
+        <h2>History</h2>
+        <div class="trk-chart-wrap"><canvas id="mvChart"></canvas></div>
+      </div>
+      <div class="trk-sec">
+        <div class="trk-log"><table id="mvTable"><thead><tr><th>Date</th><th>Load&times;Reps</th><th>RPE</th><th>e1RM</th></tr></thead><tbody></tbody></table></div>
       </div>
     </div>
 
@@ -450,7 +468,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   }
 
   function render(){
-    renderPhaseBar(); renderStats(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile();
+    renderPhaseBar(); renderStats(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile(); renderMovementProfile();
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
   }
 
@@ -608,6 +626,102 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       options:Object.assign({indexAxis:'y'}, chartOpts())
     });
   }
+
+  // Primary muscles and fiber-type emphasis per pattern, with a few
+  // lift-specific overrides for isolation work where the pattern default
+  // is too vague. Fiber-type labels are a simplification — actual fiber
+  // recruitment depends heavily on the load and rep range you train at,
+  // not purely the exercise itself; every major lift recruits both types
+  // under different conditions. Treat this as a rough framing tool.
+  var PATTERN_MUSCLES = {
+    'Squat':['Quads','Glutes','Core'], 'Hinge':['Hamstrings','Glutes','Lower back'],
+    'Push Vertical':['Shoulders','Triceps','Upper chest'], 'Push Horizontal':['Chest','Triceps','Front delts'],
+    'Pull Vertical':['Lats','Biceps','Upper back'], 'Pull Horizontal':['Lats','Rear delts','Biceps','Upper back'],
+    'Olympic':['Full body','Hips','Traps','Shoulders'], 'Accessory':['Isolated — see this lift specifically'],
+    'Uncategorized':['Not classified']
+  };
+  var PATTERN_FIBER = {
+    'Squat':'Fast-twitch (Type II) leaning — heavy low-rep compound strength work',
+    'Hinge':'Fast-twitch (Type II) leaning — heavy low-rep compound strength work',
+    'Push Vertical':'Fast-twitch (Type II) leaning — heavy low-rep pressing',
+    'Push Horizontal':'Fast-twitch (Type II) leaning — heavy low-rep pressing',
+    'Pull Vertical':'Mixed — depends heavily on the load/rep range you train it at',
+    'Pull Horizontal':'Mixed — depends heavily on the load/rep range you train it at',
+    'Olympic':'Fast-twitch (Type II) dominant — explosive, power-oriented',
+    'Accessory':'Mixed to slow-twitch (Type I) leaning — usually trained higher-rep',
+    'Uncategorized':'Not classified'
+  };
+  var LIFT_MUSCLES_OVERRIDE = {
+    'Barbell Curl 21s':['Biceps'], 'Barbell Drag Curls':['Biceps'], 'DB Preacher Curl':['Biceps'],
+    'Standing KB Crush Grip Bicep Curl':['Biceps','Forearms'], 'Barbell Skull Crushers':['Triceps'],
+    'Standing KB Crush Grip French Press':['Triceps'], 'Incline Bench DB Chest Fly':['Chest (inner/upper)'],
+    'Lat Pulldowns':['Lats','Biceps'], 'Bent Over Row':['Lats','Rear delts','Biceps','Lower back'],
+    'Double DB Standing Bent Over Row':['Lats','Rear delts','Biceps'],
+    'Back Rack Lunges':['Quads','Glutes','Core (unilateral)'], 'DB Box Step-Ups':['Quads','Glutes','Core (unilateral)']
+  };
+  function liftMuscles(name){ return LIFT_MUSCLES_OVERRIDE[name] || PATTERN_MUSCLES[liftPattern(name)] || ['Not classified']; }
+  function liftFiber(name){ return PATTERN_FIBER[liftPattern(name)] || 'Not classified'; }
+
+  var mvChartRef;
+  var mvSelected = null;
+
+  function renderMovementProfile(){
+    var input = document.getElementById('mvSelect');
+    if(mvSelected===null){
+      var known = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
+      var loggedNames = {}; cache.lifts.forEach(function(l){ loggedNames[l.lift]=true; });
+      mvSelected = known.find(function(n){ return loggedNames[n]; }) || known[0] || null;
+      if(mvSelected) input.value = mvSelected;
+    }
+    var name = mvSelected;
+    var card = document.getElementById('mvCard');
+    card.innerHTML='';
+    if(!name){ return; }
+    function tile(label,val){
+      var d=document.createElement('div'); d.className='trk-card';
+      d.innerHTML='<div class="lbl">'+label+'</div><div class="val">'+val+'</div>';
+      card.appendChild(d);
+    }
+    tile('Pattern', liftPattern(name));
+    tile('Primary muscles', liftMuscles(name).join(', '));
+    tile('Fiber type emphasis', liftFiber(name));
+
+    var rows = cache.lifts.filter(function(l){ return l.lift===name; }).sort(function(a,b){ return a.entry_date<b.entry_date?-1:1; });
+    tile('Entries logged', rows.length);
+
+    var ctx5=document.getElementById('mvChart').getContext('2d');
+    if(mvChartRef) mvChartRef.destroy();
+    mvChartRef=new Chart(ctx5,{type:'line',data:{
+      labels:rows.map(function(r){return fmtDate(r.entry_date);}),
+      datasets:[{label:name+' load (lb)',data:rows.map(function(r){return r.load_lb;}),
+        borderColor:'#e0a458',backgroundColor:'rgba(224,164,88,.08)',fill:true,spanGaps:true,tension:.2,pointRadius:2}]
+    },options:chartOpts()});
+
+    fillTableReadonly('mvTable', rows.slice().reverse(), function(r){
+      var e1rm = Math.round(r.load_lb*(1+r.reps/30)*10)/10;
+      return [fmtDate(r.entry_date), r.load_lb+'&times;'+r.reps, r.rpe!=null?r.rpe:'—', e1rm];
+    });
+  }
+
+  function fillTableReadonly(tableId, rows, mapper){
+    var tbody=document.getElementById(tableId).querySelector('tbody');
+    tbody.innerHTML='';
+    if(!rows.length){
+      var cols=document.getElementById(tableId).querySelectorAll('th').length;
+      tbody.innerHTML='<tr><td colspan="'+cols+'" class="empty">No entries yet.</td></tr>';
+      return;
+    }
+    rows.forEach(function(r){
+      var tr=document.createElement('tr');
+      tr.innerHTML=mapper(r).map(function(c){return '<td>'+c+'</td>';}).join('');
+      tbody.appendChild(tr);
+    });
+  }
+
+  document.getElementById('mvSelect').addEventListener('change', function(){
+    mvSelected = this.value.trim() || null;
+    renderMovementProfile();
+  });
 
   function renderMeasureChart(){
     var ctx3=document.getElementById('measureChart').getContext('2d');
