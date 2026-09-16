@@ -19,7 +19,7 @@ router.get('/profile', async (req, res) => {
 });
 
 router.put('/profile', async (req, res) => {
-  const { phase, body_fat_target, bodyweight_goal_lb, leaderboard_goal } = req.body;
+  const { phase, body_fat_target, bodyweight_goal_lb, leaderboard_goal, weekly_strength_sessions_goal, weekly_conditioning_sessions_goal } = req.body;
   if (phase !== undefined && (phase < 0 || phase > 4)) {
     return res.status(400).json({ error: 'phase must be 0-4' });
   }
@@ -29,9 +29,12 @@ router.put('/profile', async (req, res) => {
        body_fat_target = COALESCE($2, body_fat_target),
        bodyweight_goal_lb = COALESCE($3, bodyweight_goal_lb),
        leaderboard_goal = COALESCE($4, leaderboard_goal),
+       weekly_strength_sessions_goal = COALESCE($5, weekly_strength_sessions_goal),
+       weekly_conditioning_sessions_goal = COALESCE($6, weekly_conditioning_sessions_goal),
        updated_at = now()
      WHERE id = 1 RETURNING *`,
-    [phase ?? null, body_fat_target ?? null, bodyweight_goal_lb ?? null, leaderboard_goal ?? null]
+    [phase ?? null, body_fat_target ?? null, bodyweight_goal_lb ?? null, leaderboard_goal ?? null,
+     weekly_strength_sessions_goal ?? null, weekly_conditioning_sessions_goal ?? null]
   );
   res.json(rows[0]);
 });
@@ -151,6 +154,110 @@ router.delete('/benchmark-lifts/:lift', async (req, res) => {
 });
 
 // ---- summary: the computed dashboard state, and the future Sentinel read surface ----
+// ---- weekly training load: ACWR-based rating against your own rolling baseline ----
+// Standard acute:chronic workload ratio approach (Gabbett et al.) — acute is
+// this calendar week (Mon–now), chronic is the average of the 4 completed
+// weeks before it. A ratio near 1.0 means you're training at your own
+// recent normal; well below or above that flags a real shift either way.
+// This is a heuristic used widely in S&C, not a precise clinical measure —
+// and early in the week "this week" is necessarily partial, so the ratio
+// will read low until the week fills in.
+function mondayOf(date) {
+  const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = d.getUTCDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d;
+}
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d;
+}
+function acwrStatus(r) {
+  if (r == null) return 'not enough history yet';
+  if (r < 0.8) return 'below your recent baseline';
+  if (r <= 1.3) return 'sustainable range';
+  if (r <= 1.5) return 'trending high — monitor';
+  return 'sharp spike — elevated risk';
+}
+
+async function computeWeeklyLoad() {
+  const now = new Date();
+  const thisWeekStart = mondayOf(now);
+  const chronicStart = addDays(thisWeekStart, -28);
+
+  const liftRows = (await pool.query(
+    'SELECT entry_date, lift, load_lb, reps FROM fitness_lifts WHERE entry_date >= $1',
+    [chronicStart]
+  )).rows;
+  const condRows = (await pool.query(
+    'SELECT entry_date, duration_seconds FROM fitness_conditioning WHERE entry_date >= $1',
+    [chronicStart]
+  )).rows;
+
+  function weekIndex(entryDate) {
+    const diffDays = Math.floor((thisWeekStart - new Date(Date.UTC(entryDate.getUTCFullYear(), entryDate.getUTCMonth(), entryDate.getUTCDate()))) / 86400000);
+    return Math.floor(diffDays / 7);
+  }
+
+  const tonnageByWeek = [0, 0, 0, 0, 0];
+  const strengthDaysByWeek = [new Set(), new Set(), new Set(), new Set(), new Set()];
+  const liftNamesThisWeek = new Set();
+  liftRows.forEach((l) => {
+    const wi = weekIndex(l.entry_date);
+    if (wi < 0 || wi > 4) return;
+    tonnageByWeek[wi] += Number(l.load_lb) * Number(l.reps);
+    const key = l.entry_date.toISOString().slice(0, 10);
+    strengthDaysByWeek[wi].add(key);
+    if (wi === 0) liftNamesThisWeek.add(l.lift);
+  });
+
+  const condMinByWeek = [0, 0, 0, 0, 0];
+  const condDaysByWeek = [new Set(), new Set(), new Set(), new Set(), new Set()];
+  condRows.forEach((c) => {
+    const wi = weekIndex(c.entry_date);
+    if (wi < 0 || wi > 4) return;
+    if (c.duration_seconds != null) condMinByWeek[wi] += Number(c.duration_seconds) / 60;
+    condDaysByWeek[wi].add(c.entry_date.toISOString().slice(0, 10));
+  });
+
+  const acuteTonnage = Math.round(tonnageByWeek[0]);
+  const chronicTonnage = Math.round((tonnageByWeek[1] + tonnageByWeek[2] + tonnageByWeek[3] + tonnageByWeek[4]) / 4);
+  const strengthACWR = chronicTonnage > 0 ? Math.round((acuteTonnage / chronicTonnage) * 100) / 100 : null;
+
+  const acuteCondMin = Math.round(condMinByWeek[0]);
+  const chronicCondMin = Math.round((condMinByWeek[1] + condMinByWeek[2] + condMinByWeek[3] + condMinByWeek[4]) / 4);
+  const conditioningACWR = chronicCondMin > 0 ? Math.round((acuteCondMin / chronicCondMin) * 100) / 100 : null;
+
+  const profile = (await pool.query('SELECT weekly_strength_sessions_goal, weekly_conditioning_sessions_goal FROM fitness_profile WHERE id = 1')).rows[0];
+
+  return {
+    week_start: thisWeekStart.toISOString().slice(0, 10),
+    strength: {
+      tonnage_this_week_lb: acuteTonnage,
+      tonnage_4wk_avg_lb: chronicTonnage,
+      acwr: strengthACWR,
+      status: acwrStatus(strengthACWR),
+      sessions_this_week: strengthDaysByWeek[0].size,
+      sessions_goal: profile.weekly_strength_sessions_goal,
+    },
+    conditioning: {
+      minutes_this_week: acuteCondMin,
+      minutes_4wk_avg: chronicCondMin,
+      acwr: conditioningACWR,
+      status: acwrStatus(conditioningACWR),
+      sessions_this_week: condDaysByWeek[0].size,
+      sessions_goal: profile.weekly_conditioning_sessions_goal,
+    },
+    lift_names_this_week: [...liftNamesThisWeek],
+  };
+}
+
+router.get('/weekly-load', async (req, res) => {
+  res.json(await computeWeeklyLoad());
+});
+
 router.get('/summary', async (req, res) => {
   const profile = (await pool.query('SELECT * FROM fitness_profile WHERE id = 1')).rows[0];
   const bw = (await pool.query(
@@ -197,6 +304,8 @@ router.get('/summary', async (req, res) => {
     ? Math.round((Number(latestMeasurement.shoulder) / Number(latestMeasurement.waist)) * 100) / 100
     : null;
 
+  const weeklyLoad = await computeWeeklyLoad();
+
   res.json({
     phase: profile.phase,
     targets: {
@@ -211,8 +320,40 @@ router.get('/summary', async (req, res) => {
     benchmark_lift_bests: bestByLift,
     latest_measurements: latestMeasurement,
     shoulder_waist_ratio: shoulderWaistRatio,
+    weekly_load: weeklyLoad,
     entry_counts: { bodyweight: bw.length, lifts: lifts.length, measurements: measurements.length },
   });
+});
+
+// ---- conditioning: non-strength movements tracked by distance/duration ----
+router.get('/conditioning', async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT id, entry_date, movement, distance_m, duration_seconds, notes FROM fitness_conditioning ORDER BY entry_date ASC'
+  );
+  res.json(rows);
+});
+
+router.post('/conditioning', async (req, res) => {
+  const { entry_date, movement, notes } = req.body;
+  const distance_m = num(req.body.distance_m);
+  const duration_seconds = num(req.body.duration_seconds);
+  if (!isValidDate(entry_date) || typeof movement !== 'string' || !movement.trim()) {
+    return res.status(400).json({ error: 'entry_date and movement are required' });
+  }
+  if (distance_m === null && duration_seconds === null) {
+    return res.status(400).json({ error: 'distance_m or duration_seconds is required' });
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO fitness_conditioning (entry_date, movement, distance_m, duration_seconds, notes)
+     VALUES ($1, $2, $3, $4, $5) RETURNING id, entry_date, movement, distance_m, duration_seconds, notes`,
+    [entry_date, movement.trim(), distance_m, duration_seconds, notes || null]
+  );
+  res.status(201).json(rows[0]);
+});
+
+router.delete('/conditioning/:id', async (req, res) => {
+  await pool.query('DELETE FROM fitness_conditioning WHERE id = $1', [req.params.id]);
+  res.status(204).end();
 });
 
 // ---- clothing measurements ----
@@ -337,12 +478,17 @@ router.get('/coach-prompt', async (req, res) => {
   const bestLiftLines = Object.keys(bestByLift).length
     ? Object.entries(bestByLift).sort((a, b) => a[0].localeCompare(b[0])).map(([name, e1rm]) => `${name}: ~${e1rm} lb e1RM`).join('\n')
     : '(no benchmark lifts logged yet)';
+  const weeklyLoad = await computeWeeklyLoad();
+  const wlLine = `Strength: ${weeklyLoad.strength.sessions_this_week}/${weeklyLoad.strength.sessions_goal} sessions, ${weeklyLoad.strength.tonnage_this_week_lb} lb tonnage this week vs ${weeklyLoad.strength.tonnage_4wk_avg_lb} lb 4-week avg (ACWR ${weeklyLoad.strength.acwr ?? 'n/a'}, ${weeklyLoad.strength.status})
+Conditioning: ${weeklyLoad.conditioning.sessions_this_week}/${weeklyLoad.conditioning.sessions_goal} sessions, ${weeklyLoad.conditioning.minutes_this_week} min this week vs ${weeklyLoad.conditioning.minutes_4wk_avg} min 4-week avg (ACWR ${weeklyLoad.conditioning.acwr ?? 'n/a'}, ${weeklyLoad.conditioning.status})`;
 
   const prompt = `You are my strength and conditioning coach. I started underweight and lean. My targets are the Casino Royale build (lean with a real V-taper, body fat ${profile.body_fat_target}%) and top of the leaderboard at my local CrossFit box. I am running a continuous lean gain — there is no cut in my programme. I am in ${phaseNames[profile.phase]}.
 
 My data:
 - Bodyweight (7-day avg): ${avg7 ? avg7 + ' lb' : 'not enough data yet'}
 - Body fat: ${latestBf ? Number(latestBf.body_fat_pct) + '%' : 'not logged'}
+- This week's training load (ACWR = this week vs my own 4-week average, 0.8-1.3 is sustainable):
+${wlLine}
 - Recent lifts:
 ${recentLifts}
 - Benchmark lift bests (estimated 1RM, Epley formula, all-time):
@@ -354,7 +500,7 @@ ${recentMeasurements}
 - Your own recent notes to me:
 ${recentNotes}
 
-Review my week: am I gaining at 0.25–0.5 lb/week, is my body fat holding, is my accessory work biased to delts and lats, and am I recovering? Push back if I'm under-eating — that is my most likely failure mode. Post any new note or recommendation back via POST /api/fitness/coach-notes so it carries into next time.`;
+Review my week: am I gaining at 0.25–0.5 lb/week, is my body fat holding, is my accessory work biased to delts and lats, and am I recovering? Push back if I'm under-eating — that is my most likely failure mode. Flag it plainly if my ACWR is trending high (injury risk) or if I'm falling short of my weekly session goals. Post any new note or recommendation back via POST /api/fitness/coach-notes so it carries into next time.`;
 
   res.json({ prompt });
 });

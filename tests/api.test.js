@@ -109,6 +109,23 @@ async function main() {
     const measurementCreated = await r.json();
     console.log('measurements post:', r.status);
 
+    // conditioning: row/run tracked by distance/duration instead of load
+    r = await req('POST', '/api/fitness/conditioning', { entry_date: '2026-09-08', movement: 'Row', distance_m: 2000, duration_seconds: 420 }, auth);
+    console.log('conditioning post (distance+duration):', r.status);
+
+    r = await req('POST', '/api/fitness/conditioning', { entry_date: '2026-09-09', movement: 'Run', duration_seconds: 1800 }, auth);
+    console.log('conditioning post (duration only):', r.status);
+
+    r = await req('POST', '/api/fitness/conditioning', { entry_date: '2026-09-09', movement: 'Bike' }, auth);
+    console.log('conditioning post no distance/duration (expect 400):', r.status);
+
+    r = await req('GET', '/api/fitness/conditioning', null, auth);
+    const conditioningList = await r.json();
+    console.log('conditioning list count:', conditioningList.length);
+
+    r = await req('DELETE', '/api/fitness/conditioning/' + conditioningList[0].id, null, auth);
+    console.log('conditioning delete:', r.status);
+
     // measurements with no fields at all -> 400
     r = await req('POST', '/api/fitness/measurements', { entry_date: '2026-09-08' }, auth);
     console.log('measurements post empty (expect 400):', r.status);
@@ -120,6 +137,18 @@ async function main() {
     r = await req('PUT', '/api/fitness/profile', { phase: 1 }, auth);
     const profileAfter = await r.json();
     console.log('phase set:', r.status, 'phase now', profileAfter.phase);
+
+    // weekly training-load goals: defaults, then edit
+    console.log('weekly goal defaults: strength', profileAfter.weekly_strength_sessions_goal, 'conditioning', profileAfter.weekly_conditioning_sessions_goal);
+
+    r = await req('PUT', '/api/fitness/profile', { weekly_strength_sessions_goal: 5, weekly_conditioning_sessions_goal: 3 }, auth);
+    const profileGoalsSet = await r.json();
+    console.log('weekly goals updated:', profileGoalsSet.weekly_strength_sessions_goal, profileGoalsSet.weekly_conditioning_sessions_goal);
+
+    r = await req('GET', '/api/fitness/weekly-load', null, auth);
+    const weeklyLoad = await r.json();
+    console.log('weekly-load status:', r.status, 'sessions_goal reflects edit:', weeklyLoad.strength.sessions_goal===5 && weeklyLoad.conditioning.sessions_goal===3);
+    console.log('weekly-load lift_names_this_week includes Back squat:', weeklyLoad.lift_names_this_week.includes('Back squat'));
 
     // summary
     r = await req('GET', '/api/fitness/summary', null, auth);

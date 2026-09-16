@@ -35,6 +35,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .trk-card .val{font-family:var(--mono);font-size:20px;color:var(--ink);font-weight:500}
 .trk-card .val.amber{color:var(--amber)}
 .trk-card .val.green{color:var(--green)}
+.trk-card .val.red{color:var(--red)}
 .trk-sec{margin-bottom:20px}
 .trk-sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);
   font-weight:500;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -91,6 +92,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       <div class="trk-phase" id="phaseBar"></div>
       <div class="trk-grid" id="statGrid"></div>
       <div class="trk-sec">
+        <h2>Weekly training load</h2>
+        <p class="trk-note" style="margin-bottom:8px">ACWR = this week's load ÷ your own trailing 4-week average — 0.8&ndash;1.3 is a sustainable range (standard sports-science heuristic, not a precise measure); below it you're detraining relative to your recent normal, above 1.5 is a real spike. Early in the week this reads low simply because the week isn't over yet — that's expected, not a shortfall.</p>
+        <div class="trk-grid" id="weeklyLoadGrid"></div>
+        <p class="trk-note" id="patternCoverageNote"></p>
+      </div>
+      <div class="trk-sec">
         <h2>Bodyweight trend</h2>
         <div class="trk-chart-wrap"><canvas id="bwChart"></canvas></div>
         <p class="trk-note" id="bwNote"></p>
@@ -124,6 +131,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <p class="trk-note" style="margin-bottom:8px">Best estimated 1RM (Epley) for each benchmark lift, scored against a rough "typical intermediate" ratio for its pattern — 1.0 means about typical, not "strong" in absolute terms. This makes hinge and vertical-pull comparable even though a 2x-bodyweight deadlift and a 2x-bodyweight pull-up aren't the same rarity. Lowest bars are your current weak points relative to what's normal for that pattern. Still rough — the standards are general ballparks, not tailored to you, and patterns are a simplification.</p>
         <div class="trk-chart-wrap"><canvas id="strengthChart"></canvas></div>
         <p class="trk-note" id="strengthNote"></p>
+        <div class="trk-log"><table id="strengthBreakdownTable"><thead><tr>
+          <th>Pattern</th><th>Lift</th><th>Best e1RM</th><th>÷ Bodyweight</th><th>÷ Pattern standard</th><th>Score</th>
+        </tr></thead><tbody></tbody></table></div>
       </div>
     </div>
 
@@ -197,6 +207,33 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-err" id="mErr">Enter a date and at least one measurement.</div>
       </div>
       <div class="trk-sec">
+        <h2>Conditioning</h2>
+        <p class="trk-note" style="margin-bottom:10px">Row, run, bike, or anything tracked by distance/duration instead of load. Fill in distance, duration, or both.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="cdDate"></div>
+          <div class="trk-field">
+            <label>Movement</label>
+            <input type="text" id="cdMovement" list="conditioningNamesDatalist" placeholder="Row, Run, Bike…">
+            <datalist id="conditioningNamesDatalist">
+              <option>Row</option><option>Run</option><option>Bike</option><option>Ski Erg</option><option>Swim</option><option>Ruck</option>
+            </datalist>
+          </div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Distance</label><input type="number" step="0.01" id="cdDistance" placeholder="5"></div>
+          <div class="trk-field">
+            <label>Unit</label>
+            <select id="cdUnit"><option value="m">meters</option><option value="km">km</option><option value="mi">miles</option></select>
+          </div>
+          <div class="trk-field"><label>Duration (mm:ss)</label><input type="text" id="cdDuration" placeholder="24:10"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field" style="flex:1"><label>Notes (optional)</label><input type="text" id="cdNotes" placeholder="easy pace, damper 6"></div>
+        </div>
+        <button class="trk-btn primary" id="cdSubmit">Log entry</button>
+        <div class="trk-err" id="cdErr">Enter a date, movement, and a distance or duration.</div>
+      </div>
+      <div class="trk-sec">
         <h2>Phase</h2>
         <div class="trk-row">
           <div class="trk-field">
@@ -211,6 +248,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           </div>
         </div>
         <button class="trk-btn" id="phaseSubmit">Set phase</button>
+      </div>
+      <div class="trk-sec">
+        <h2>Weekly training goals</h2>
+        <p class="trk-note" style="margin-bottom:10px">Minimum sessions/week floor, shown alongside the ACWR rating on the dashboard.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Strength sessions/week</label><input type="number" step="1" min="0" id="wgStrength" placeholder="4"></div>
+          <div class="trk-field"><label>Conditioning sessions/week</label><input type="number" step="1" min="0" id="wgConditioning" placeholder="2"></div>
+        </div>
+        <button class="trk-btn" id="wgSubmit">Set goals</button>
       </div>
     </div>
 
@@ -255,13 +301,19 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <th>Date</th><th>Arm</th><th>Bust</th><th>Shoulder</th><th>Length</th><th>Waist</th><th>Seat/hips</th><th>Neck</th><th>Sleeve</th><th>Inseam</th><th></th>
         </tr></thead><tbody></tbody></table></div>
       </div>
+      <div class="trk-sec"><h2>Conditioning log</h2>
+        <div class="trk-log"><table id="cdTable"><thead><tr>
+          <th>Date</th><th>Movement</th><th>Distance</th><th>Duration</th><th>Pace</th><th>Notes</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
     </div>
 
     <div class="trk-pane" data-pane="movements">
       <div class="trk-sec">
         <h2>Movement profile</h2>
         <div class="trk-field" style="margin-bottom:12px"><label>Movement</label>
-          <input type="text" id="mvSelect" list="liftNamesDatalist" placeholder="Start typing a lift name…">
+          <input type="text" id="mvSelect" list="allMovementsDatalist" placeholder="Start typing a lift or conditioning movement…">
+          <datalist id="allMovementsDatalist"></datalist>
         </div>
         <div id="mvCard" class="trk-grid"></div>
       </div>
@@ -336,7 +388,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     });
   });
 
-  ['bwDate','liftDate','bmDate','cnDate','mDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
+  ['bwDate','liftDate','bmDate','cnDate','mDate','cdDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
 
   // ---- log handlers ----
   document.getElementById('bwSubmit').addEventListener('click', async function(){
@@ -356,6 +408,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   function resolveLiftName(typed){
     var known = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
+    var key = normalizeLiftKey(typed);
+    for(var i=0;i<known.length;i++){
+      if(normalizeLiftKey(known[i])===key) return known[i];
+    }
+    return typed;
+  }
+
+  function resolveConditioningName(typed){
+    var known = Array.prototype.map.call(document.getElementById('conditioningNamesDatalist').options, function(o){ return o.value; });
     var key = normalizeLiftKey(typed);
     for(var i=0;i<known.length;i++){
       if(normalizeLiftKey(known[i])===key) return known[i];
@@ -408,6 +469,41 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }catch(e){ toast('Could not save: '+e.message); }
   });
 
+  function parseDuration(s){
+    s=(s||'').trim(); if(!s) return null;
+    var parts=s.split(':').map(function(x){return parseFloat(x);});
+    if(parts.some(isNaN)) return null;
+    if(parts.length===1) return Math.round(parts[0]);
+    if(parts.length===2) return Math.round(parts[0]*60+parts[1]);
+    if(parts.length===3) return Math.round(parts[0]*3600+parts[1]*60+parts[2]);
+    return null;
+  }
+  function fmtDuration(sec){
+    if(sec==null) return '—';
+    var m=Math.floor(sec/60), s=Math.round(sec%60);
+    return m+':'+(s<10?'0':'')+s;
+  }
+  var UNIT_TO_M = {m:1, km:1000, mi:1609.34};
+
+  document.getElementById('cdSubmit').addEventListener('click', async function(){
+    var d=document.getElementById('cdDate').value;
+    var movement=resolveConditioningName(document.getElementById('cdMovement').value.trim());
+    var distVal=document.getElementById('cdDistance').value;
+    var unit=document.getElementById('cdUnit').value;
+    var distance_m = distVal!=='' ? parseFloat(distVal)*UNIT_TO_M[unit] : null;
+    var duration_seconds = parseDuration(document.getElementById('cdDuration').value);
+    var notes = document.getElementById('cdNotes').value.trim() || null;
+    var err=document.getElementById('cdErr');
+    if(!d || !movement || (distance_m==null && duration_seconds==null)){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      await api('POST','/conditioning',{entry_date:d, movement:movement, distance_m:distance_m, duration_seconds:duration_seconds, notes:notes});
+      document.getElementById('cdDistance').value=''; document.getElementById('cdDuration').value=''; document.getElementById('cdNotes').value='';
+      await refresh(); toast('Logged');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
+
   document.getElementById('cnSubmit').addEventListener('click', async function(){
     var d=document.getElementById('cnDate').value, note=document.getElementById('cnNote').value.trim();
     var err=document.getElementById('cnErr');
@@ -427,6 +523,16 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }catch(e){ toast('Could not update: '+e.message); }
   });
 
+  document.getElementById('wgSubmit').addEventListener('click', async function(){
+    var s=parseInt(document.getElementById('wgStrength').value,10);
+    var c=parseInt(document.getElementById('wgConditioning').value,10);
+    if(isNaN(s) || isNaN(c) || s<0 || c<0){ toast('Enter valid non-negative numbers'); return; }
+    try{
+      await api('PUT','/profile',{weekly_strength_sessions_goal:s, weekly_conditioning_sessions_goal:c});
+      await refresh(); toast('Goals updated');
+    }catch(e){ toast('Could not update: '+e.message); }
+  });
+
   async function delEntry(kind, id){
     try{ await api('DELETE','/'+kind+'/'+id); await refresh(); }
     catch(e){ toast('Could not delete: '+e.message); }
@@ -434,7 +540,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   // ---- state + rendering ----
   var bwChartRef, liftChartRef, measureChartRef, strengthChartRef;
-  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[] };
+  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[] };
 
   (function populateLiftFilters(){
     var names = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
@@ -461,15 +567,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   async function refresh(){
     var results = await Promise.all([
-      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), api('GET','/coach-notes'), api('GET','/measurements'), api('GET','/benchmark-lifts')
+      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), api('GET','/coach-notes'), api('GET','/measurements'), api('GET','/benchmark-lifts'), api('GET','/conditioning')
     ]);
-    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7];
+    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7]; cache.conditioning=results[8];
     render();
   }
 
   function render(){
-    renderPhaseBar(); renderStats(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile(); renderMovementProfile();
+    renderPhaseBar(); renderStats(); renderWeeklyLoad(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile();
+    growMovementDatalists(); renderMovementProfile();
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
+    document.getElementById('wgStrength').value = cache.profile.weekly_strength_sessions_goal;
+    document.getElementById('wgConditioning').value = cache.profile.weekly_conditioning_sessions_goal;
   }
 
   function renderPhaseBar(){
@@ -481,6 +590,36 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       seg.innerHTML='<div class="pn">PHASE '+p[0]+'</div><div class="pt">'+p[1]+'</div>';
       bar.appendChild(seg);
     });
+  }
+
+  function renderWeeklyLoad(){
+    var wl = cache.summary.weekly_load;
+    var grid=document.getElementById('weeklyLoadGrid'); grid.innerHTML='';
+    function card(label,val,cls){
+      var d=document.createElement('div'); d.className='trk-card';
+      d.innerHTML='<div class="lbl">'+label+'</div><div class="val'+(cls?' '+cls:'')+'">'+val+'</div>';
+      grid.appendChild(d);
+    }
+    function acwrClass(r){
+      if(r==null) return '';
+      if(r>1.5) return 'red';
+      if(r>=0.8 && r<=1.3) return 'green';
+      return 'amber';
+    }
+    card('Strength sessions', wl.strength.sessions_this_week+' / '+wl.strength.sessions_goal, wl.strength.sessions_this_week>=wl.strength.sessions_goal?'green':'amber');
+    card('Strength ACWR', wl.strength.acwr!=null? wl.strength.acwr : '—', acwrClass(wl.strength.acwr));
+    card('Strength tonnage (wk)', wl.strength.tonnage_this_week_lb+' lb');
+    card('Conditioning sessions', wl.conditioning.sessions_this_week+' / '+wl.conditioning.sessions_goal, wl.conditioning.sessions_this_week>=wl.conditioning.sessions_goal?'green':'amber');
+    card('Conditioning ACWR', wl.conditioning.acwr!=null? wl.conditioning.acwr : '—', acwrClass(wl.conditioning.acwr));
+    card('Conditioning time (wk)', wl.conditioning.minutes_this_week+' min');
+
+    var allPatterns = ['Squat','Hinge','Push Vertical','Push Horizontal','Pull Vertical','Pull Horizontal','Olympic','Accessory'];
+    var trainedPatterns = new Set(wl.lift_names_this_week.map(liftPattern));
+    var untrained = allPatterns.filter(function(p){ return !trainedPatterns.has(p); });
+    var note = document.getElementById('patternCoverageNote');
+    note.textContent = untrained.length
+      ? 'Not hit this week: '+untrained.join(', ')+'.'
+      : 'Every movement pattern got trained this week.';
   }
 
   function renderStats(){
@@ -599,14 +738,25 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       var e1rm = l.load_lb * (1 + l.reps/30);
       if(!bestByLift[l.lift] || e1rm > bestByLift[l.lift]) bestByLift[l.lift] = e1rm;
     });
+    var breakdownRows = [];
     Object.keys(bestByLift).forEach(function(lift){
       var p = liftPattern(lift);
-      var ratio = bwLatest ? bestByLift[lift]/bwLatest : bestByLift[lift];
+      var e1rm = bestByLift[lift];
+      var ratio = bwLatest ? e1rm/bwLatest : null;
       var standard = PATTERN_STANDARD[p] || 1.0;
-      var score = bwLatest ? ratio/standard : ratio;
+      var score = bwLatest ? ratio/standard : e1rm;
       if(!byPattern[p]) byPattern[p]=[];
       byPattern[p].push(score);
+      breakdownRows.push({pattern:p, lift:lift, e1rm:Math.round(e1rm*10)/10, ratio:ratio, standard:standard, score:Math.round(score*100)/100});
     });
+    breakdownRows.sort(function(a,b){ return a.pattern.localeCompare(b.pattern) || b.score-a.score; });
+    fillTableReadonly('strengthBreakdownTable', breakdownRows, function(r){
+      return [r.pattern, r.lift, r.e1rm+' lb',
+        r.ratio!=null ? (Math.round(r.ratio*100)/100)+'x' : '—',
+        r.standard+'x',
+        bwLatest ? r.score : '—'];
+    });
+
     var patterns = Object.keys(byPattern).map(function(p){
       var vals=byPattern[p];
       var avg = vals.reduce(function(a,b){return a+b;},0)/vals.length;
@@ -668,9 +818,10 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   function renderMovementProfile(){
     var input = document.getElementById('mvSelect');
     if(mvSelected===null){
-      var known = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
-      var loggedNames = {}; cache.lifts.forEach(function(l){ loggedNames[l.lift]=true; });
-      mvSelected = known.find(function(n){ return loggedNames[n]; }) || known[0] || null;
+      var known = Array.prototype.map.call(document.getElementById('allMovementsDatalist').options, function(o){ return o.value; });
+      var loggedLift = {}; cache.lifts.forEach(function(l){ loggedLift[l.lift]=true; });
+      var loggedCond = {}; cache.conditioning.forEach(function(c){ loggedCond[c.movement]=true; });
+      mvSelected = known.find(function(n){ return loggedLift[n]||loggedCond[n]; }) || known[0] || null;
       if(mvSelected) input.value = mvSelected;
     }
     var name = mvSelected;
@@ -682,25 +833,55 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       d.innerHTML='<div class="lbl">'+label+'</div><div class="val">'+val+'</div>';
       card.appendChild(d);
     }
-    tile('Pattern', liftPattern(name));
-    tile('Primary muscles', liftMuscles(name).join(', '));
-    tile('Fiber type emphasis', liftFiber(name));
 
-    var rows = cache.lifts.filter(function(l){ return l.lift===name; }).sort(function(a,b){ return a.entry_date<b.entry_date?-1:1; });
-    tile('Entries logged', rows.length);
+    var liftRows = cache.lifts.filter(function(l){ return l.lift===name; });
+    var condRows = cache.conditioning.filter(function(c){ return c.movement===name; });
+    var isConditioning = condRows.length>0 && liftRows.length===0;
+    var thead = document.getElementById('mvTable').querySelector('thead tr');
 
-    var ctx5=document.getElementById('mvChart').getContext('2d');
-    if(mvChartRef) mvChartRef.destroy();
-    mvChartRef=new Chart(ctx5,{type:'line',data:{
-      labels:rows.map(function(r){return fmtDate(r.entry_date);}),
-      datasets:[{label:name+' load (lb)',data:rows.map(function(r){return r.load_lb;}),
-        borderColor:'#e0a458',backgroundColor:'rgba(224,164,88,.08)',fill:true,spanGaps:true,tension:.2,pointRadius:2}]
-    },options:chartOpts()});
+    if(isConditioning){
+      var rows = condRows.slice().sort(function(a,b){ return a.entry_date<b.entry_date?-1:1; });
+      tile('Pattern', 'Conditioning (cardio)');
+      tile('Primary muscles', 'Full-body / cardiovascular — varies by movement');
+      tile('Fiber type emphasis', 'Slow-twitch (Type I) leaning — sustained aerobic effort; sprint-pace work shifts this toward fast-twitch');
+      tile('Entries logged', rows.length);
 
-    fillTableReadonly('mvTable', rows.slice().reverse(), function(r){
-      var e1rm = Math.round(r.load_lb*(1+r.reps/30)*10)/10;
-      return [fmtDate(r.entry_date), r.load_lb+'&times;'+r.reps, r.rpe!=null?r.rpe:'—', e1rm];
-    });
+      var paced = rows.filter(function(r){ return r.distance_m!=null && r.duration_seconds!=null; });
+      var ctx5=document.getElementById('mvChart').getContext('2d');
+      if(mvChartRef) mvChartRef.destroy();
+      mvChartRef=new Chart(ctx5,{type:'line',data:{
+        labels:paced.map(function(r){return fmtDate(r.entry_date);}),
+        datasets:[{label:name+' pace (sec/km, lower = faster)',data:paced.map(function(r){return r.duration_seconds/(Number(r.distance_m)/1000);}),
+          borderColor:'#7fae6e',backgroundColor:'rgba(127,174,110,.08)',fill:true,spanGaps:true,tension:.2,pointRadius:2}]
+      },options:chartOpts()});
+
+      thead.innerHTML='<th>Date</th><th>Distance</th><th>Duration</th><th>Pace</th><th>Notes</th>';
+      fillTableReadonly('mvTable', rows.slice().reverse(), function(r){
+        var dist = r.distance_m!=null ? fmtDistance(Number(r.distance_m)) : '—';
+        var pace = (r.distance_m!=null && r.duration_seconds!=null) ? fmtDuration(r.duration_seconds/(Number(r.distance_m)/1000))+'/km' : '—';
+        return [fmtDate(r.entry_date), dist, fmtDuration(r.duration_seconds), pace, r.notes||'—'];
+      });
+    } else {
+      var rows = liftRows.slice().sort(function(a,b){ return a.entry_date<b.entry_date?-1:1; });
+      tile('Pattern', liftPattern(name));
+      tile('Primary muscles', liftMuscles(name).join(', '));
+      tile('Fiber type emphasis', liftFiber(name));
+      tile('Entries logged', rows.length);
+
+      var ctx5=document.getElementById('mvChart').getContext('2d');
+      if(mvChartRef) mvChartRef.destroy();
+      mvChartRef=new Chart(ctx5,{type:'line',data:{
+        labels:rows.map(function(r){return fmtDate(r.entry_date);}),
+        datasets:[{label:name+' load (lb)',data:rows.map(function(r){return r.load_lb;}),
+          borderColor:'#e0a458',backgroundColor:'rgba(224,164,88,.08)',fill:true,spanGaps:true,tension:.2,pointRadius:2}]
+      },options:chartOpts()});
+
+      thead.innerHTML='<th>Date</th><th>Load&times;Reps</th><th>RPE</th><th>e1RM</th>';
+      fillTableReadonly('mvTable', rows.slice().reverse(), function(r){
+        var e1rm = Math.round(r.load_lb*(1+r.reps/30)*10)/10;
+        return [fmtDate(r.entry_date), r.load_lb+'&times;'+r.reps, r.rpe!=null?r.rpe:'—', e1rm];
+      });
+    }
   }
 
   function fillTableReadonly(tableId, rows, mapper){
@@ -797,6 +978,25 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }catch(e){ toast('Could not update: '+e.message); }
   }
 
+  function growMovementDatalists(){
+    var cdList = document.getElementById('conditioningNamesDatalist');
+    var known = new Set(Array.prototype.map.call(cdList.options, function(o){ return o.value; }));
+    var names = {}; cache.conditioning.forEach(function(c){ names[c.movement]=true; });
+    Object.keys(names).forEach(function(n){
+      if(known.has(n)) return;
+      known.add(n);
+      var o=document.createElement('option'); o.value=n; cdList.appendChild(o);
+    });
+
+    var allList = document.getElementById('allMovementsDatalist');
+    allList.innerHTML='';
+    var liftNames = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
+    var condNames = Array.prototype.map.call(cdList.options, function(o){ return o.value; });
+    liftNames.concat(condNames).forEach(function(n){
+      var o=document.createElement('option'); o.value=n; allList.appendChild(o);
+    });
+  }
+
   function renderTables(){
     fillTable('bwTable', cache.bodyweight.slice().reverse(), function(x){
       return [fmtDate(x.entry_date), x.weight_lb+' lb', x.body_fat_pct!=null?x.body_fat_pct+'%':'—'];
@@ -815,6 +1015,17 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       var v=function(f){ return x[f]!=null? x[f] : '—'; };
       return [fmtDate(x.entry_date), v('arm_length'), v('bust'), v('shoulder'), v('length'), v('waist'), v('seat_hips'), v('neck'), v('sleeve'), inseam];
     }, 'measurements');
+    fillTable('cdTable', cache.conditioning.slice().reverse(), function(x){
+      var dist = x.distance_m!=null ? fmtDistance(Number(x.distance_m)) : '—';
+      var dur = fmtDuration(x.duration_seconds);
+      var pace = (x.distance_m!=null && x.duration_seconds!=null) ? fmtDuration(x.duration_seconds/(Number(x.distance_m)/1000))+'/km' : '—';
+      return [fmtDate(x.entry_date), x.movement, dist, dur, pace, x.notes||'—'];
+    }, 'conditioning');
+  }
+
+  function fmtDistance(m){
+    if(m>=1000) return (Math.round(m/10)/100)+' km';
+    return Math.round(m)+' m';
   }
 
   function renderCoachNotes(){
