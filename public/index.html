@@ -93,9 +93,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       <div class="trk-grid" id="statGrid"></div>
       <div class="trk-sec">
         <h2>Weekly training load</h2>
-        <p class="trk-note" style="margin-bottom:8px">ACWR = this week's load ÷ your own trailing 4-week average — 0.8&ndash;1.3 is a sustainable range (standard sports-science heuristic, not a precise measure); below it you're detraining relative to your recent normal, above 1.5 is a real spike. Early in the week this reads low simply because the week isn't over yet — that's expected, not a shortfall.</p>
+        <p class="trk-note" style="margin-bottom:8px">ACWR = this week's tonnage or time ÷ your own trailing 4-week average — 0.8&ndash;1.3 is sustainable (standard S&amp;C heuristic, not precise); above 1.5 is a real spike. Early in the week this reads low simply because the week isn't over — that's expected, not a shortfall. No skill-work tracking exists yet; ask if you want that added as its own log.</p>
         <div class="trk-grid" id="weeklyLoadGrid"></div>
-        <p class="trk-note" id="patternCoverageNote"></p>
+
+        <h3 style="margin:16px 0 8px;font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">By training quality (this week)</h3>
+        <div class="trk-log"><table id="weeklyQualityTable"><thead><tr>
+          <th>Quality</th><th>Sets</th><th>Tonnage</th><th>Avg %1RM</th>
+        </tr></thead><tbody></tbody></table></div>
+
+        <h3 style="margin:16px 0 8px;font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">By movement pattern (this week vs 4-week avg)</h3>
+        <div class="trk-log"><table id="weeklyPatternTable"><thead><tr>
+          <th>Pattern</th><th>Sets (wk)</th><th>Tonnage (wk)</th><th>4wk avg</th><th>ACWR</th>
+        </tr></thead><tbody></tbody></table></div>
       </div>
       <div class="trk-sec">
         <h2>Bodyweight trend</h2>
@@ -592,8 +601,41 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     });
   }
 
+  function mondayOfLocal(d){
+    var dt=new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    var day=dt.getUTCDay();
+    var diff = day===0?-6:1-day;
+    dt.setUTCDate(dt.getUTCDate()+diff);
+    return dt;
+  }
+  function liftQuality(lift, reps){
+    var p = liftPattern(lift);
+    if(p==='Olympic') return 'Power / Explosive';
+    if(reps<=5) return 'Strength';
+    if(reps<=12) return 'Hypertrophy';
+    return 'Muscular Endurance';
+  }
+  function bestE1RMAllTime(name){
+    var best=null;
+    cache.lifts.forEach(function(l){
+      if(l.lift!==name) return;
+      var e=l.load_lb*(1+l.reps/30);
+      if(best===null || e>best) best=e;
+    });
+    return best;
+  }
+
   function renderWeeklyLoad(){
     var wl = cache.summary.weekly_load;
+    var now = new Date();
+    var thisWeekStart = mondayOfLocal(now);
+    var chronicStart = new Date(thisWeekStart); chronicStart.setUTCDate(chronicStart.getUTCDate()-28);
+    function weekBucket(dateStr){
+      var d=new Date(dateStr);
+      var diffDays = Math.floor((thisWeekStart-d)/86400000);
+      return Math.floor(diffDays/7);
+    }
+
     var grid=document.getElementById('weeklyLoadGrid'); grid.innerHTML='';
     function card(label,val,cls){
       var d=document.createElement('div'); d.className='trk-card';
@@ -606,20 +648,63 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       if(r>=0.8 && r<=1.3) return 'green';
       return 'amber';
     }
-    card('Strength sessions', wl.strength.sessions_this_week+' / '+wl.strength.sessions_goal, wl.strength.sessions_this_week>=wl.strength.sessions_goal?'green':'amber');
-    card('Strength ACWR', wl.strength.acwr!=null? wl.strength.acwr : '—', acwrClass(wl.strength.acwr));
-    card('Strength tonnage (wk)', wl.strength.tonnage_this_week_lb+' lb');
-    card('Conditioning sessions', wl.conditioning.sessions_this_week+' / '+wl.conditioning.sessions_goal, wl.conditioning.sessions_this_week>=wl.conditioning.sessions_goal?'green':'amber');
-    card('Conditioning ACWR', wl.conditioning.acwr!=null? wl.conditioning.acwr : '—', acwrClass(wl.conditioning.acwr));
-    card('Conditioning time (wk)', wl.conditioning.minutes_this_week+' min');
+    var metconThisWeek = cache.benchmarks.filter(function(b){ return weekBucket(b.entry_date)===0; });
+    var enduranceThisWeek = cache.conditioning.filter(function(c){ return weekBucket(c.entry_date)===0; });
+    var enduranceMin = enduranceThisWeek.reduce(function(s,c){ return s+(c.duration_seconds? c.duration_seconds/60:0); },0);
 
-    var allPatterns = ['Squat','Hinge','Push Vertical','Push Horizontal','Pull Vertical','Pull Horizontal','Olympic','Accessory'];
-    var trainedPatterns = new Set(wl.lift_names_this_week.map(liftPattern));
-    var untrained = allPatterns.filter(function(p){ return !trainedPatterns.has(p); });
-    var note = document.getElementById('patternCoverageNote');
-    note.textContent = untrained.length
-      ? 'Not hit this week: '+untrained.join(', ')+'.'
-      : 'Every movement pattern got trained this week.';
+    card('Strength sessions', wl.strength.sessions_this_week+' / '+wl.strength.sessions_goal, wl.strength.sessions_this_week>=wl.strength.sessions_goal?'green':'amber');
+    card('Strength ACWR (tonnage)', wl.strength.acwr!=null? wl.strength.acwr : '—', acwrClass(wl.strength.acwr));
+    card('Conditioning sessions', wl.conditioning.sessions_this_week+' / '+wl.conditioning.sessions_goal, wl.conditioning.sessions_this_week>=wl.conditioning.sessions_goal?'green':'amber');
+    card('Conditioning ACWR (time)', wl.conditioning.acwr!=null? wl.conditioning.acwr : '—', acwrClass(wl.conditioning.acwr));
+    card('Metcons this week', metconThisWeek.length);
+    card('Endurance time (wk)', Math.round(enduranceMin)+' min');
+
+    // ---- by training quality ----
+    var qualityBuckets = {
+      'Strength':{sets:0,tonnage:0,pctSum:0,pctCount:0}, 'Hypertrophy':{sets:0,tonnage:0,pctSum:0,pctCount:0},
+      'Power / Explosive':{sets:0,tonnage:0,pctSum:0,pctCount:0}, 'Muscular Endurance':{sets:0,tonnage:0,pctSum:0,pctCount:0}
+    };
+    cache.lifts.forEach(function(l){
+      if(weekBucket(l.entry_date)!==0) return;
+      var q = liftQuality(l.lift, l.reps);
+      qualityBuckets[q].sets++;
+      qualityBuckets[q].tonnage += l.load_lb*l.reps;
+      var best = bestE1RMAllTime(l.lift);
+      if(best){ qualityBuckets[q].pctSum += (l.load_lb/best)*100; qualityBuckets[q].pctCount++; }
+    });
+    var qTbody = document.querySelector('#weeklyQualityTable tbody'); qTbody.innerHTML='';
+    Object.keys(qualityBuckets).forEach(function(q){
+      var b=qualityBuckets[q];
+      var avgPct = b.pctCount? Math.round(b.pctSum/b.pctCount)+'%' : '—';
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td>'+q+'</td><td>'+b.sets+'</td><td>'+Math.round(b.tonnage)+' lb</td><td>'+avgPct+'</td>';
+      qTbody.appendChild(tr);
+    });
+
+    // ---- by movement pattern: this week vs 4-week avg ----
+    var patterns = ['Squat','Hinge','Push Vertical','Push Horizontal','Pull Vertical','Pull Horizontal','Olympic','Accessory'];
+    var tonnageByPatternWeek = {}, setsByPatternWeek = {};
+    patterns.forEach(function(p){ tonnageByPatternWeek[p]=[0,0,0,0,0]; setsByPatternWeek[p]=[0,0,0,0,0]; });
+    cache.lifts.forEach(function(l){
+      var d=new Date(l.entry_date);
+      if(d<chronicStart) return;
+      var wi = weekBucket(l.entry_date);
+      if(wi<0||wi>4) return;
+      var p = liftPattern(l.lift);
+      if(!tonnageByPatternWeek[p]) return;
+      tonnageByPatternWeek[p][wi]+=l.load_lb*l.reps;
+      setsByPatternWeek[p][wi]++;
+    });
+    var pTbody = document.querySelector('#weeklyPatternTable tbody'); pTbody.innerHTML='';
+    patterns.forEach(function(p){
+      var thisWk = tonnageByPatternWeek[p][0];
+      var avg4 = (tonnageByPatternWeek[p][1]+tonnageByPatternWeek[p][2]+tonnageByPatternWeek[p][3]+tonnageByPatternWeek[p][4])/4;
+      var acwr = avg4>0 ? Math.round((thisWk/avg4)*100)/100 : null;
+      var sets = setsByPatternWeek[p][0];
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td'+(sets===0?' style="color:var(--red)"':'')+'>'+p+'</td><td>'+sets+'</td><td>'+Math.round(thisWk)+' lb</td><td>'+Math.round(avg4)+' lb</td><td>'+(acwr!=null?acwr:'—')+'</td>';
+      pTbody.appendChild(tr);
+    });
   }
 
   function renderStats(){
