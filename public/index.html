@@ -89,14 +89,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     <button class="trk-tab on" data-tab="dash">Dashboard</button>
     <button class="trk-tab" data-tab="log">Log</button>
     <button class="trk-tab" data-tab="history">History</button>
-    <button class="trk-tab" data-tab="movements">Movements</button>
+    <button class="trk-tab" data-tab="health">Health</button>
     <button class="trk-tab" data-tab="coach">Coach</button>
   </div>
   <div class="trk-body">
 
     <div class="trk-pane on" data-pane="dash">
-      <div class="trk-phase" id="phaseBar"></div>
-      <div class="trk-grid" id="statGrid"></div>
       <div class="trk-sec">
         <h2>Weekly training load</h2>
         <p class="trk-note" style="margin-bottom:8px">Compared against published sports-science minimums, not your own history: &ge;2 resistance sessions/week hitting all major muscle groups and 150&ndash;300 min/week moderate aerobic activity (WHO 2020 / ACSM guidelines), and &ge;10 sets per muscle group per week for a reliable hypertrophy stimulus (ACSM resistance-training update). No skill-work tracking exists yet; ask if you want that added as its own log.</p>
@@ -130,11 +128,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <th>Pattern</th><th>Sets (wk)</th><th>Tonnage (wk)</th><th>4wk avg</th><th>ACWR</th>
         </tr></thead><tbody></tbody></table></div>
       </div>
-      <div class="trk-sec">
-        <h2>Bodyweight trend</h2>
-        <div class="trk-chart-wrap"><canvas id="bwChart"></canvas></div>
-        <p class="trk-note" id="bwNote"></p>
-      </div>
+      <div class="trk-phase" id="phaseBar"></div>
+      <div class="trk-grid" id="statGrid"></div>
       <div class="trk-sec">
         <h2>Lift trend</h2>
         <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
@@ -143,44 +138,21 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-chart-wrap"><canvas id="liftChart"></canvas></div>
       </div>
       <div class="trk-sec">
-        <h2>Measurement trend</h2>
-        <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
-          <select id="measureChartFilter">
-            <option value="shoulder">Shoulder</option>
-            <option value="waist">Waist</option>
-            <option value="bust">Bust</option>
-            <option value="arm_length">Arm length</option>
-            <option value="shoulder_waist_ratio">Shoulder:waist ratio</option>
-            <option value="seat_hips">Seat/hips</option>
-            <option value="neck">Neck</option>
-            <option value="sleeve">Sleeve</option>
-            <option value="length">Length</option>
-          </select>
-        </div>
-        <div class="trk-chart-wrap"><canvas id="measureChart"></canvas></div>
-      </div>
-      <div class="trk-sec">
         <h2>Strength profile</h2>
-        <p class="trk-note" style="margin-bottom:8px">Best estimated 1RM (Epley) for each benchmark lift, scored against a rough "typical intermediate" ratio for its pattern — 1.0 means about typical, not "strong" in absolute terms. This makes hinge and vertical-pull comparable even though a 2x-bodyweight deadlift and a 2x-bodyweight pull-up aren't the same rarity. Lowest bars are your current weak points relative to what's normal for that pattern. Still rough — the standards are general ballparks, not tailored to you, and patterns are a simplification.</p>
-        <div class="trk-chart-wrap"><canvas id="strengthChart"></canvas></div>
-        <p class="trk-note" id="strengthNote"></p>
+        <p class="trk-note" style="margin-bottom:8px" id="strengthProfileNote"></p>
+        <div class="trk-field" style="margin-bottom:8px"><label>Pattern trend</label>
+          <select id="strengthTrendFilter"></select>
+        </div>
+        <div class="trk-chart-wrap"><canvas id="strengthTrendChart"></canvas></div>
+        <p class="trk-note" style="margin:6px 0 12px">Trend line uses a rolling 2-month window: each point is your best e1RM within the 2 months up to that date, divided by your average bodyweight over that same 2-month window, scored against level standards below — so an old 1RM stops counting once it's more than 2 months stale, and each point uses the bodyweight you actually had at the time, not today's.</p>
+        <div class="trk-grid" id="strengthLevelGrid"></div>
         <div class="trk-log"><table id="strengthBreakdownTable"><thead><tr>
-          <th>Pattern</th><th>Lift</th><th>Best e1RM</th><th>÷ Bodyweight</th><th>÷ Pattern standard</th><th>Score</th>
+          <th>Pattern</th><th>Fiber type</th><th>Lift</th><th>Best e1RM (2mo)</th><th>÷ Bodyweight (2mo avg)</th><th>Level</th><th>Score</th>
         </tr></thead><tbody></tbody></table></div>
       </div>
     </div>
 
     <div class="trk-pane" data-pane="log">
-      <div class="trk-sec">
-        <h2>Bodyweight / body fat</h2>
-        <div class="trk-row">
-          <div class="trk-field"><label>Date</label><input type="date" id="bwDate"></div>
-          <div class="trk-field"><label>Bodyweight (lb)</label><input type="number" step="0.1" id="bwVal" placeholder="164.2"></div>
-          <div class="trk-field"><label>Body fat % (optional)</label><input type="number" step="0.1" id="bfVal" placeholder="11.5"></div>
-        </div>
-        <button class="trk-btn primary" id="bwSubmit">Log entry</button>
-        <div class="trk-err" id="bwErr">Enter a date and a bodyweight.</div>
-      </div>
       <div class="trk-sec">
         <h2>Lift</h2>
         <div class="trk-row">
@@ -190,13 +162,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
             <input type="text" id="liftName" list="liftNamesDatalist" placeholder="Start typing — pick a match or add a new one">
           </div>
         </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Load (lb)</label><input type="number" step="1" id="liftLoad" placeholder="225"></div>
-          <div class="trk-field"><label>Reps</label><input type="number" step="1" id="liftReps" placeholder="5"></div>
-          <div class="trk-field"><label>RPE (optional)</label><input type="number" step="0.5" min="1" max="10" id="liftRpe" placeholder="8"></div>
-        </div>
-        <button class="trk-btn primary" id="liftSubmit">Log entry</button>
-        <div class="trk-err" id="liftErr">Enter a date, lift name, load and reps.</div>
+        <div id="liftHistoryPreview"></div>
+        <div id="liftSetRows"></div>
+        <button class="trk-btn" id="liftAddSet" type="button">+ Add another set</button>
+        <button class="trk-btn primary" id="liftSubmit" style="margin-left:8px">Log set(s)</button>
+        <div class="trk-err" id="liftErr">Enter a date, lift name, and load/reps for at least one set.</div>
       </div>
       <div class="trk-sec">
         <h2>Benchmark</h2>
@@ -213,31 +183,6 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         </div>
         <button class="trk-btn primary" id="bmSubmit">Log entry</button>
         <div class="trk-err" id="bmErr">Enter a date and a result.</div>
-      </div>
-      <div class="trk-sec">
-        <h2>Clothing measurements</h2>
-        <p class="trk-note" style="margin-bottom:10px">All in inches. Leave any field blank to skip it — only the date and one measurement are required.</p>
-        <div class="trk-row">
-          <div class="trk-field"><label>Date</label><input type="date" id="mDate"></div>
-          <div class="trk-field"><label>Arm length</label><input type="number" step="0.1" id="mArmLength" placeholder="22"></div>
-          <div class="trk-field"><label>Bust</label><input type="number" step="0.1" id="mBust" placeholder="37"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Shoulder</label><input type="number" step="0.1" id="mShoulder" placeholder="18"></div>
-          <div class="trk-field"><label>Length</label><input type="number" step="0.1" id="mLength" placeholder="23"></div>
-          <div class="trk-field"><label>Waist</label><input type="number" step="0.1" id="mWaist" placeholder="29.5"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Seat/hips</label><input type="number" step="0.1" id="mSeatHips" placeholder="34"></div>
-          <div class="trk-field"><label>Neck</label><input type="number" step="0.1" id="mNeck" placeholder="13.5"></div>
-          <div class="trk-field"><label>Sleeve</label><input type="number" step="0.1" id="mSleeve" placeholder="32"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Inseam low</label><input type="number" step="0.1" id="mInseamLow" placeholder="29"></div>
-          <div class="trk-field"><label>Inseam high</label><input type="number" step="0.1" id="mInseamHigh" placeholder="30"></div>
-        </div>
-        <button class="trk-btn primary" id="mSubmit">Log entry</button>
-        <div class="trk-err" id="mErr">Enter a date and at least one measurement.</div>
       </div>
       <div class="trk-sec">
         <h2>Conditioning</h2>
@@ -294,9 +239,6 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     </div>
 
     <div class="trk-pane" data-pane="history">
-      <div class="trk-sec"><h2>Bodyweight log</h2>
-        <div class="trk-log"><table id="bwTable"><thead><tr><th>Date</th><th>Weight</th><th>BF%</th><th></th></tr></thead><tbody></tbody></table></div>
-      </div>
       <div class="trk-sec"><h2>Lift log</h2>
         <div class="trk-field" style="margin-bottom:8px"><label>Filter</label>
           <select id="liftLogFilter"><option value="__all__">All lifts</option></select>
@@ -329,19 +271,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       <div class="trk-sec"><h2>Benchmark log</h2>
         <div class="trk-log"><table id="bmTable"><thead><tr><th>Date</th><th>Benchmark</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
-      <div class="trk-sec"><h2>Measurements log</h2>
-        <div class="trk-log"><table id="mTable"><thead><tr>
-          <th>Date</th><th>Arm</th><th>Bust</th><th>Shoulder</th><th>Length</th><th>Waist</th><th>Seat/hips</th><th>Neck</th><th>Sleeve</th><th>Inseam</th><th></th>
-        </tr></thead><tbody></tbody></table></div>
-      </div>
       <div class="trk-sec"><h2>Conditioning log</h2>
         <div class="trk-log"><table id="cdTable"><thead><tr>
           <th>Date</th><th>Movement</th><th>Distance</th><th>Duration</th><th>Pace</th><th>Notes</th><th></th>
         </tr></thead><tbody></tbody></table></div>
       </div>
-    </div>
-
-    <div class="trk-pane" data-pane="movements">
       <div class="trk-sec">
         <h2>Movement profile</h2>
         <div class="trk-field" style="margin-bottom:12px"><label>Movement</label>
@@ -349,13 +283,76 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <datalist id="allMovementsDatalist"></datalist>
         </div>
         <div id="mvCard" class="trk-grid"></div>
+        <div class="trk-chart-wrap" style="margin-top:12px"><canvas id="mvChart"></canvas></div>
+        <div class="trk-log" style="margin-top:12px"><table id="mvTable"><thead><tr><th>Date</th><th>Load&times;Reps</th><th>RPE</th><th>e1RM</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="trk-pane" data-pane="health">
+      <div class="trk-sec">
+        <h2>Bodyweight / body fat</h2>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="bwDate"></div>
+          <div class="trk-field"><label>Bodyweight (lb)</label><input type="number" step="0.1" id="bwVal" placeholder="164.2"></div>
+          <div class="trk-field"><label>Body fat % (optional)</label><input type="number" step="0.1" id="bfVal" placeholder="11.5"></div>
+        </div>
+        <button class="trk-btn primary" id="bwSubmit">Log entry</button>
+        <div class="trk-err" id="bwErr">Enter a date and a bodyweight.</div>
       </div>
       <div class="trk-sec">
-        <h2>History</h2>
-        <div class="trk-chart-wrap"><canvas id="mvChart"></canvas></div>
+        <h2>Bodyweight trend</h2>
+        <div class="trk-chart-wrap"><canvas id="bwChart"></canvas></div>
+        <p class="trk-note" id="bwNote"></p>
+      </div>
+      <div class="trk-sec"><h2>Bodyweight log</h2>
+        <div class="trk-log"><table id="bwTable"><thead><tr><th>Date</th><th>Weight</th><th>BF%</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="trk-sec">
-        <div class="trk-log"><table id="mvTable"><thead><tr><th>Date</th><th>Load&times;Reps</th><th>RPE</th><th>e1RM</th></tr></thead><tbody></tbody></table></div>
+        <h2>Clothing measurements</h2>
+        <p class="trk-note" style="margin-bottom:10px">All in inches. Leave any field blank to skip it — only the date and one measurement are required.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="mDate"></div>
+          <div class="trk-field"><label>Arm length</label><input type="number" step="0.1" id="mArmLength" placeholder="22"></div>
+          <div class="trk-field"><label>Bust</label><input type="number" step="0.1" id="mBust" placeholder="37"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Shoulder</label><input type="number" step="0.1" id="mShoulder" placeholder="18"></div>
+          <div class="trk-field"><label>Length</label><input type="number" step="0.1" id="mLength" placeholder="23"></div>
+          <div class="trk-field"><label>Waist</label><input type="number" step="0.1" id="mWaist" placeholder="29.5"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Seat/hips</label><input type="number" step="0.1" id="mSeatHips" placeholder="34"></div>
+          <div class="trk-field"><label>Neck</label><input type="number" step="0.1" id="mNeck" placeholder="13.5"></div>
+          <div class="trk-field"><label>Sleeve</label><input type="number" step="0.1" id="mSleeve" placeholder="32"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Inseam low</label><input type="number" step="0.1" id="mInseamLow" placeholder="29"></div>
+          <div class="trk-field"><label>Inseam high</label><input type="number" step="0.1" id="mInseamHigh" placeholder="30"></div>
+        </div>
+        <button class="trk-btn primary" id="mSubmit">Log entry</button>
+        <div class="trk-err" id="mErr">Enter a date and at least one measurement.</div>
+      </div>
+      <div class="trk-sec">
+        <h2>Measurement trend</h2>
+        <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
+          <select id="measureChartFilter">
+            <option value="shoulder">Shoulder</option>
+            <option value="waist">Waist</option>
+            <option value="bust">Bust</option>
+            <option value="arm_length">Arm length</option>
+            <option value="shoulder_waist_ratio">Shoulder:waist ratio</option>
+            <option value="seat_hips">Seat/hips</option>
+            <option value="neck">Neck</option>
+            <option value="sleeve">Sleeve</option>
+            <option value="length">Length</option>
+          </select>
+        </div>
+        <div class="trk-chart-wrap"><canvas id="measureChart"></canvas></div>
+      </div>
+      <div class="trk-sec"><h2>Measurements log</h2>
+        <div class="trk-log"><table id="mTable"><thead><tr>
+          <th>Date</th><th>Arm</th><th>Bust</th><th>Shoulder</th><th>Length</th><th>Waist</th><th>Seat/hips</th><th>Neck</th><th>Sleeve</th><th>Inseam</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
       </div>
     </div>
 
@@ -457,17 +454,59 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     return typed;
   }
 
+  // ---- multi-set lift entry ----
+  var setRowSeq = 0;
+  function addSetRow(){
+    setRowSeq++;
+    var id = setRowSeq;
+    var wrap = document.createElement('div');
+    wrap.className = 'trk-row'; wrap.dataset.setRow = id;
+    wrap.innerHTML =
+      '<div class="trk-field"><label>Load (lb)</label><input type="number" step="1" class="set-load" placeholder="225"></div>'+
+      '<div class="trk-field"><label>Reps</label><input type="number" step="1" class="set-reps" placeholder="5"></div>'+
+      '<div class="trk-field"><label>RPE (optional)</label><input type="number" step="0.5" min="1" max="10" class="set-rpe" placeholder="8"></div>'+
+      '<button class="trk-btn set-remove" type="button" style="align-self:flex-end">&times;</button>';
+    document.getElementById('liftSetRows').appendChild(wrap);
+    wrap.querySelector('.set-remove').addEventListener('click', function(){
+      if(document.getElementById('liftSetRows').children.length>1) wrap.remove();
+    });
+  }
+  document.getElementById('liftAddSet').addEventListener('click', addSetRow);
+  addSetRow(); // start with one row
+
+  function renderLiftHistoryPreview(){
+    var typed = resolveLiftName(document.getElementById('liftName').value.trim());
+    var box = document.getElementById('liftHistoryPreview');
+    if(!typed){ box.innerHTML=''; return; }
+    var rows = cache.lifts.filter(function(l){ return l.lift===typed; }).slice().sort(function(a,b){ return a.entry_date<b.entry_date?1:-1; }).slice(0,6);
+    if(!rows.length){ box.innerHTML='<p class="trk-note" style="margin:8px 0">No history yet for "'+typed+'".</p>'; return; }
+    var html = '<p class="trk-note" style="margin:8px 0 4px">Recent history for '+typed+':</p><div class="trk-log" style="max-height:150px"><table><tbody>';
+    rows.forEach(function(r){
+      html += '<tr><td>'+fmtDate(r.entry_date)+'</td><td>'+r.load_lb+'&times;'+r.reps+'</td><td>'+(r.rpe!=null?'RPE '+r.rpe:'')+'</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    box.innerHTML = html;
+  }
+  document.getElementById('liftName').addEventListener('input', renderLiftHistoryPreview);
+  document.getElementById('liftName').addEventListener('change', renderLiftHistoryPreview);
+
   document.getElementById('liftSubmit').addEventListener('click', async function(){
     var d=document.getElementById('liftDate').value, name=resolveLiftName(document.getElementById('liftName').value.trim());
-    var load_=parseFloat(document.getElementById('liftLoad').value), reps=parseInt(document.getElementById('liftReps').value,10);
-    var rpe=document.getElementById('liftRpe').value; rpe = rpe? parseFloat(rpe): null;
     var err=document.getElementById('liftErr');
-    if(!d || !name || isNaN(load_) || isNaN(reps)){ err.style.display='block'; return; }
+    var setRows = Array.prototype.slice.call(document.getElementById('liftSetRows').children);
+    var sets = setRows.map(function(row){
+      var load_=parseFloat(row.querySelector('.set-load').value), reps=parseInt(row.querySelector('.set-reps').value,10);
+      var rpe=row.querySelector('.set-rpe').value; rpe = rpe? parseFloat(rpe): null;
+      return {row:row, load_:load_, reps:reps, rpe:rpe};
+    }).filter(function(s){ return !isNaN(s.load_) && !isNaN(s.reps); });
+    if(!d || !name || !sets.length){ err.style.display='block'; return; }
     err.style.display='none';
     try{
-      await api('POST','/lifts',{entry_date:d, lift:name, load_lb:load_, reps:reps, rpe:rpe});
-      document.getElementById('liftLoad').value=''; document.getElementById('liftReps').value=''; document.getElementById('liftRpe').value='';
-      await refresh(); toast('Logged');
+      for(var i=0;i<sets.length;i++){
+        await api('POST','/lifts',{entry_date:d, lift:name, load_lb:sets[i].load_, reps:sets[i].reps, rpe:sets[i].rpe});
+      }
+      document.getElementById('liftSetRows').innerHTML=''; addSetRow();
+      await refresh(); toast(sets.length+' set'+(sets.length===1?'':'s')+' logged');
     }catch(e){ toast('Could not save: '+e.message); }
   });
 
@@ -572,7 +611,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   }
 
   // ---- state + rendering ----
-  var bwChartRef, liftChartRef, measureChartRef, strengthChartRef;
+  var bwChartRef, liftChartRef, measureChartRef, strengthTrendChartRef;
   var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[] };
 
   (function populateLiftFilters(){
@@ -587,6 +626,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     logSel.addEventListener('change', renderTables);
   })();
   document.getElementById('measureChartFilter').addEventListener('change', renderMeasureChart);
+  document.getElementById('strengthTrendFilter').addEventListener('change', renderStrengthTrendChart);
 
   async function renameLift(from, to){
     to = (to||'').trim();
@@ -608,7 +648,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   function render(){
     renderPhaseBar(); renderStats(); renderWeeklyLoad(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile();
-    growMovementDatalists(); renderMovementProfile();
+    growMovementDatalists(); renderMovementProfile(); renderLiftHistoryPreview();
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
     document.getElementById('wgStrength').value = cache.profile.weekly_strength_sessions_goal;
     document.getElementById('wgConditioning').value = cache.profile.weekly_conditioning_sessions_goal;
@@ -850,69 +890,175 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     return 'Uncategorized';
   }
 
-  // Rough "intermediate lifter" e1RM-to-bodyweight multiples per pattern —
-  // general strength-standard ballparks, not derived from your data or
-  // tailored to you. Used only so patterns compare on the same scale:
-  // a score of 1.0 means "about typical for an intermediate lifter in
-  // that pattern," not "typical strength" in some absolute sense.
-  // Pull Vertical assumes load_lb on weighted pull-ups is ADDED weight
-  // only (not bodyweight+added) — flag this if that's not how you log it.
-  var PATTERN_STANDARD = {
-    'Squat':1.5, 'Hinge':1.75, 'Push Vertical':0.7, 'Push Horizontal':1.15,
-    'Pull Vertical':0.25, 'Pull Horizontal':1.0, 'Olympic':0.85, 'Accessory':0.3,
-    'Uncategorized':1.0
+  // Bodyweight-ratio strength standards (male, 5 tiers), synthesized from
+  // several independently published strength-standard tables as a
+  // good-faith approximation — not any single site's exact proprietary
+  // dataset (that data isn't something this app can legitimately
+  // reproduce wholesale). Cross-check strengthlevel.com directly if you
+  // want the authoritative numbers. [beginner, novice, intermediate,
+  // advanced, elite] as multiples of bodyweight.
+  var STRENGTH_STANDARDS = {
+    'Back Squat':[0.75,1.1,1.55,2.1,2.6], 'Front Squat':[0.60,0.9,1.25,1.7,2.1],
+    'Box Squat':[0.70,1.0,1.4,1.9,2.4], 'Overhead Squat':[0.45,0.65,0.9,1.2,1.5],
+    'Bench Press':[0.5,0.8,1.15,1.55,1.95],
+    'Deadlift':[1.0,1.4,1.9,2.45,3.0], 'Sumo Deadlift':[1.0,1.4,1.9,2.45,3.0], 'Romanian Deadlift':[0.75,1.05,1.4,1.8,2.2],
+    'Strict Press':[0.35,0.5,0.75,1.0,1.3], 'Shoulder Press':[0.35,0.5,0.75,1.0,1.3],
+    'Seated Press':[0.3,0.45,0.65,0.9,1.15], 'Push Press':[0.45,0.65,0.98,1.3,1.7],
+    'Bent Over Row':[0.5,0.75,1.0,1.4,1.75],
+    'Strict Pull-Ups':[0,0.1,0.25,0.45,0.7], 'Weighted Pull-Up':[0,0.1,0.25,0.45,0.7],
+    'Clean & Jerk':[0.5,0.75,1.25,1.6,2.0], 'Clean':[0.53,0.79,1.31,1.68,2.1], 'Power Clean':[0.45,0.67,1.11,1.43,1.79],
+    'Snatch':[0.39,0.59,0.98,1.25,1.56], 'Power Snatch':[0.33,0.50,0.83,1.06,1.33], 'Split Jerk':[0.53,0.79,1.31,1.68,2.1]
   };
+  var PATTERN_STANDARD_FALLBACK = {
+    'Squat':'Back Squat','Hinge':'Deadlift','Push Vertical':'Strict Press','Push Horizontal':'Bench Press',
+    'Pull Vertical':'Weighted Pull-Up','Pull Horizontal':'Bent Over Row','Olympic':'Clean & Jerk'
+  };
+  function standardsFor(liftName){
+    if(STRENGTH_STANDARDS[liftName]) return STRENGTH_STANDARDS[liftName];
+    var fb = PATTERN_STANDARD_FALLBACK[liftPattern(liftName)];
+    return fb ? STRENGTH_STANDARDS[fb] : null;
+  }
+  function levelScore(ratio, tiers){
+    var vals=[0,tiers[0],tiers[1],tiers[2],tiers[3],tiers[4]], pts=[0,20,40,60,80,100];
+    if(ratio>=vals[5]){
+      var slope=(pts[5]-pts[4])/(vals[5]-vals[4] || 1);
+      return Math.round(100 + (ratio-vals[5])*slope);
+    }
+    for(var i=1;i<=5;i++){
+      if(ratio<=vals[i]){
+        var frac = (vals[i]===vals[i-1]) ? 1 : (ratio-vals[i-1])/(vals[i]-vals[i-1]);
+        return Math.round(pts[i-1] + frac*(pts[i]-pts[i-1]));
+      }
+    }
+    return 100;
+  }
+  function levelLabel(score){
+    if(score<20) return 'Below beginner';
+    if(score<40) return 'Beginner';
+    if(score<60) return 'Novice';
+    if(score<80) return 'Intermediate';
+    if(score<100) return 'Advanced';
+    return 'Elite';
+  }
+  function windowedBestE1RM(liftName, windowStart, windowEnd){
+    var best=null;
+    cache.lifts.forEach(function(l){
+      if(l.lift!==liftName) return;
+      var d=new Date(l.entry_date);
+      if(d<windowStart || d>windowEnd) return;
+      var e=l.load_lb*(1+l.reps/30);
+      if(best===null||e>best) best=e;
+    });
+    return best;
+  }
+  function windowedAvgBodyweight(windowStart, windowEnd){
+    var vals=[];
+    cache.bodyweight.forEach(function(b){
+      var d=new Date(b.entry_date);
+      if(d>=windowStart && d<=windowEnd) vals.push(Number(b.weight_lb));
+    });
+    if(!vals.length) return null;
+    return vals.reduce(function(a,b){return a+b;},0)/vals.length;
+  }
 
   function renderStrengthProfile(){
-    var bwLatest = cache.bodyweight.length ? Number(cache.bodyweight[cache.bodyweight.length-1].weight_lb) : null;
-    var note = document.getElementById('strengthNote');
-    note.textContent = bwLatest ? '' : 'Log a bodyweight entry to see this normalized.';
+    var now = new Date();
+    var windowStart = new Date(now); windowStart.setUTCDate(windowStart.getUTCDate()-60);
+    var avgBW = windowedAvgBodyweight(windowStart, now);
+    if(avgBW===null && cache.bodyweight.length){ avgBW = Number(cache.bodyweight[cache.bodyweight.length-1].weight_lb); }
+    var note = document.getElementById('strengthProfileNote');
+    note.textContent = avgBW!=null
+      ? 'Scored against published bodyweight-ratio strength standards (synthesized from several public sources, not one site\'s exact database — cross-check strengthlevel.com for authoritative numbers). Uses your average bodyweight over the last 2 months ('+Math.round(avgBW)+' lb) and only e1RMs logged within that same window, so an old max outside the window doesn\'t count. Accessory/isolation lifts are excluded — there isn\'t meaningful bodyweight-ratio literature for those.'
+      : 'Log a bodyweight entry to see this scored.';
 
     var benchSet = new Set(cache.benchmarkLifts);
-    var byPattern = {};
-    var bestByLift = {};
-    cache.lifts.forEach(function(l){
-      if(!benchSet.has(l.lift)) return;
-      var e1rm = l.load_lb * (1 + l.reps/30);
-      if(!bestByLift[l.lift] || e1rm > bestByLift[l.lift]) bestByLift[l.lift] = e1rm;
-    });
     var breakdownRows = [];
-    Object.keys(bestByLift).forEach(function(lift){
+    var byPattern = {};
+    benchSet.forEach(function(lift){
       var p = liftPattern(lift);
-      var e1rm = bestByLift[lift];
-      var ratio = bwLatest ? e1rm/bwLatest : null;
-      var standard = PATTERN_STANDARD[p] || 1.0;
-      var score = bwLatest ? ratio/standard : e1rm;
+      if(p==='Accessory' || p==='Uncategorized') return;
+      var tiers = standardsFor(lift);
+      if(!tiers) return;
+      var e1rm = windowedBestE1RM(lift, windowStart, now);
+      if(e1rm===null) return;
+      var ratio = avgBW ? e1rm/avgBW : null;
+      var score = (ratio!=null) ? levelScore(ratio, tiers) : null;
       if(!byPattern[p]) byPattern[p]=[];
-      byPattern[p].push(score);
-      breakdownRows.push({pattern:p, lift:lift, e1rm:Math.round(e1rm*10)/10, ratio:ratio, standard:standard, score:Math.round(score*100)/100});
+      if(score!=null) byPattern[p].push(score);
+      breakdownRows.push({pattern:p, fiber:liftFiber(lift), lift:lift, e1rm:Math.round(e1rm*10)/10,
+        ratio:ratio, score:score, level: score!=null?levelLabel(score):'—'});
     });
-    breakdownRows.sort(function(a,b){ return a.pattern.localeCompare(b.pattern) || b.score-a.score; });
+    breakdownRows.sort(function(a,b){ return a.pattern.localeCompare(b.pattern) || (b.score||0)-(a.score||0); });
     fillTableReadonly('strengthBreakdownTable', breakdownRows, function(r){
-      return [r.pattern, r.lift, r.e1rm+' lb',
-        r.ratio!=null ? (Math.round(r.ratio*100)/100)+'x' : '—',
-        r.standard+'x',
-        bwLatest ? r.score : '—'];
+      return [r.pattern, r.fiber, r.lift, r.e1rm+' lb',
+        r.ratio!=null?(Math.round(r.ratio*100)/100)+'x':'—', r.level, r.score!=null?r.score:'—'];
     });
 
-    var patterns = Object.keys(byPattern).map(function(p){
+    var grid=document.getElementById('strengthLevelGrid'); grid.innerHTML='';
+    var patternNames = Object.keys(byPattern).sort(function(a,b){
+      var avgA=byPattern[a].reduce(function(s,v){return s+v;},0)/byPattern[a].length;
+      var avgB=byPattern[b].reduce(function(s,v){return s+v;},0)/byPattern[b].length;
+      return avgA-avgB;
+    });
+    patternNames.forEach(function(p){
       var vals=byPattern[p];
-      var avg = vals.reduce(function(a,b){return a+b;},0)/vals.length;
-      return {pattern:p, score:Math.round(avg*100)/100};
-    }).sort(function(a,b){ return a.score-b.score; });
+      var avg=Math.round(vals.reduce(function(s,v){return s+v;},0)/vals.length);
+      var cls = avg>=60?'green':avg>=40?'amber':'red';
+      var d=document.createElement('div'); d.className='trk-card';
+      d.innerHTML='<div class="lbl">'+p+'</div><div class="val '+cls+'">'+levelLabel(avg)+' ('+avg+')</div>';
+      grid.appendChild(d);
+    });
 
-    var ctx4=document.getElementById('strengthChart').getContext('2d');
-    if(strengthChartRef) strengthChartRef.destroy();
-    if(!patterns.length){
-      strengthChartRef=new Chart(ctx4,{type:'bar',data:{labels:[],datasets:[]},options:chartOpts()});
+    var trendSel = document.getElementById('strengthTrendFilter');
+    var existingVals = Array.prototype.map.call(trendSel.options, function(o){return o.value;});
+    patternNames.forEach(function(p){
+      if(existingVals.indexOf(p)===-1){
+        var o=document.createElement('option'); o.value=p; o.textContent=p; trendSel.appendChild(o);
+      }
+    });
+    if(!trendSel.value && patternNames.length) trendSel.value = patternNames[0];
+
+    renderStrengthTrendChart();
+  }
+
+  function renderStrengthTrendChart(){
+    var trendSel = document.getElementById('strengthTrendFilter');
+    var pattern = trendSel.value;
+    var ctx = document.getElementById('strengthTrendChart').getContext('2d');
+    if(strengthTrendChartRef) strengthTrendChartRef.destroy();
+    if(!pattern){
+      strengthTrendChartRef=new Chart(ctx,{type:'line',data:{labels:[],datasets:[]},options:chartOpts()});
       return;
     }
-    strengthChartRef=new Chart(ctx4,{type:'bar',
-      data:{labels:patterns.map(function(p){return p.pattern;}),
-        datasets:[{label: bwLatest?'Relative to typical intermediate (1.0 = typical)':'Best e1RM (lb)', data:patterns.map(function(p){return p.score;}),
-          backgroundColor: patterns.map(function(p,i){ return i===0?'#c9615a': i===patterns.length-1?'#7fae6e':'#e0a458'; })}]},
-      options:Object.assign({indexAxis:'y'}, chartOpts())
-    });
+    var benchSet = new Set(cache.benchmarkLifts);
+    var liftsInPattern = Array.from(benchSet).filter(function(l){ return liftPattern(l)===pattern && standardsFor(l); });
+    var relevantDates = cache.lifts.filter(function(l){ return liftsInPattern.indexOf(l.lift)!==-1; }).map(function(l){ return new Date(l.entry_date); });
+    if(!relevantDates.length){
+      strengthTrendChartRef=new Chart(ctx,{type:'line',data:{labels:[],datasets:[]},options:chartOpts()});
+      return;
+    }
+    var earliest = new Date(Math.min.apply(null, relevantDates));
+    var now = new Date();
+    var points=[];
+    var cursor = new Date(earliest);
+    while(cursor<=now){
+      var wStart = new Date(cursor); wStart.setUTCDate(wStart.getUTCDate()-60);
+      var avgBW = windowedAvgBodyweight(wStart, cursor);
+      if(avgBW!=null){
+        var scores=[];
+        liftsInPattern.forEach(function(lift){
+          var e1rm = windowedBestE1RM(lift, wStart, cursor);
+          if(e1rm!=null){ scores.push(levelScore(e1rm/avgBW, standardsFor(lift))); }
+        });
+        if(scores.length){ points.push({x:new Date(cursor), y:Math.round(scores.reduce(function(a,b){return a+b;},0)/scores.length)}); }
+      }
+      cursor.setUTCDate(cursor.getUTCDate()+7);
+    }
+    strengthTrendChartRef=new Chart(ctx,{type:'line',data:{
+      labels:points.map(function(p){return fmtDate(p.x.toISOString());}),
+      datasets:[{label:pattern+' score (2mo rolling)',data:points.map(function(p){return p.y;}),
+        borderColor:'#e0a458',backgroundColor:'rgba(224,164,88,.08)',fill:true,spanGaps:true,tension:.2,pointRadius:2}]
+    },options:chartOpts()});
   }
 
   // Primary muscles and fiber-type emphasis per pattern, with a few
