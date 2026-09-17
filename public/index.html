@@ -36,6 +36,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .trk-card .val.amber{color:var(--amber)}
 .trk-card .val.green{color:var(--green)}
 .trk-card .val.red{color:var(--red)}
+.trk-progress-label{display:flex;justify-content:space-between;font-size:12px;color:var(--ink2);margin-bottom:6px}
+.trk-progress-bar{background:var(--panel2);border-radius:7px;height:16px;overflow:hidden;border:1px solid var(--line)}
+.trk-progress-fill{height:100%;transition:width .3s;border-radius:6px 0 0 6px}
+.trk-subbar-row{margin-top:10px}
+.trk-subbar-row .trk-progress-label{font-size:11px;margin-bottom:3px}
+.trk-subbar-row .trk-progress-bar{height:8px}
 .trk-sec{margin-bottom:20px}
 .trk-sec h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink2);
   font-weight:500;margin:0 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line)}
@@ -93,7 +99,25 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       <div class="trk-grid" id="statGrid"></div>
       <div class="trk-sec">
         <h2>Weekly training load</h2>
-        <p class="trk-note" style="margin-bottom:8px">ACWR = this week's tonnage or time ÷ your own trailing 4-week average — 0.8&ndash;1.3 is sustainable (standard S&amp;C heuristic, not precise); above 1.5 is a real spike. Early in the week this reads low simply because the week isn't over — that's expected, not a shortfall. No skill-work tracking exists yet; ask if you want that added as its own log.</p>
+        <p class="trk-note" style="margin-bottom:8px">Compared against published sports-science minimums, not your own history: &ge;2 resistance sessions/week hitting all major muscle groups and 150&ndash;300 min/week moderate aerobic activity (WHO 2020 / ACSM guidelines), and &ge;10 sets per muscle group per week for a reliable hypertrophy stimulus (ACSM resistance-training update). No skill-work tracking exists yet; ask if you want that added as its own log.</p>
+
+        <div class="trk-progress-label"><span>This week vs recommended minimums</span><span id="completionPct"></span></div>
+        <div class="trk-progress-bar"><div class="trk-progress-fill" id="completionFill"></div></div>
+
+        <div class="trk-subbar-row">
+          <div class="trk-progress-label"><span>Strength frequency (&ge;2 sessions/week, all major groups)</span><span id="freqSubPct"></span></div>
+          <div class="trk-progress-bar"><div class="trk-progress-fill" id="freqSubFill"></div></div>
+        </div>
+        <div class="trk-subbar-row">
+          <div class="trk-progress-label"><span>Strength/hypertrophy volume (&ge;10 sets/pattern/week)</span><span id="volSubPct"></span></div>
+          <div class="trk-progress-bar"><div class="trk-progress-fill" id="volSubFill"></div></div>
+        </div>
+        <div class="trk-subbar-row">
+          <div class="trk-progress-label"><span>Aerobic activity (150&ndash;300 min/week moderate)</span><span id="aerobicSubPct"></span></div>
+          <div class="trk-progress-bar"><div class="trk-progress-fill" id="aerobicSubFill"></div></div>
+        </div>
+
+        <h3 style="margin:18px 0 8px;font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">At a glance</h3>
         <div class="trk-grid" id="weeklyLoadGrid"></div>
 
         <h3 style="margin:16px 0 8px;font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">By training quality (this week)</h3>
@@ -101,7 +125,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <th>Quality</th><th>Sets</th><th>Tonnage</th><th>Avg %1RM</th>
         </tr></thead><tbody></tbody></table></div>
 
-        <h3 style="margin:16px 0 8px;font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">By movement pattern (this week vs 4-week avg)</h3>
+        <h3 style="margin:16px 0 8px;font-size:13px;color:var(--ink3);text-transform:uppercase;letter-spacing:.04em">By movement pattern — your own trend (this week vs your 4-week avg, not a standard)</h3>
         <div class="trk-log"><table id="weeklyPatternTable"><thead><tr>
           <th>Pattern</th><th>Sets (wk)</th><th>Tonnage (wk)</th><th>4wk avg</th><th>ACWR</th>
         </tr></thead><tbody></tbody></table></div>
@@ -705,6 +729,35 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       tr.innerHTML='<td'+(sets===0?' style="color:var(--red)"':'')+'>'+p+'</td><td>'+sets+'</td><td>'+Math.round(thisWk)+' lb</td><td>'+Math.round(avg4)+' lb</td><td>'+(acwr!=null?acwr:'—')+'</td>';
       pTbody.appendChild(tr);
     });
+
+    // ---- completion vs published sports-science minimums ----
+    // Strength frequency: WHO/ACSM minimum is >=2 resistance sessions/week
+    // hitting all major muscle groups. Volume: ACSM cites >=10 sets/muscle
+    // group/week as the threshold for a reliable hypertrophy response —
+    // applied here to the six major strength patterns (Olympic/Accessory
+    // excluded, since that "sets per muscle group" research targets
+    // conventional resistance training, not oly technique or isolation
+    // work). Aerobic: WHO 2020 recommends 150-300 min/week moderate
+    // intensity (this doesn't attempt to weight vigorous-intensity minutes
+    // differently, since conditioning entries here don't record intensity).
+    var majorPatterns = ['Squat','Hinge','Push Vertical','Push Horizontal','Pull Vertical','Pull Horizontal'];
+    var freqPct = Math.min(100, Math.round((wl.strength.sessions_this_week/2)*100));
+    var volPct = Math.round(majorPatterns.reduce(function(sum,p){
+      return sum + Math.min(100, (setsByPatternWeek[p][0]/10)*100);
+    },0) / majorPatterns.length);
+    var aerobicPct = Math.min(100, Math.round((enduranceMin/150)*100));
+    var overallPct = Math.round((freqPct+volPct+aerobicPct)/3);
+
+    function setBar(fillId,pctId,pct){
+      var cls = pct>=90?'green':pct>=50?'amber':'red';
+      document.getElementById(fillId).style.width=pct+'%';
+      document.getElementById(fillId).style.background='var(--'+cls+')';
+      document.getElementById(pctId).textContent=pct+'%';
+    }
+    setBar('completionFill','completionPct',overallPct);
+    setBar('freqSubFill','freqSubPct',freqPct);
+    setBar('volSubFill','volSubPct',volPct);
+    setBar('aerobicSubFill','aerobicSubPct',aerobicPct);
   }
 
   function renderStats(){
