@@ -19,7 +19,7 @@ router.get('/profile', async (req, res) => {
 });
 
 router.put('/profile', async (req, res) => {
-  const { phase, body_fat_target, bodyweight_goal_lb, leaderboard_goal, weekly_strength_sessions_goal, weekly_conditioning_sessions_goal } = req.body;
+  const { phase, body_fat_target, bodyweight_goal_lb, leaderboard_goal, weekly_strength_sessions_goal, weekly_conditioning_sessions_goal, height_in } = req.body;
   if (phase !== undefined && (phase < 0 || phase > 4)) {
     return res.status(400).json({ error: 'phase must be 0-4' });
   }
@@ -31,10 +31,11 @@ router.put('/profile', async (req, res) => {
        leaderboard_goal = COALESCE($4, leaderboard_goal),
        weekly_strength_sessions_goal = COALESCE($5, weekly_strength_sessions_goal),
        weekly_conditioning_sessions_goal = COALESCE($6, weekly_conditioning_sessions_goal),
+       height_in = COALESCE($7, height_in),
        updated_at = now()
      WHERE id = 1 RETURNING *`,
     [phase ?? null, body_fat_target ?? null, bodyweight_goal_lb ?? null, leaderboard_goal ?? null,
-     weekly_strength_sessions_goal ?? null, weekly_conditioning_sessions_goal ?? null]
+     weekly_strength_sessions_goal ?? null, weekly_conditioning_sessions_goal ?? null, num(height_in)]
   );
   res.json(rows[0]);
 });
@@ -353,6 +354,33 @@ router.post('/conditioning', async (req, res) => {
 
 router.delete('/conditioning/:id', async (req, res) => {
   await pool.query('DELETE FROM fitness_conditioning WHERE id = $1', [req.params.id]);
+  res.status(204).end();
+});
+
+// ---- gymnastics / calisthenics: bodyweight-only movements, sets & reps ----
+router.get('/gymnastics', async (req, res) => {
+  const { rows } = await pool.query(
+    'SELECT id, entry_date, movement, reps, notes FROM fitness_gymnastics ORDER BY entry_date ASC'
+  );
+  res.json(rows);
+});
+
+router.post('/gymnastics', async (req, res) => {
+  const { entry_date, movement, notes } = req.body;
+  const reps = num(req.body.reps);
+  if (!isValidDate(entry_date) || typeof movement !== 'string' || !movement.trim() || reps === null) {
+    return res.status(400).json({ error: 'entry_date, movement and reps are required' });
+  }
+  const { rows } = await pool.query(
+    `INSERT INTO fitness_gymnastics (entry_date, movement, reps, notes)
+     VALUES ($1, $2, $3, $4) RETURNING id, entry_date, movement, reps, notes`,
+    [entry_date, movement.trim(), reps, notes || null]
+  );
+  res.status(201).json(rows[0]);
+});
+
+router.delete('/gymnastics/:id', async (req, res) => {
+  await pool.query('DELETE FROM fitness_gymnastics WHERE id = $1', [req.params.id]);
   res.status(204).end();
 });
 

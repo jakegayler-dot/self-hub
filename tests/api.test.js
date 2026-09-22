@@ -168,6 +168,14 @@ async function main() {
     console.log('coach prompt includes measurements:', /waist 29.5/.test(cp.prompt) && /ratio 0.61/.test(cp.prompt));
     console.log('coach prompt includes benchmark lift bests:', /Back squat: ~262.5 lb e1RM/.test(cp.prompt));
 
+    // height, used to scale the Physique diagram
+    r = await req('GET', '/api/fitness/profile', null, auth);
+    console.log('height before set (expect null):', (await r.json()).height_in);
+    r = await req('PUT', '/api/fitness/profile', { height_in: 70 }, auth);
+    console.log('set height:', r.status, 'height_in:', (await r.json()).height_in);
+    r = await req('GET', '/api/fitness/profile', null, auth);
+    console.log('height persisted (expect 70):', (await r.json()).height_in);
+
     // Sentinel credentials authenticate too, via a separate pair
     const sentinelAuth = 'Basic ' + Buffer.from('sentinel:sentinelpass456').toString('base64');
     r = await req('GET', '/api/fitness/profile', null, sentinelAuth);
@@ -200,6 +208,32 @@ async function main() {
     console.log('delete bw:', r.status);
     r = await req('GET', '/api/fitness/bodyweight', null, auth);
     console.log('bodyweight count after delete:', (await r.json()).length);
+
+    // gymnastics / calisthenics: bodyweight-only, sets & reps, no load field
+    r = await req('POST', '/api/fitness/gymnastics', { entry_date: '2026-09-15', movement: 'Strict Pull-Ups', reps: 8 }, auth);
+    console.log('gymnastics post 1:', r.status);
+    r = await req('POST', '/api/fitness/gymnastics', { entry_date: '2026-09-15', movement: 'Strict Pull-Ups', reps: 6, notes: 'strict, no kip' }, auth);
+    console.log('gymnastics post 2:', r.status);
+    r = await req('POST', '/api/fitness/gymnastics', { entry_date: '2026-09-16', movement: 'Handstand Walk', reps: 1, notes: '25 feet' }, auth);
+    console.log('gymnastics post 3 (different movement):', r.status);
+
+    // missing reps -> 400
+    r = await req('POST', '/api/fitness/gymnastics', { entry_date: '2026-09-16', movement: 'Toes-to-Bar' }, auth);
+    console.log('gymnastics post invalid, missing reps (expect 400):', r.status);
+
+    // missing movement -> 400
+    r = await req('POST', '/api/fitness/gymnastics', { entry_date: '2026-09-16', reps: 10 }, auth);
+    console.log('gymnastics post invalid, missing movement (expect 400):', r.status);
+
+    r = await req('GET', '/api/fitness/gymnastics', null, auth);
+    const gymList = await r.json();
+    console.log('gymnastics count (expect 3):', gymList.length);
+    console.log('gymnastics entries not load-bearing (no load_lb field):', gymList.every(g => !('load_lb' in g)));
+
+    r = await req('DELETE', '/api/fitness/gymnastics/' + gymList[0].id, null, auth);
+    console.log('delete gymnastics entry:', r.status);
+    r = await req('GET', '/api/fitness/gymnastics', null, auth);
+    console.log('gymnastics count after delete (expect 2):', (await r.json()).length);
 
     server.close();
     console.log('ALL TESTS COMPLETE');

@@ -75,6 +75,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .trk-toast{position:fixed;bottom:16px;right:16px;background:var(--amber-bg);border:1px solid var(--amber-dim);
   color:var(--amber);font-size:12px;padding:8px 14px;border-radius:6px;opacity:0;transition:.25s;pointer-events:none}
 .trk-toast.show{opacity:1}
+.trk-physique-row{display:flex;gap:18px;justify-content:center;flex-wrap:wrap;margin-bottom:14px}
+.trk-physique-fig{text-align:center}
+.trk-physique-fig svg{background:var(--panel2);border:1px solid var(--line);border-radius:8px;display:block}
+.trk-physique-fig .cap{font-size:10.5px;color:var(--ink3);margin-top:6px;text-transform:uppercase;letter-spacing:.06em}
+.phys-hit{fill:transparent;cursor:pointer;transition:fill .15s}
+.phys-hit:hover{fill:rgba(224,164,88,.14)}
+.phys-hit.sel{fill:rgba(224,164,88,.24)}
+.trk-physique-info{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:12px 14px;min-height:20px}
 @media (max-width:480px){ .trk-body{padding:14px} }
 </style>
 </head>
@@ -130,6 +138,16 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       </div>
       <div class="trk-phase" id="phaseBar"></div>
       <div class="trk-grid" id="statGrid"></div>
+      <div class="trk-sec">
+        <h2>Physique</h2>
+        <p class="trk-note" style="margin-bottom:10px" id="physiqueNote"></p>
+        <div class="trk-physique-row">
+          <div class="trk-physique-fig"><svg id="physiqueFront" viewBox="0 0 220 420" width="170" height="325"></svg><div class="cap">Front</div></div>
+          <div class="trk-physique-fig"><svg id="physiqueBack" viewBox="0 0 220 420" width="170" height="325"></svg><div class="cap">Back</div></div>
+        </div>
+        <div class="trk-physique-info" id="physiqueInfo"></div>
+        <div class="trk-grid" id="physiqueMetrics" style="margin-top:12px"></div>
+      </div>
       <div class="trk-sec">
         <h2>Lift trend</h2>
         <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
@@ -212,6 +230,30 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-err" id="cdErr">Enter a date, movement, and a distance or duration.</div>
       </div>
       <div class="trk-sec">
+        <h2>Gymnastics / calisthenics</h2>
+        <p class="trk-note" style="margin-bottom:10px">Bodyweight-only movements — no load field. Once you add external load to something like pull-ups, log it under Lift instead.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="gymDate"></div>
+          <div class="trk-field">
+            <label>Movement</label>
+            <input type="text" id="gymName" list="gymnasticsNamesDatalist" placeholder="Start typing — pick a match or add a new one">
+            <datalist id="gymnasticsNamesDatalist">
+              <option>Handstand Walk</option><option>HSPU</option><option>Push-Ups</option><option>Sit-Ups</option>
+              <option>Toes-to-Bar</option><option>Pistol Squats</option><option>Strict Pull-Ups</option>
+              <option>Chest-to-Bar</option><option>Butterfly Pull-Ups</option><option>Bar Muscle-Ups</option>
+            </datalist>
+          </div>
+        </div>
+        <div id="gymHistoryPreview"></div>
+        <div id="gymSetRows"></div>
+        <button class="trk-btn" id="gymAddSet" type="button">+ Add another set</button>
+        <button class="trk-btn primary" id="gymSubmit" style="margin-left:8px">Log set(s)</button>
+        <div class="trk-row" style="margin-top:8px">
+          <div class="trk-field" style="flex:1"><label>Notes (optional)</label><input type="text" id="gymNotes" placeholder="banded assist, rings, strict…"></div>
+        </div>
+        <div class="trk-err" id="gymErr">Enter a date, movement, and reps for at least one set.</div>
+      </div>
+      <div class="trk-sec">
         <h2>Phase</h2>
         <div class="trk-row">
           <div class="trk-field">
@@ -276,6 +318,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <th>Date</th><th>Movement</th><th>Distance</th><th>Duration</th><th>Pace</th><th>Notes</th><th></th>
         </tr></thead><tbody></tbody></table></div>
       </div>
+      <div class="trk-sec"><h2>Gymnastics log</h2>
+        <div class="trk-field" style="margin-bottom:8px"><label>Filter</label>
+          <select id="gymLogFilter"><option value="__all__">All movements</option></select>
+        </div>
+        <div class="trk-log"><table id="gymTable"><thead><tr><th>Date</th><th>Movement</th><th>Reps</th><th>Notes</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
       <div class="trk-sec">
         <h2>Movement profile</h2>
         <div class="trk-field" style="margin-bottom:12px"><label>Movement</label>
@@ -289,6 +337,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     </div>
 
     <div class="trk-pane" data-pane="health">
+      <div class="trk-sec">
+        <h2>Body profile</h2>
+        <p class="trk-note" style="margin-bottom:10px">Height is used to scale the Physique diagram on the dashboard to your actual proportions — it's the one measurement that isn't in the Clothing measurements section below.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Height (in)</label><input type="number" step="0.1" id="heightVal" placeholder="70"></div>
+        </div>
+        <button class="trk-btn" id="heightSubmit">Save height</button>
+      </div>
       <div class="trk-sec">
         <h2>Bodyweight / body fat</h2>
         <div class="trk-row">
@@ -418,7 +474,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     });
   });
 
-  ['bwDate','liftDate','bmDate','cnDate','mDate','cdDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
+  ['bwDate','liftDate','bmDate','cnDate','mDate','cdDate','gymDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
 
   // ---- log handlers ----
   document.getElementById('bwSubmit').addEventListener('click', async function(){
@@ -447,6 +503,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   function resolveConditioningName(typed){
     var known = Array.prototype.map.call(document.getElementById('conditioningNamesDatalist').options, function(o){ return o.value; });
+    var key = normalizeLiftKey(typed);
+    for(var i=0;i<known.length;i++){
+      if(normalizeLiftKey(known[i])===key) return known[i];
+    }
+    return typed;
+  }
+
+  function resolveGymnasticsName(typed){
+    var known = Array.prototype.map.call(document.getElementById('gymnasticsNamesDatalist').options, function(o){ return o.value; });
     var key = normalizeLiftKey(typed);
     for(var i=0;i<known.length;i++){
       if(normalizeLiftKey(known[i])===key) return known[i];
@@ -506,6 +571,61 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         await api('POST','/lifts',{entry_date:d, lift:name, load_lb:sets[i].load_, reps:sets[i].reps, rpe:sets[i].rpe});
       }
       document.getElementById('liftSetRows').innerHTML=''; addSetRow();
+      await refresh(); toast(sets.length+' set'+(sets.length===1?'':'s')+' logged');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
+  // ---- multi-set gymnastics entry ----
+  var gymSetRowSeq = 0;
+  function addGymSetRow(){
+    gymSetRowSeq++;
+    var id = gymSetRowSeq;
+    var wrap = document.createElement('div');
+    wrap.className = 'trk-row'; wrap.dataset.setRow = id;
+    wrap.innerHTML =
+      '<div class="trk-field"><label>Reps</label><input type="number" step="1" class="gym-set-reps" placeholder="12"></div>'+
+      '<button class="trk-btn set-remove" type="button" style="align-self:flex-end">&times;</button>';
+    document.getElementById('gymSetRows').appendChild(wrap);
+    wrap.querySelector('.set-remove').addEventListener('click', function(){
+      if(document.getElementById('gymSetRows').children.length>1) wrap.remove();
+    });
+  }
+  document.getElementById('gymAddSet').addEventListener('click', addGymSetRow);
+  addGymSetRow(); // start with one row
+
+  function renderGymHistoryPreview(){
+    var typed = resolveGymnasticsName(document.getElementById('gymName').value.trim());
+    var box = document.getElementById('gymHistoryPreview');
+    if(!typed){ box.innerHTML=''; return; }
+    var rows = cache.gymnastics.filter(function(g){ return g.movement===typed; }).slice().sort(function(a,b){ return a.entry_date<b.entry_date?1:-1; }).slice(0,6);
+    if(!rows.length){ box.innerHTML='<p class="trk-note" style="margin:8px 0">No history yet for "'+typed+'".</p>'; return; }
+    var html = '<p class="trk-note" style="margin:8px 0 4px">Recent history for '+typed+':</p><div class="trk-log" style="max-height:150px"><table><tbody>';
+    rows.forEach(function(r){
+      html += '<tr><td>'+fmtDate(r.entry_date)+'</td><td>'+r.reps+' reps</td><td>'+(r.notes||'')+'</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    box.innerHTML = html;
+  }
+  document.getElementById('gymName').addEventListener('input', renderGymHistoryPreview);
+  document.getElementById('gymName').addEventListener('change', renderGymHistoryPreview);
+
+  document.getElementById('gymSubmit').addEventListener('click', async function(){
+    var d=document.getElementById('gymDate').value, name=resolveGymnasticsName(document.getElementById('gymName').value.trim());
+    var notes=document.getElementById('gymNotes').value.trim() || null;
+    var err=document.getElementById('gymErr');
+    var setRows = Array.prototype.slice.call(document.getElementById('gymSetRows').children);
+    var sets = setRows.map(function(row){
+      var reps=parseInt(row.querySelector('.gym-set-reps').value,10);
+      return {reps:reps};
+    }).filter(function(s){ return !isNaN(s.reps); });
+    if(!d || !name || !sets.length){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      for(var i=0;i<sets.length;i++){
+        await api('POST','/gymnastics',{entry_date:d, movement:name, reps:sets[i].reps, notes:notes});
+      }
+      document.getElementById('gymSetRows').innerHTML=''; addGymSetRow();
+      document.getElementById('gymNotes').value='';
       await refresh(); toast(sets.length+' set'+(sets.length===1?'':'s')+' logged');
     }catch(e){ toast('Could not save: '+e.message); }
   });
@@ -605,6 +725,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }catch(e){ toast('Could not update: '+e.message); }
   });
 
+  document.getElementById('heightSubmit').addEventListener('click', async function(){
+    var h=parseFloat(document.getElementById('heightVal').value);
+    if(isNaN(h) || h<=0){ toast('Enter a valid height in inches'); return; }
+    try{
+      await api('PUT','/profile',{height_in:h});
+      await refresh(); toast('Height saved');
+    }catch(e){ toast('Could not save: '+e.message); }
+  });
+
   async function delEntry(kind, id){
     try{ await api('DELETE','/'+kind+'/'+id); await refresh(); }
     catch(e){ toast('Could not delete: '+e.message); }
@@ -612,7 +741,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   // ---- state + rendering ----
   var bwChartRef, liftChartRef, measureChartRef, strengthTrendChartRef;
-  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[] };
+  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[], gymnastics:[] };
 
   (function populateLiftFilters(){
     var names = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
@@ -625,6 +754,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     chartSel.addEventListener('change', renderCharts);
     logSel.addEventListener('change', renderTables);
   })();
+  document.getElementById('gymLogFilter').addEventListener('change', renderTables);
   document.getElementById('measureChartFilter').addEventListener('change', renderMeasureChart);
   document.getElementById('strengthTrendFilter').addEventListener('change', renderStrengthTrendChart);
 
@@ -640,18 +770,19 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   async function refresh(){
     var results = await Promise.all([
-      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), api('GET','/coach-notes'), api('GET','/measurements'), api('GET','/benchmark-lifts'), api('GET','/conditioning')
+      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), api('GET','/coach-notes'), api('GET','/measurements'), api('GET','/benchmark-lifts'), api('GET','/conditioning'), api('GET','/gymnastics')
     ]);
-    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7]; cache.conditioning=results[8];
+    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7]; cache.conditioning=results[8]; cache.gymnastics=results[9];
     render();
   }
 
   function render(){
     renderPhaseBar(); renderStats(); renderWeeklyLoad(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile();
-    growMovementDatalists(); renderMovementProfile(); renderLiftHistoryPreview();
+    growMovementDatalists(); renderMovementProfile(); renderLiftHistoryPreview(); renderGymHistoryPreview(); renderPhysique();
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
     document.getElementById('wgStrength').value = cache.profile.weekly_strength_sessions_goal;
     document.getElementById('wgConditioning').value = cache.profile.weekly_conditioning_sessions_goal;
+    document.getElementById('heightVal').value = cache.profile.height_in!=null ? cache.profile.height_in : '';
   }
 
   function renderPhaseBar(){
@@ -663,6 +794,274 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       seg.innerHTML='<div class="pn">PHASE '+p[0]+'</div><div class="pt">'+p[1]+'</div>';
       bar.appendChild(seg);
     });
+  }
+
+  // ---- Physique diagram: a stylized front/back body outline scaled to
+  // actual logged measurements. This is illustrative geometry, not a scan
+  // or 3D reconstruction — circumference measurements (bust/waist/hips/neck)
+  // are converted to an approximate front-view width via a single
+  // flattening constant, and a few dimensions with no direct measurement
+  // (limb thickness) are proportional estimates. Front and back use the
+  // same measured widths since only frontal/circumference data is tracked,
+  // not a separate depth measurement — they're distinguished by typical
+  // front vs. back curvature (chest/ab taper vs. traps/glute curve), not
+  // independent scans. Missing values fall back to population-average
+  // defaults, called out in the caption below the figures.
+  var BODY_CIRC_TO_WIDTH = 0.32;
+  var BODY_DEFAULTS = { height_in:70, shoulder:18, bust:40, waist:34, seat_hips:38, neck:15, sleeve:24, length:16, inseam:31 };
+  var BODY_FIELD_LABELS = { height_in:'height', shoulder:'shoulder', bust:'bust', waist:'waist', seat_hips:'seat/hips', neck:'neck', sleeve:'sleeve', length:'length', inseam:'inseam' };
+
+  function computeBodyProfile(){
+    var p = cache.profile || {};
+    var m = cache.measurements.length ? cache.measurements[cache.measurements.length-1] : {};
+    var d = BODY_DEFAULTS;
+    var usedDefault = [];
+    function pick(val, key){
+      if(val!=null) return Number(val);
+      usedDefault.push(key);
+      return d[key];
+    }
+    var height = pick(p.height_in, 'height_in');
+    var shoulder = pick(m.shoulder, 'shoulder');
+    var bust = pick(m.bust, 'bust');
+    var waist = pick(m.waist, 'waist');
+    var hips = pick(m.seat_hips, 'seat_hips');
+    var neck = pick(m.neck, 'neck');
+    var sleeve = pick(m.sleeve, 'sleeve');
+    var length = pick(m.length, 'length');
+    var inseam;
+    if(m.inseam_low!=null && m.inseam_high!=null) inseam = (Number(m.inseam_low)+Number(m.inseam_high))/2;
+    else if(m.inseam_low!=null) inseam = Number(m.inseam_low);
+    else if(m.inseam_high!=null) inseam = Number(m.inseam_high);
+    else { inseam = d.inseam; usedDefault.push('inseam'); }
+
+    return {
+      height:height, usedDefault:usedDefault,
+      halfNeck: neck*BODY_CIRC_TO_WIDTH/2,
+      halfShoulder: shoulder/2,
+      halfChest: bust*BODY_CIRC_TO_WIDTH/2,
+      halfWaist: waist*BODY_CIRC_TO_WIDTH/2,
+      halfHip: hips*BODY_CIRC_TO_WIDTH/2,
+      armLen: sleeve,
+      torsoLen: length,
+      legLen: inseam
+    };
+  }
+
+  // Catmull-Rom through an ordered, circular list of [x,y] px points -> a
+  // smooth closed SVG path (cubic bezier segments).
+  function smoothClosedPathD(pts){
+    var n = pts.length;
+    function p(i){ return pts[((i%n)+n)%n]; }
+    var d = 'M '+p(0)[0].toFixed(1)+' '+p(0)[1].toFixed(1)+' ';
+    for(var i=0;i<n;i++){
+      var p0=p(i-1), p1=p(i), p2=p(i+1), p3=p(i+2);
+      var c1x = p1[0] + (p2[0]-p0[0])/6, c1y = p1[1] + (p2[1]-p0[1])/6;
+      var c2x = p2[0] - (p3[0]-p1[0])/6, c2y = p2[1] - (p3[1]-p1[1])/6;
+      d += 'C '+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+p2[0].toFixed(1)+' '+p2[1].toFixed(1)+' ';
+    }
+    return d+'Z';
+  }
+
+  // What actually grows (or doesn't) each region — shown when a region on
+  // the figure is tapped. See the note on skeletal measurements: sleeve,
+  // arm length, torso length and inseam are bone-length numbers fixed in
+  // adulthood, so they map to a "not trainable" entry rather than an
+  // exercise list.
+  var MEASUREMENT_GUIDANCE = {
+    neck: { label:'Neck', trainable:'Yes', goal:'Increase',
+      oly:['Clean & Jerk','Clean Pull','Snatch','Front Squat'],
+      bb:['Barbell/DB shrugs',"Farmer's carries",'Direct neck harness curls/extensions'],
+      note:'Weighted neck work carries real injury risk — progress it conservatively and separately from everything else.' },
+    shoulder: { label:'Shoulder', trainable:'Partly — deltoid cap; clavicle is fixed', goal:'Increase',
+      oly:['Push Press','Overhead Squat','Snatch','Clean & Jerk'],
+      bb:['DB/cable lateral raises','Seated DB press','Arnold press','Cable Y-raise','Rear-delt flye'],
+      note:'Lateral deltoid drives most of the visible width gain — prioritize raise variations over press volume alone.' },
+    bust: { label:'Bust (chest)', trainable:'Yes', goal:'Increase',
+      oly:['Bench Press','Push Press','Weighted Dips'],
+      bb:['Incline DB press','Cable/DB flyes','Dips','Bent Over Row','Pull-Ups','Lat Pulldowns'],
+      note:'Bust is a full torso wrap — back thickness adds to the number as much as chest does.' },
+    waist: { label:'Waist', trainable:'Not via muscle growth', goal:'Decrease',
+      oly:[],
+      bb:['Toes-to-Bar','Sit-Ups','Hanging leg raises','Planks'],
+      note:'Body fat %, not ab training, moves this number. Heavy loaded oblique work (weighted side bends, loaded twists) can thicken the waist — avoid it if a tight taper is the goal.' },
+    seat_hips: { label:'Seat/hips', trainable:'Yes', goal:'Depends — see note',
+      oly:['Back Squat','Front Squat','Clean & Jerk','Snatch'],
+      bb:['Hip thrusts','Romanian Deadlift','Bulgarian split squat','Walking lunges','Cable kickbacks'],
+      note:'For a V-taper ratio, hip growth needs to stay behind shoulder growth — train glutes for strength/aesthetics from behind, not as a size target.' },
+    skeletal_arm: { label:'Sleeve / arm length', trainable:'No — skeletal', goal:'—', oly:[], bb:[],
+      note:"Bone-length measurement, fixed in adulthood — no exercise changes it. If you want visible arm size tracked, that's bicep/forearm circumference, which isn't a logged field yet — say the word and I'll add it." },
+    skeletal_leg: { label:'Inseam (leg length)', trainable:'No — skeletal', goal:'—', oly:[], bb:[],
+      note:'Bone-length measurement, fixed in adulthood — no exercise changes it.' }
+  };
+
+  function computeBodyLayout(prof){
+    var headH = prof.height/7.5;
+    var neckGap = headH*0.18;
+    var shoulderY = headH + neckGap;
+    var chestY = shoulderY + prof.torsoLen*0.30;
+    var waistY = shoulderY + prof.torsoLen*0.62;
+    var hipY = shoulderY + prof.torsoLen;
+    var kneeY = hipY + prof.legLen*0.53;
+    var floorY = hipY + prof.legLen;
+    var elbowY = shoulderY + prof.armLen*0.53;
+    var wristY = shoulderY + prof.armLen;
+    var totalIn = floorY;
+    var VB_W=220, VB_H=420, marginTop=14, marginBottom=14;
+    var scale = (VB_H-marginTop-marginBottom)/totalIn;
+    var cx = VB_W/2;
+    function X(halfIn){ return halfIn*scale; }
+    function Y(yIn){ return marginTop + yIn*scale; }
+    var upperArmHalf = prof.halfChest*0.24;
+    var armOff = prof.halfShoulder + upperArmHalf*0.35;
+    return { prof:prof, headH:headH, neckGap:neckGap, shoulderY:shoulderY, chestY:chestY, waistY:waistY,
+      hipY:hipY, kneeY:kneeY, floorY:floorY, elbowY:elbowY, wristY:wristY, totalIn:totalIn,
+      VB_W:VB_W, VB_H:VB_H, cx:cx, X:X, Y:Y, upperArmHalf:upperArmHalf, armOff:armOff };
+  }
+
+  function buildBodyFigureSVG(layout, variant){
+    var prof = layout.prof, X = layout.X, Y = layout.Y, cx = layout.cx;
+    var shoulderY=layout.shoulderY, chestY=layout.chestY, waistY=layout.waistY, hipY=layout.hipY,
+        kneeY=layout.kneeY, floorY=layout.floorY, elbowY=layout.elbowY, wristY=layout.wristY,
+        headH=layout.headH, neckGap=layout.neckGap;
+
+    var chestBulge = variant==='back' ? 0.94 : 1.0;
+    var hipBulge = variant==='back' ? 1.08 : 1.0;
+    var rightSide = [
+      [prof.halfNeck, shoulderY - neckGap*0.5],
+      [prof.halfShoulder, shoulderY],
+      [prof.halfChest*chestBulge, chestY],
+      [prof.halfWaist, waistY],
+      [prof.halfHip*hipBulge, hipY]
+    ];
+    var torsoPts = rightSide.slice();
+    for(var i=rightSide.length-1;i>=0;i--){ torsoPts.push([-rightSide[i][0], rightSide[i][1]]); }
+    var torsoPtsPx = torsoPts.map(function(pt){ return [cx+X(pt[0]), Y(pt[1])]; });
+    var torsoD = smoothClosedPathD(torsoPtsPx);
+
+    var headWIn = headH*0.74;
+    var headCx = cx, headCy = Y(headH/2), headRx = X(headWIn/2), headRy = (Y(headH)-Y(0))/2;
+
+    var upperArmHalf = layout.upperArmHalf, foreArmHalf = upperArmHalf*0.8, handHalf = foreArmHalf*0.85;
+    function armPath(side){
+      var off = side*layout.armOff;
+      var pts = [
+        [off-upperArmHalf, shoulderY], [off-foreArmHalf, elbowY], [off-handHalf, wristY],
+        [off+handHalf, wristY], [off+foreArmHalf, elbowY], [off+upperArmHalf, shoulderY]
+      ];
+      var px = pts.map(function(pt){ return [cx+X(pt[0]), Y(pt[1])]; });
+      return smoothClosedPathD(px);
+    }
+
+    var thighHalf = prof.halfHip*0.44, calfHalf = thighHalf*0.7;
+    function legPath(side){
+      var off = side*(prof.halfHip*0.48);
+      var pts = [
+        [off-thighHalf, hipY], [off-calfHalf, kneeY], [off-calfHalf*0.92, floorY],
+        [off+calfHalf*0.92, floorY], [off+calfHalf, kneeY], [off+thighHalf, hipY]
+      ];
+      var px = pts.map(function(pt){ return [cx+X(pt[0]), Y(pt[1])]; });
+      return smoothClosedPathD(px);
+    }
+
+    var fillCol = variant==='back' ? 'rgba(154,167,180,.16)' : 'rgba(224,164,88,.16)';
+    var strokeCol = variant==='back' ? '#9aa7b4' : '#e0a458';
+    var parts = [];
+    [-1,1].forEach(function(side){ parts.push('<path d="'+legPath(side)+'" fill="'+fillCol+'" stroke="'+strokeCol+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'); });
+    [-1,1].forEach(function(side){ parts.push('<path d="'+armPath(side)+'" fill="'+fillCol+'" stroke="'+strokeCol+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>'); });
+    parts.push('<path d="'+torsoD+'" fill="'+fillCol+'" stroke="'+strokeCol+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>');
+    parts.push('<ellipse cx="'+headCx.toFixed(1)+'" cy="'+headCy.toFixed(1)+'" rx="'+headRx.toFixed(1)+'" ry="'+headRy.toFixed(1)+'" fill="'+fillCol+'" stroke="'+strokeCol+'" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>');
+    return parts.join('');
+  }
+
+  // Transparent, tappable bands laid over the figure so a region maps
+  // straight to the "what grows this" guidance above. Torso bands span
+  // the full width and are appended first; the two arm hit-boxes are
+  // appended last so they win the overlapping area down each side.
+  function buildClickOverlay(layout){
+    var Y=layout.Y, cx=layout.cx, X=layout.X, VB_W=layout.VB_W;
+    var bands = [
+      ['neck', layout.headH, layout.shoulderY],
+      ['shoulder', layout.shoulderY, layout.shoulderY + (layout.chestY-layout.shoulderY)*0.5],
+      ['bust', layout.shoulderY + (layout.chestY-layout.shoulderY)*0.5, layout.chestY + (layout.waistY-layout.chestY)*0.5],
+      ['waist', layout.chestY + (layout.waistY-layout.chestY)*0.5, layout.waistY + (layout.hipY-layout.waistY)*0.5],
+      ['seat_hips', layout.waistY + (layout.hipY-layout.waistY)*0.5, layout.hipY+2],
+      ['skeletal_leg', layout.hipY+2, layout.floorY]
+    ];
+    var parts = bands.map(function(b){
+      var y0=Y(b[1]), y1=Y(b[2]);
+      return '<rect class="phys-hit" data-key="'+b[0]+'" x="0" y="'+y0.toFixed(1)+'" width="'+VB_W+'" height="'+Math.max(0,y1-y0).toFixed(1)+'"/>';
+    });
+    var armHalfPadded = X(layout.upperArmHalf*1.9);
+    [-1,1].forEach(function(side){
+      var offPx = cx + side*X(layout.armOff);
+      var y0=Y(layout.shoulderY), y1=Y(layout.wristY);
+      parts.push('<rect class="phys-hit" data-key="skeletal_arm" x="'+(offPx-armHalfPadded).toFixed(1)+'" y="'+y0.toFixed(1)+'" width="'+(armHalfPadded*2).toFixed(1)+'" height="'+(y1-y0).toFixed(1)+'"/>');
+    });
+    return parts.join('');
+  }
+
+  var physiqueSelectedKey = null;
+
+  function showPhysiqueInfo(key){
+    var box = document.getElementById('physiqueInfo');
+    var g = MEASUREMENT_GUIDANCE[key];
+    if(!g){
+      box.innerHTML = '<p class="trk-note" style="margin:0">Tap a region on the figure — neck, shoulders, chest, waist, hips, arms or legs — to see whether it responds to training and what grows it.</p>';
+      return;
+    }
+    var html = '<div style="font-size:12.5px;color:var(--ink);font-weight:500;margin-bottom:3px">'+g.label+'</div>'+
+      '<div class="trk-note" style="margin-bottom:8px">'+g.trainable+' &middot; goal: '+g.goal+'</div>';
+    if(g.oly.length) html += '<div style="font-size:12px;color:var(--ink2);margin-bottom:4px"><b style="color:var(--ink)">Olympic / compound:</b> '+g.oly.join(', ')+'</div>';
+    if(g.bb.length) html += '<div style="font-size:12px;color:var(--ink2);margin-bottom:6px"><b style="color:var(--ink)">Bodybuilding / accessory:</b> '+g.bb.join(', ')+'</div>';
+    html += '<p class="trk-note" style="margin:0">'+g.note+'</p>';
+    box.innerHTML = html;
+  }
+
+  function selectPhysiqueRegion(key){
+    physiqueSelectedKey = key;
+    document.querySelectorAll('.phys-hit').forEach(function(el){
+      el.classList.toggle('sel', el.getAttribute('data-key')===key);
+    });
+    showPhysiqueInfo(key);
+  }
+
+  ['physiqueFront','physiqueBack'].forEach(function(id){
+    document.getElementById(id).addEventListener('click', function(e){
+      var key = e.target.getAttribute('data-key');
+      if(key) selectPhysiqueRegion(key);
+    });
+  });
+
+  function renderPhysique(){
+    var prof = computeBodyProfile();
+    var layout = computeBodyLayout(prof);
+    var overlay = buildClickOverlay(layout);
+    document.getElementById('physiqueFront').innerHTML = buildBodyFigureSVG(layout, 'front') + overlay;
+    document.getElementById('physiqueBack').innerHTML = buildBodyFigureSVG(layout, 'back') + overlay;
+    if(physiqueSelectedKey){
+      document.querySelectorAll('.phys-hit[data-key="'+physiqueSelectedKey+'"]').forEach(function(el){ el.classList.add('sel'); });
+    }
+
+    var note = document.getElementById('physiqueNote');
+    if(prof.usedDefault.length){
+      var missing = prof.usedDefault.map(function(k){ return BODY_FIELD_LABELS[k]||k; }).join(', ');
+      note.textContent = 'Stylized outline scaled from your logged measurements (circumferences are converted to an approximate front-view width, not a literal scan). Using population-average placeholders for: '+missing+' — log them in Health to size this to you exactly.';
+    } else {
+      note.textContent = 'Stylized outline scaled from your logged height and clothing measurements (circumferences are converted to an approximate front-view width, not a literal scan).';
+    }
+
+    var grid = document.getElementById('physiqueMetrics'); grid.innerHTML='';
+    function tile(label,val){
+      var d=document.createElement('div'); d.className='trk-card';
+      d.innerHTML='<div class="lbl">'+label+'</div><div class="val">'+val+'</div>';
+      grid.appendChild(d);
+    }
+    tile('Height', (cache.profile && cache.profile.height_in!=null) ? cache.profile.height_in+' in' : 'not logged');
+    var s = cache.summary;
+    tile('Bodyweight (7d avg)', s && s.bodyweight_7day_avg_lb!=null ? s.bodyweight_7day_avg_lb+' lb' : '—');
+    tile('Shoulder:waist', s && s.shoulder_waist_ratio!=null ? s.shoulder_waist_ratio+'x' : '—');
+    showPhysiqueInfo(physiqueSelectedKey);
   }
 
   function mondayOfLocal(d){
@@ -876,9 +1275,27 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     'Sumo Deadlift + Deadlift':'Hinge','Tempo Heel Elevated Back Squat':'Squat','Thruster':'Squat',
     'Weighted Pull-Up':'Pull Vertical','Wide Grip Bench Press + DB Single Arm Bench Press':'Push Horizontal'
   };
+  // Bodyweight/calisthenics movements — mapped onto the same pattern
+  // taxonomy as loaded lifts, since the underlying joint action is the
+  // same even without external load. Handstand work is kept as its own
+  // "Balance" pattern since it's stability/skill-dominant rather than a
+  // conventional strength movement pattern.
+  var GYMNASTICS_PATTERN = {
+    'Handstand Walk':'Balance', 'HSPU':'Push Vertical', 'Push-Ups':'Push Horizontal',
+    'Sit-Ups':'Core', 'Toes-to-Bar':'Core', 'Pistol Squats':'Squat',
+    'Strict Pull-Ups':'Pull Vertical', 'Chest-to-Bar':'Pull Vertical',
+    'Butterfly Pull-Ups':'Pull Vertical', 'Bar Muscle-Ups':'Pull Vertical'
+  };
   function liftPattern(name){
     if(LIFT_PATTERN[name]) return LIFT_PATTERN[name];
+    if(GYMNASTICS_PATTERN[name]) return GYMNASTICS_PATTERN[name];
     var s=name.toLowerCase();
+    if(/handstand/.test(s)) return 'Balance';
+    if(/hspu/.test(s)) return 'Push Vertical';
+    if(/push-?up/.test(s)) return 'Push Horizontal';
+    if(/sit-?up|toes.?to.?bar|l-?sit|hollow/.test(s)) return 'Core';
+    if(/pistol/.test(s)) return 'Squat';
+    if(/muscle-?up|chest.?to.?bar|butterfly/.test(s)) return 'Pull Vertical';
     if(/squat|lunge|step-up/.test(s)) return 'Squat';
     if(/deadlift/.test(s)) return 'Hinge';
     if(/clean|snatch|jerk/.test(s)) return 'Olympic';
@@ -1072,6 +1489,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     'Push Vertical':['Shoulders','Triceps','Upper chest'], 'Push Horizontal':['Chest','Triceps','Front delts'],
     'Pull Vertical':['Lats','Biceps','Upper back'], 'Pull Horizontal':['Lats','Rear delts','Biceps','Upper back'],
     'Olympic':['Full body','Hips','Traps','Shoulders'], 'Accessory':['Isolated — see this lift specifically'],
+    'Core':['Abs','Hip flexors','Obliques'], 'Balance':['Shoulders','Core','Wrist/scapula stabilizers'],
     'Uncategorized':['Not classified']
   };
   var PATTERN_FIBER = {
@@ -1083,6 +1501,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     'Pull Horizontal':'Mixed — depends heavily on the load/rep range you train it at',
     'Olympic':'Fast-twitch (Type II) dominant — explosive, power-oriented',
     'Accessory':'Mixed to slow-twitch (Type I) leaning — usually trained higher-rep',
+    'Core':'Mixed — high-rep core work leans slow-twitch (Type I); weighted or explosive core work leans fast-twitch',
+    'Balance':'Skill/stability-dominant — not meaningfully classified by fiber type',
     'Uncategorized':'Not classified'
   };
   var LIFT_MUSCLES_OVERRIDE = {
@@ -1105,7 +1525,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       var known = Array.prototype.map.call(document.getElementById('allMovementsDatalist').options, function(o){ return o.value; });
       var loggedLift = {}; cache.lifts.forEach(function(l){ loggedLift[l.lift]=true; });
       var loggedCond = {}; cache.conditioning.forEach(function(c){ loggedCond[c.movement]=true; });
-      mvSelected = known.find(function(n){ return loggedLift[n]||loggedCond[n]; }) || known[0] || null;
+      var loggedGym = {}; cache.gymnastics.forEach(function(g){ loggedGym[g.movement]=true; });
+      mvSelected = known.find(function(n){ return loggedLift[n]||loggedGym[n]||loggedCond[n]; }) || known[0] || null;
       if(mvSelected) input.value = mvSelected;
     }
     var name = mvSelected;
@@ -1120,10 +1541,36 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
     var liftRows = cache.lifts.filter(function(l){ return l.lift===name; });
     var condRows = cache.conditioning.filter(function(c){ return c.movement===name; });
-    var isConditioning = condRows.length>0 && liftRows.length===0;
+    var gymRows = cache.gymnastics.filter(function(g){ return g.movement===name; });
+    // Same name can in principle exist in more than one log (e.g. bodyweight
+    // "Strict Pull-Ups" here vs. a weighted "Strict Pull-Ups" under Lift) —
+    // lift history wins first since it carries the strength-profile scoring,
+    // then gymnastics, then conditioning.
+    var isLift = liftRows.length>0;
+    var isGymnastics = !isLift && gymRows.length>0;
+    var isConditioning = !isLift && !isGymnastics && condRows.length>0;
     var thead = document.getElementById('mvTable').querySelector('thead tr');
 
-    if(isConditioning){
+    if(isGymnastics){
+      var rows = gymRows.slice().sort(function(a,b){ return a.entry_date<b.entry_date?-1:1; });
+      tile('Pattern', liftPattern(name));
+      tile('Primary muscles', liftMuscles(name).join(', '));
+      tile('Fiber type emphasis', liftFiber(name));
+      tile('Entries logged', rows.length);
+
+      var ctx5=document.getElementById('mvChart').getContext('2d');
+      if(mvChartRef) mvChartRef.destroy();
+      mvChartRef=new Chart(ctx5,{type:'line',data:{
+        labels:rows.map(function(r){return fmtDate(r.entry_date);}),
+        datasets:[{label:name+' reps',data:rows.map(function(r){return r.reps;}),
+          borderColor:'#7fae6e',backgroundColor:'rgba(127,174,110,.08)',fill:true,spanGaps:true,tension:.2,pointRadius:2}]
+      },options:chartOpts()});
+
+      thead.innerHTML='<th>Date</th><th>Reps</th><th>Notes</th>';
+      fillTableReadonly('mvTable', rows.slice().reverse(), function(r){
+        return [fmtDate(r.entry_date), r.reps, r.notes||'—'];
+      });
+    } else if(isConditioning){
       var rows = condRows.slice().sort(function(a,b){ return a.entry_date<b.entry_date?-1:1; });
       tile('Pattern', 'Conditioning (cardio)');
       tile('Primary muscles', 'Full-body / cardiovascular — varies by movement');
@@ -1272,11 +1719,27 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       var o=document.createElement('option'); o.value=n; cdList.appendChild(o);
     });
 
+    var gymList = document.getElementById('gymnasticsNamesDatalist');
+    var gymKnown = new Set(Array.prototype.map.call(gymList.options, function(o){ return o.value; }));
+    var gymNamesSeen = {}; cache.gymnastics.forEach(function(g){ gymNamesSeen[g.movement]=true; });
+    Object.keys(gymNamesSeen).forEach(function(n){
+      if(gymKnown.has(n)) return;
+      gymKnown.add(n);
+      var o=document.createElement('option'); o.value=n; gymList.appendChild(o);
+    });
+    var gymFilter = document.getElementById('gymLogFilter');
+    var gymFilterKnown = new Set(Array.prototype.map.call(gymFilter.options, function(o){ return o.value; }));
+    Array.from(gymKnown).sort(function(a,b){ return a.localeCompare(b); }).forEach(function(n){
+      if(gymFilterKnown.has(n)) return;
+      var o=document.createElement('option'); o.value=n; o.textContent=n; gymFilter.appendChild(o);
+    });
+
     var allList = document.getElementById('allMovementsDatalist');
     allList.innerHTML='';
     var liftNames = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
     var condNames = Array.prototype.map.call(cdList.options, function(o){ return o.value; });
-    liftNames.concat(condNames).forEach(function(n){
+    var gymNames = Array.prototype.map.call(gymList.options, function(o){ return o.value; });
+    liftNames.concat(condNames).concat(gymNames).forEach(function(n){
       var o=document.createElement('option'); o.value=n; allList.appendChild(o);
     });
   }
@@ -1305,6 +1768,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       var pace = (x.distance_m!=null && x.duration_seconds!=null) ? fmtDuration(x.duration_seconds/(Number(x.distance_m)/1000))+'/km' : '—';
       return [fmtDate(x.entry_date), x.movement, dist, dur, pace, x.notes||'—'];
     }, 'conditioning');
+    var gymFilterVal = document.getElementById('gymLogFilter').value;
+    var gymRows = cache.gymnastics.slice().reverse();
+    if(gymFilterVal !== '__all__'){ gymRows = gymRows.filter(function(x){ return x.movement===gymFilterVal; }); }
+    fillTable('gymTable', gymRows, function(x){
+      return [fmtDate(x.entry_date), x.movement, x.reps, x.notes||'—'];
+    }, 'gymnastics');
   }
 
   function fmtDistance(m){

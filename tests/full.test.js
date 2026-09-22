@@ -60,6 +60,17 @@ setTimeout(async () => {
   const liftsAfterRename = await r.json();
   console.log('lift names after rename:', liftsAfterRename.map(l => l.lift));
 
+  // gymnastics / calisthenics logger, through the real mounted app
+  r = await fetch(base + '/api/fitness/gymnastics', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: auth },
+    body: JSON.stringify({ entry_date: '2026-09-08', movement: 'Bar Muscle-Ups', reps: 3 })
+  });
+  console.log('post gymnastics via full app:', r.status);
+
+  r = await fetch(base + '/api/fitness/gymnastics', { headers: { Authorization: auth } });
+  const gymEntries = await r.json();
+  console.log('gymnastics via full app:', JSON.stringify(gymEntries));
+
   console.log('FULL INTEGRATION TEST COMPLETE');
   process.exit(0);
 }, 400);
