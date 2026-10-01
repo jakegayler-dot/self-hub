@@ -71,6 +71,16 @@ setTimeout(async () => {
   const gymEntries = await r.json();
   console.log('gymnastics via full app:', JSON.stringify(gymEntries));
 
+  // shared strength module is served to the page, and the Sentinel preview works
+  r = await fetch(base + '/js/strength.js', { headers: { Authorization: auth } });
+  const js = await r.text();
+  console.log('strength module served:', r.status, js.includes('computeStrengthProfile'));
+  if (r.status !== 200 || !js.includes('computeStrengthProfile')) { console.error('FAIL: /js/strength.js'); process.exit(1); }
+  r = await fetch(base + '/api/fitness/sentinel-preview', { headers: { Authorization: auth } });
+  const preview = await r.json();
+  console.log('sentinel preview via full app:', r.status, JSON.stringify(preview));
+  if (r.status !== 200 || !preview.summary || !preview.summary.strength) { console.error('FAIL: sentinel-preview'); process.exit(1); }
+
   console.log('FULL INTEGRATION TEST COMPLETE');
   process.exit(0);
 }, 400);

@@ -43,7 +43,7 @@ Runs migrations automatically on boot, then serves the app on
 npm test
 ```
 
-This runs an integration test against an in-memory Postgres (no real
+This runs the integration tests against an in-memory Postgres (no real
 database needed) — it boots the actual server, hits every API route, and
 checks the computed summary and coach-prompt logic. Useful before you push
 a change.
@@ -97,6 +97,40 @@ client of this API, the same way your own browser is now. It authenticates
 with its own `SENTINEL_USER`/`SENTINEL_PASS` pair (see `.env.example`)
 rather than your personal login, so either credential can be rotated without
 touching the other.
+
+## Sentinel push (Fitness tile)
+
+Self Hub pushes a small summary to Sentinel so its Fitness tile stays current:
+
+    POST {SENTINEL_URL}/v1/sources/self_hub/summary
+    Authorization: Bearer {SENTINEL_API_KEY}
+
+| Variable | Required | What it is |
+| --- | --- | --- |
+| `SENTINEL_URL` | for the push | Sentinel's base URL, e.g. `https://sentinel.up.railway.app` (no trailing path) |
+| `SENTINEL_API_KEY` | for the push | The `self_hub` source key issued by Sentinel |
+
+If either is unset the push is off and the server logs that once. When on,
+it pushes ~60 s after any successful POST/PUT/DELETE under `/api`
+(debounced, at most 5 min behind a steady stream of writes), ~30 s after
+boot, and every 6 h. Failures retry with backoff (1, 2, 4 … 60 min); a failed
+push never affects a request.
+
+The body is `{ generated_at, summary: { strength, training_week, needs_input } }`:
+
+- `strength` — the same numbers as the Health tab's Strength profile: best
+  e1RM per benchmark lift within the last 2 months ÷ average bodyweight over
+  those 2 months, scored against bodyweight-ratio tiers, grouped by movement
+  pattern (accessory lifts excluded). `overall_score` is the mean of the
+  pattern scores (the Health tab has no single overall number). The maths
+  lives in `server/lib/strength.js`, which the page also loads (as
+  `/js/strength.js`), so the two cannot disagree.
+- `training_week` — strength sessions (distinct days with a lift logged)
+  Monday–Sunday in Regina time, against the weekly strength-session goal.
+- `needs_input` — things only you can fix, e.g. no recent bodyweight.
+
+`GET /api/fitness/sentinel-preview` (behind the normal login) returns exactly
+what would be sent, without sending it.
 
 ## A security note from the build
 

@@ -1,5 +1,6 @@
 const express = require('express');
 const { pool } = require('../db');
+const { buildSummary: buildSentinelSummary } = require('../lib/sentinel');
 
 const router = express.Router();
 
@@ -324,6 +325,11 @@ router.get('/summary', async (req, res) => {
     weekly_load: weeklyLoad,
     entry_counts: { bodyweight: bw.length, lifts: lifts.length, measurements: measurements.length },
   });
+});
+
+// ---- Sentinel: exactly what the Fitness tile push sends (dry run, nothing is sent) ----
+router.get('/sentinel-preview', async (req, res) => {
+  res.json(await buildSentinelSummary(pool));
 });
 
 // ---- conditioning: non-strength movements tracked by distance/duration ----
