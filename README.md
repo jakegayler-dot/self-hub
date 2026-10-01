@@ -1,19 +1,6 @@
 # Self Hub
 
-The Trinity Degree's Bond performance record — a real, deployed system
-(Node/Express + PostgreSQL, hosted on Railway), replacing the artifact-based
-tracker whose storage scope couldn't be confirmed and had no phone-reliable
-path. This is the same stack as Cattle Manager, so it slots into your
-existing workflow.
 
-**First module: BND-101 (The Standard)** — bodyweight, lifts, and benchmark
-logging, a dashboard with trend charts, and a weekly AI-coach prompt
-assembled server-side from your real data.
-
-This is meant to grow the way Cattle Manager did: new Bond units (BND-106
-Vertical, BND-201 Dive, marksmanship, etc.) become new tables and routes
-under this same app, not new standalone tools. One deployment, one login,
-one place your physical record lives.
 
 ## Stack
 
