@@ -5,6 +5,7 @@ const { runMigrations, pool } = require('./db');
 const { basicAuth } = require('./middleware/basicAuth');
 const fitnessRouter = require('./routes/fitness');
 const { createSentinelPusher } = require('./lib/sentinel');
+const { createSentinelReadRouter } = require('./routes/sentinelRead');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,6 +23,8 @@ app.use(basicAuth);
 app.use('/api', sentinelPusher.middleware);
 
 app.use('/api/fitness', fitnessRouter);
+// Read-only lookup API for Sentinel's voice agent (same Basic auth).
+app.use('/api/sentinel', createSentinelReadRouter({ pool }));
 
 // The strength-score module is shared with the server so the Health tab and
 // the Sentinel push can never disagree.

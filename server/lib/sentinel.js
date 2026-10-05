@@ -249,4 +249,4 @@ function createSentinelPusher({
   return { enabled, state, start, stop, notifyWrite, middleware, run };
 }
 
-module.exports = { buildSummary, summarize, createSentinelPusher, reginaDate, reginaWeek };
+module.exports = { buildSummary, summarize, createSentinelPusher, reginaDate, reginaWeek, loadStrengthInputs };
