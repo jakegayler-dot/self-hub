@@ -6,6 +6,10 @@ const { basicAuth } = require('./middleware/basicAuth');
 const fitnessRouter = require('./routes/fitness');
 const { createSentinelPusher } = require('./lib/sentinel');
 const { createSentinelReadRouter } = require('./routes/sentinelRead');
+const { createSentinelActionsRouter, trackMountPaths } = require('./routes/sentinelActions');
+
+// Record where each router is mounted so the Sentinel bridge can list routes.
+trackMountPaths();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,6 +29,8 @@ app.use('/api', sentinelPusher.middleware);
 app.use('/api/fitness', fitnessRouter);
 // Read-only lookup API for Sentinel's voice agent (same Basic auth).
 app.use('/api/sentinel', createSentinelReadRouter({ pool }));
+// Sentinel API bridge: list every /api route and call any of them as the owner.
+app.use('/api/sentinel', createSentinelActionsRouter());
 
 // The strength-score module is shared with the server so the Health tab and
 // the Sentinel push can never disagree.
