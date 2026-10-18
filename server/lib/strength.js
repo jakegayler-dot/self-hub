@@ -54,9 +54,28 @@
     'Strict Pull-Ups':'Pull Vertical', 'Chest-to-Bar':'Pull Vertical',
     'Butterfly Pull-Ups':'Pull Vertical', 'Bar Muscle-Ups':'Pull Vertical'
   };
+  // Movements the workout generator (server/lib/movements.js) can program
+  // that aren't in the lists above — named here so they classify correctly
+  // once logged, instead of falling through to keyword matching (which
+  // would call "Rear Delt Flyes" chest pressing, or leave lateral raises
+  // Uncategorized). Kept separate from LIFT_PATTERN so the legacy-parity
+  // test still compares only the original names.
+  var GENERATOR_PATTERN = {
+    'DB Bulgarian Split Squat':'Squat', 'Goblet Squat':'Squat', 'Barbell Hip Thrust':'Hinge', 'KB Swings':'Hinge',
+    'Seated DB Shoulder Press':'Push Vertical', 'Arnold Press':'Push Vertical',
+    'Incline DB Press':'Push Horizontal', 'Weighted Dips':'Push Horizontal', 'Ring Dips':'Push Horizontal',
+    'Single-Arm DB Row':'Pull Horizontal', 'Ring Rows':'Pull Horizontal', 'Ring Muscle-Ups':'Pull Vertical',
+    'DB Snatch':'Olympic',
+    'DB Lateral Raises':'Accessory', 'Cable Lateral Raises':'Accessory', 'Rear Delt Flyes':'Accessory',
+    'Face Pulls':'Accessory', 'Barbell Shrugs':'Accessory', 'DB Shrugs':'Accessory',
+    'Air Squats':'Squat', 'Wall Balls':'Squat', 'Box Jumps':'Squat',
+    'Hollow Rocks':'Core', 'V-Ups':'Core', 'Hanging Knee Raises':'Core',
+    'Burpees':'Conditioning', 'Double-Unders':'Conditioning'
+  };
   function liftPattern(name){
     if(LIFT_PATTERN[name]) return LIFT_PATTERN[name];
     if(GYMNASTICS_PATTERN[name]) return GYMNASTICS_PATTERN[name];
+    if(GENERATOR_PATTERN[name]) return GENERATOR_PATTERN[name];
     var s=name.toLowerCase();
     if(/handstand/.test(s)) return 'Balance';
     if(/hspu/.test(s)) return 'Push Vertical';
@@ -225,6 +244,7 @@
     WINDOW_DAYS: WINDOW_DAYS,
     LIFT_PATTERN: LIFT_PATTERN,
     GYMNASTICS_PATTERN: GYMNASTICS_PATTERN,
+    GENERATOR_PATTERN: GENERATOR_PATTERN,
     STRENGTH_STANDARDS: STRENGTH_STANDARDS,
     liftPattern: liftPattern,
     standardsFor: standardsFor,

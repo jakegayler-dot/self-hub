@@ -4,6 +4,7 @@ const path = require('path');
 const { runMigrations, pool } = require('./db');
 const { basicAuth } = require('./middleware/basicAuth');
 const fitnessRouter = require('./routes/fitness');
+const { createWorkoutsRouter } = require('./routes/workouts');
 const { createSentinelPusher } = require('./lib/sentinel');
 const { createSentinelReadRouter } = require('./routes/sentinelRead');
 const { createSentinelActionsRouter, trackMountPaths } = require('./routes/sentinelActions');
@@ -27,6 +28,8 @@ app.use(basicAuth);
 app.use('/api', sentinelPusher.middleware);
 
 app.use('/api/fitness', fitnessRouter);
+// Workout generator, one-tap logging, engine tests, Sentinel refine queue.
+app.use('/api/fitness', createWorkoutsRouter({ pool }));
 // Read-only lookup API for Sentinel's voice agent (same Basic auth).
 app.use('/api/sentinel', createSentinelReadRouter({ pool }));
 // Sentinel API bridge: list every /api route and call any of them as the owner.

@@ -83,6 +83,67 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .phys-hit:hover{fill:rgba(224,164,88,.14)}
 .phys-hit.sel{fill:rgba(224,164,88,.24)}
 .trk-physique-info{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:12px 14px;min-height:20px}
+
+/* ---- Train tab ---- */
+.wk-presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.wk-chipbtn{background:var(--panel2);border:1px solid var(--line2);color:var(--ink2);padding:5px 10px;border-radius:14px;font-size:11.5px;cursor:pointer}
+.wk-chipbtn:hover{color:var(--ink)}
+.wk-equip{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px 10px;margin-bottom:12px}
+.wk-equip label{font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px;cursor:pointer}
+.wk-card{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin-bottom:12px;overflow:hidden}
+.wk-card.today{border-color:var(--amber-dim)}
+.wk-head{padding:12px 14px;cursor:pointer;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.wk-head .t{font-size:14px;color:var(--ink);font-weight:500}
+.wk-head .d{font-family:var(--mono);font-size:11px;color:var(--ink3);margin-bottom:3px}
+.wk-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}
+.wk-chip{font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:10px;border:1px solid var(--line2);color:var(--ink3)}
+.wk-chip.amber{color:var(--amber);border-color:var(--amber-dim)}
+.wk-chip.green{color:var(--green);border-color:#4d6b43}
+.wk-chip.red{color:var(--red);border-color:#7a3d39}
+.wk-prog{font-family:var(--mono);font-size:12px;color:var(--ink2);white-space:nowrap}
+.wk-body{padding:0 14px 14px;display:none}
+.wk-card.open .wk-body{display:block}
+.wk-block{border-top:1px solid var(--line);padding:12px 0 4px}
+.wk-block h4{margin:0 0 4px;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--amber);font-weight:500;display:flex;justify-content:space-between;gap:8px}
+.wk-block h4 span{color:var(--ink3);font-family:var(--mono);text-transform:none;letter-spacing:0}
+.wk-bnote{font-size:12px;color:var(--ink2);margin:0 0 8px;line-height:1.45}
+.wk-item{margin:0 0 10px}
+.wk-item .mv{font-size:13px;color:var(--ink)}
+.wk-item .rx{font-family:var(--mono);font-size:12px;color:var(--ink2);margin-left:6px}
+.wk-item .src{font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.4}
+.wk-sets{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+.wk-set{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
+.wk-set .n{font-family:var(--mono);color:var(--ink3);width:38px}
+.wk-set input{width:70px;background:var(--panel2);border:1px solid var(--line2);border-radius:5px;color:var(--ink);padding:5px 7px;font-size:13px;font-family:var(--mono)}
+.wk-set .u{color:var(--ink3);font-size:11px}
+.wk-set .tgt{font-family:var(--mono);color:var(--amber);font-size:12px}
+.wk-tick{background:var(--panel2);border:1px solid var(--line2);color:var(--ink2);width:34px;height:30px;border-radius:6px;cursor:pointer;font-size:15px}
+.wk-tick:hover{border-color:var(--green);color:var(--green)}
+.wk-set.done{color:var(--green)}
+.wk-set.done .res{font-family:var(--mono)}
+.wk-undo{background:none;border:none;color:var(--ink3);cursor:pointer;font-size:13px}
+.wk-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.wk-actions .trk-btn{padding:7px 11px;font-size:12px}
+.wk-why{margin-top:10px;font-size:12px;color:var(--ink2)}
+.wk-why summary{cursor:pointer;color:var(--ink3);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em}
+.wk-why li{margin:5px 0;line-height:1.45}
+.wk-refined{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--ink2);margin-top:8px}
+.eng-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px}
+.eng-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 13px;font-size:12px;color:var(--ink2)}
+.eng-card .m{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink);margin-bottom:6px;display:flex;justify-content:space-between}
+.eng-card .row{display:flex;justify-content:space-between;margin:3px 0}
+.eng-card .row b{font-family:var(--mono);font-weight:500;color:var(--ink)}
+.eng-card .lim{margin-top:6px;font-size:11.5px;color:var(--ink3);line-height:1.4}
+.wk-timer{position:fixed;inset:0;background:rgba(10,12,15,.96);z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px;text-align:center}
+.wk-timer.on{display:flex}
+.wk-timer .ph{font-size:14px;letter-spacing:.2em;text-transform:uppercase;color:var(--ink3)}
+.wk-timer .ph.work{color:var(--amber)}
+.wk-timer .ph.rest{color:var(--green)}
+.wk-timer .clock{font-family:var(--mono);font-size:min(28vw,150px);color:var(--ink);line-height:1.05;margin:6px 0}
+.wk-timer .rd{font-family:var(--mono);color:var(--ink2);font-size:15px}
+.wk-timer .tg{font-size:20px;color:var(--amber);margin-top:10px;font-family:var(--mono)}
+.wk-timer .nx{font-size:12px;color:var(--ink3);margin-top:8px}
+.wk-timer .ctl{display:flex;gap:8px;margin-top:22px}
 @media (max-width:480px){ .trk-body{padding:14px} }
 </style>
 </head>
@@ -95,6 +156,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   </div>
   <div class="trk-tabs">
     <button class="trk-tab on" data-tab="dash">Dashboard</button>
+    <button class="trk-tab" data-tab="train">Train</button>
     <button class="trk-tab" data-tab="log">Log</button>
     <button class="trk-tab" data-tab="history">History</button>
     <button class="trk-tab" data-tab="health">Health</button>
@@ -167,6 +229,55 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-log"><table id="strengthBreakdownTable"><thead><tr>
           <th>Pattern</th><th>Fiber type</th><th>Lift</th><th>Best e1RM (2mo)</th><th>÷ Bodyweight (2mo avg)</th><th>Level</th><th>Score</th>
         </tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+
+    <div class="trk-pane" data-pane="train">
+      <div class="trk-sec">
+        <h2>Generate</h2>
+        <p class="trk-note" style="margin-bottom:10px">Built from your logged data: lifts fill this week's weakest and least-trained patterns with loads from your 60-day e1RMs; engine work gets per-interval targets from your own time trials (Gains Lab style). Every choice is explained under "Why this workout".</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="wkDate"></div>
+          <div class="trk-field"><label>Minutes</label><select id="wkMinutes"></select></div>
+          <div class="trk-field"><label>Focus</label><select id="wkFocus"></select></div>
+          <div class="trk-field"><label>Engine machine</label><select id="wkMachine"><option value="auto">Auto</option></select></div>
+        </div>
+        <label class="trk-note" style="display:block;margin-bottom:6px">Equipment available</label>
+        <div class="wk-presets" id="wkPresets"></div>
+        <div class="wk-equip" id="wkEquip"></div>
+        <div class="trk-row" style="align-items:flex-end">
+          <button class="trk-btn primary" id="wkGenOne">Generate session</button>
+          <div class="trk-field" style="flex:0 0 110px;min-width:90px"><label>Days / week</label><input type="number" id="wkDays" min="1" max="7" value="4"></div>
+          <button class="trk-btn" id="wkGenWeek">Generate week</button>
+        </div>
+        <p class="trk-note">A week plan starts on the date above and replaces untouched plans in those 7 days — anything you've started logging is kept.</p>
+      </div>
+
+      <div class="trk-sec">
+        <h2>Plan</h2>
+        <div id="wkPlan"><p class="trk-note">Loading…</p></div>
+      </div>
+
+      <div class="trk-sec">
+        <h2>Engine baselines</h2>
+        <p class="trk-note" style="margin-bottom:10px">Three tests per machine set every conditioning target: <b>10-min time trial</b> (endurance pace), <b>1-min max</b> (top-end speed) and <b>6 × 0:30 / 0:30</b> (repeatability = average ÷ best). Generated engine days schedule the missing or 8-week-old tests automatically; logged intervals nudge targets up to ±6% between tests.</p>
+        <div class="eng-grid" id="engGrid"></div>
+        <details class="wk-why"><summary>Log a test you did elsewhere</summary>
+          <div class="trk-row" style="margin-top:8px">
+            <div class="trk-field"><label>Date</label><input type="date" id="etDate"></div>
+            <div class="trk-field"><label>Machine</label><select id="etMachine"></select></div>
+            <div class="trk-field"><label>Test</label><select id="etTest"></select></div>
+            <div class="trk-field"><label id="etOutLabel">Output</label><input type="text" id="etOutput" placeholder="e.g. 165"></div>
+          </div>
+          <button class="trk-btn" id="etSubmit">Save test</button>
+          <div class="trk-log" style="margin-top:10px"><table id="etTable"><thead><tr><th>Date</th><th>Machine</th><th>Test</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
+        </details>
+      </div>
+
+      <div class="trk-sec">
+        <h2>Past workouts</h2>
+        <div id="wkPast"></div>
       </div>
     </div>
 
@@ -435,6 +546,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   </div>
 </div>
 </div>
+<div class="wk-timer" id="wkTimer">
+  <div class="ph" id="tmPhase">Get ready</div>
+  <div class="clock" id="tmClock">0:10</div>
+  <div class="rd" id="tmRound"></div>
+  <div class="tg" id="tmTarget"></div>
+  <div class="nx" id="tmNext"></div>
+  <div class="ctl"><button class="trk-btn" id="tmPause">Pause</button><button class="trk-btn" id="tmSkip">Skip</button><button class="trk-btn" id="tmClose">Close</button></div>
+</div>
 <div class="trk-toast" id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -471,6 +590,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       btn.classList.add('on');
       document.querySelector('.trk-pane[data-pane="'+btn.dataset.tab+'"]').classList.add('on');
       if(btn.dataset.tab==='coach') loadCoachPrompt();
+      if(btn.dataset.tab==='train') loadTrain();
     });
   });
 
@@ -1158,6 +1278,17 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       tonnageByPatternWeek[p][wi]+=l.load_lb*l.reps;
       setsByPatternWeek[p][wi]++;
     });
+    // Bodyweight sets (pull-ups, dips, HSPU…) are real sets for a pattern too —
+    // counted toward volume (not tonnage), same as the workout generator does.
+    cache.gymnastics.forEach(function(g){
+      var d=new Date(g.entry_date);
+      if(d<chronicStart) return;
+      var wi = weekBucket(g.entry_date);
+      if(wi<0||wi>4) return;
+      var p = liftPattern(g.movement);
+      if(!setsByPatternWeek[p]) return;
+      setsByPatternWeek[p][wi]++;
+    });
     var pTbody = document.querySelector('#weeklyPatternTable tbody'); pTbody.innerHTML='';
     patterns.forEach(function(p){
       var thisWk = tonnageByPatternWeek[p][0];
@@ -1286,9 +1417,24 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     'Strict Pull-Ups':'Pull Vertical', 'Chest-to-Bar':'Pull Vertical',
     'Butterfly Pull-Ups':'Pull Vertical', 'Bar Muscle-Ups':'Pull Vertical'
   };
+  // Same list as GENERATOR_PATTERN in server/lib/strength.js — movements the
+  // workout generator can program that aren't in the lists above.
+  var GENERATOR_PATTERN = {
+    'DB Bulgarian Split Squat':'Squat', 'Goblet Squat':'Squat', 'Barbell Hip Thrust':'Hinge', 'KB Swings':'Hinge',
+    'Seated DB Shoulder Press':'Push Vertical', 'Arnold Press':'Push Vertical',
+    'Incline DB Press':'Push Horizontal', 'Weighted Dips':'Push Horizontal', 'Ring Dips':'Push Horizontal',
+    'Single-Arm DB Row':'Pull Horizontal', 'Ring Rows':'Pull Horizontal', 'Ring Muscle-Ups':'Pull Vertical',
+    'DB Snatch':'Olympic',
+    'DB Lateral Raises':'Accessory', 'Cable Lateral Raises':'Accessory', 'Rear Delt Flyes':'Accessory',
+    'Face Pulls':'Accessory', 'Barbell Shrugs':'Accessory', 'DB Shrugs':'Accessory',
+    'Air Squats':'Squat', 'Wall Balls':'Squat', 'Box Jumps':'Squat',
+    'Hollow Rocks':'Core', 'V-Ups':'Core', 'Hanging Knee Raises':'Core',
+    'Burpees':'Conditioning', 'Double-Unders':'Conditioning'
+  };
   function liftPattern(name){
     if(LIFT_PATTERN[name]) return LIFT_PATTERN[name];
     if(GYMNASTICS_PATTERN[name]) return GYMNASTICS_PATTERN[name];
+    if(GENERATOR_PATTERN[name]) return GENERATOR_PATTERN[name];
     var s=name.toLowerCase();
     if(/handstand/.test(s)) return 'Balance';
     if(/hspu/.test(s)) return 'Push Vertical';
@@ -1819,6 +1965,346 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     var txt=document.getElementById('coachPrompt').textContent;
     if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(function(){ toast('Copied'); }); }
   });
+
+  // ======================= Train tab: generated workouts =======================
+  // Workouts are built server-side (server/lib/workoutGen.js + engine.js);
+  // this renders them, logs sets with one tap, runs the interval timer, and
+  // sends refine requests to Sentinel. Text in a workout can come from
+  // Sentinel, so everything is escaped before it's rendered.
+  var train = { options:null, workouts:[], engine:null, open:{}, loaded:false };
+  function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function localISO(d){ d=d||new Date(); return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10); }
+  function mmss(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+  function loadPrefs(){ try{ return JSON.parse(localStorage.getItem('selfhub.train')||'{}')||{}; }catch(e){ return {}; } }
+  function savePrefs(p){ try{ localStorage.setItem('selfhub.train', JSON.stringify(p)); }catch(e){} }
+
+  function currentInputs(){
+    var eq = Array.prototype.filter.call(document.querySelectorAll('#wkEquip input'), function(i){ return i.checked; }).map(function(i){ return i.value; });
+    var p = { date: document.getElementById('wkDate').value, minutes: parseInt(document.getElementById('wkMinutes').value,10),
+      focus: document.getElementById('wkFocus').value, engine_modality: document.getElementById('wkMachine').value, equipment: eq };
+    savePrefs({ minutes:p.minutes, focus:p.focus, engine_modality:p.engine_modality, equipment:eq, days: document.getElementById('wkDays').value });
+    return p;
+  }
+
+  function setupTrainForm(o){
+    var prefs = loadPrefs();
+    document.getElementById('wkDate').value = localISO();
+    document.getElementById('etDate').value = localISO();
+    var ms=document.getElementById('wkMinutes'); ms.innerHTML='';
+    o.minutes.forEach(function(m){ var op=document.createElement('option'); op.value=m; op.textContent=m+' min'; ms.appendChild(op); });
+    ms.value = String(prefs.minutes||60);
+    var fs=document.getElementById('wkFocus'); fs.innerHTML='';
+    o.foci.forEach(function(f){ var op=document.createElement('option'); op.value=f.id; op.textContent=f.label; fs.appendChild(op); });
+    fs.value = prefs.focus||'mixed';
+    var mc=document.getElementById('wkMachine'), et=document.getElementById('etMachine');
+    o.machines.forEach(function(m){
+      var op=document.createElement('option'); op.value=m.id; op.textContent=m.label; mc.appendChild(op);
+      var op2=document.createElement('option'); op2.value=m.id; op2.textContent=m.label+' ('+m.unit+')'; et.appendChild(op2);
+    });
+    mc.value = prefs.engine_modality||'auto';
+    var tt=document.getElementById('etTest');
+    o.tests.forEach(function(t){ var op=document.createElement('option'); op.value=t.id; op.textContent=t.label; tt.appendChild(op); });
+    tt.addEventListener('change', function(){
+      var rep = tt.value==='repeat';
+      document.getElementById('etOutLabel').textContent = rep ? 'Each interval (comma-separated)' : 'Total output';
+      document.getElementById('etOutput').placeholder = rep ? '12, 11, 11, 10, 10, 9' : 'e.g. 165';
+    });
+    if(prefs.days) document.getElementById('wkDays').value = prefs.days;
+    var eqBox=document.getElementById('wkEquip'); eqBox.innerHTML='';
+    var chosen = prefs.equipment || o.presets.box.equipment;
+    o.equipment.forEach(function(e){
+      var l=document.createElement('label');
+      l.innerHTML='<input type="checkbox" value="'+esc(e.id)+'"'+(chosen.indexOf(e.id)!==-1?' checked':'')+'> '+esc(e.label);
+      eqBox.appendChild(l);
+    });
+    var pr=document.getElementById('wkPresets'); pr.innerHTML='';
+    Object.keys(o.presets).forEach(function(k){
+      var b=document.createElement('button'); b.type='button'; b.className='wk-chipbtn'; b.textContent=o.presets[k].label;
+      b.addEventListener('click', function(){
+        document.querySelectorAll('#wkEquip input').forEach(function(i){ i.checked = o.presets[k].equipment.indexOf(i.value)!==-1; });
+      });
+      pr.appendChild(b);
+    });
+  }
+
+  async function loadTrain(){
+    try{
+      if(!train.options){ train.options = await api('GET','/workout-options'); setupTrainForm(train.options); }
+      var r = await Promise.all([api('GET','/workouts'), api('GET','/engine?date='+localISO())]);
+      train.workouts = r[0]; train.engine = r[1]; train.loaded = true;
+      renderTrain();
+    }catch(e){ toast('Could not load workouts: '+e.message); }
+  }
+  async function reloadEngine(){ try{ train.engine = await api('GET','/engine?date='+localISO()); renderEngine(); }catch(e){} }
+
+  function upsertWorkout(w){
+    var i = train.workouts.findIndex(function(x){ return x.id===w.id; });
+    if(i===-1) train.workouts.push(w); else train.workouts[i]=w;
+  }
+
+  document.getElementById('wkGenOne').addEventListener('click', async function(){
+    var p=currentInputs(); if(!p.date){ toast('Pick a date'); return; }
+    this.disabled=true;
+    try{ var w=await api('POST','/workouts/generate', p); upsertWorkout(w); train.open={}; train.open[w.id]=true; renderTrain(); toast('Workout generated'); reloadEngine(); }
+    catch(e){ toast('Could not generate: '+e.message); }
+    this.disabled=false;
+  });
+  document.getElementById('wkGenWeek').addEventListener('click', async function(){
+    var p=currentInputs(); p.start_date=p.date; p.days=parseInt(document.getElementById('wkDays').value,10)||4;
+    this.disabled=true;
+    try{
+      var r=await api('POST','/workouts/generate-week', p);
+      train.workouts = await api('GET','/workouts');
+      train.open={}; if(r.workouts[0]) train.open[r.workouts[0].id]=true;
+      renderTrain(); toast(r.workouts.length+' workouts planned'+(r.kept_existing.length?' — kept '+r.kept_existing.length+' already started':''));
+    }catch(e){ toast('Could not generate: '+e.message); }
+    this.disabled=false;
+  });
+
+  function renderTrain(){ renderPlan(); renderEngine(); }
+
+  function renderPlan(){
+    var today = localISO();
+    var plan = train.workouts.filter(function(w){ return w.date>=today || (w.status==='planned' && w.progress.done>0); })
+      .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.id-b.id; });
+    var past = train.workouts.filter(function(w){ return plan.indexOf(w)===-1; })
+      .sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:b.id-a.id; }).slice(0,15);
+    var planEl=document.getElementById('wkPlan'), pastEl=document.getElementById('wkPast');
+    if(!plan.length){ planEl.innerHTML='<p class="trk-note">Nothing planned from today on. Generate a session or a week above.</p>'; }
+    else {
+      var anyOpen = plan.some(function(w){ return train.open[w.id]; });
+      planEl.innerHTML = plan.map(function(w,i){ return workoutCard(w, train.open[w.id] || (!anyOpen && i===0)); }).join('');
+    }
+    pastEl.innerHTML = past.length ? past.map(function(w){ return workoutCard(w, !!train.open[w.id]); }).join('') : '<p class="trk-note">None yet.</p>';
+  }
+
+  function fmtDay(d){ var dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
+
+  function workoutCard(w, open){
+    var today=localISO();
+    var chips = '<span class="wk-chip">'+esc(w.focus)+'</span><span class="wk-chip">'+esc(w.minutes)+' min</span>';
+    if(w.status==='done') chips+='<span class="wk-chip green">Done</span>';
+    if(w.status==='skipped') chips+='<span class="wk-chip red">Skipped</span>';
+    if(w.source==='sentinel') chips+='<span class="wk-chip amber">Refined by Sentinel</span>';
+    if(w.refine.status==='pending') chips+='<span class="wk-chip amber">Waiting on Sentinel</span>';
+    var html = '<div class="wk-card'+(open?' open':'')+(w.date===today?' today':'')+'" data-wid="'+w.id+'">'+
+      '<div class="wk-head" data-act="toggle"><div><div class="d">'+esc(fmtDay(w.date))+(w.date===today?' &middot; TODAY':'')+'</div>'+
+      '<div class="t">'+esc(w.title)+'</div><div class="wk-chips">'+chips+'</div></div>'+
+      '<div class="wk-prog">'+w.progress.done+' / '+w.progress.total+'</div></div><div class="wk-body">';
+    (w.body.blocks||[]).forEach(function(b){ html += blockHtml(w,b); });
+    if(w.source==='sentinel' && w.refine.notes) html += '<div class="wk-refined"><b>Sentinel:</b> '+esc(w.refine.notes)+'</div>';
+    if(w.body.rationale && w.body.rationale.length){
+      html += '<details class="wk-why"><summary>Why this workout</summary><ul>'+w.body.rationale.map(function(r){ return '<li>'+esc(r)+'</li>'; }).join('')+'</ul></details>';
+    }
+    var started = w.progress.done>0;
+    html += '<div class="wk-actions">';
+    if(!started) html += '<button class="trk-btn" data-act="regen">Regenerate</button>';
+    if(!started && w.refine.status!=='pending') html += '<button class="trk-btn" data-act="refine">Refine with Sentinel</button>';
+    if(w.refine.status==='pending') html += '<button class="trk-btn" data-act="unrefine">Cancel Sentinel request</button>';
+    if(!started && w.has_rules_version) html += '<button class="trk-btn" data-act="revert">Back to rules version</button>';
+    if(w.status!=='done') html += '<button class="trk-btn" data-act="status" data-status="done">Mark done</button>';
+    if(w.status==='planned') html += '<button class="trk-btn" data-act="status" data-status="skipped">Skip</button>';
+    if(w.status!=='planned') html += '<button class="trk-btn" data-act="status" data-status="planned">Reopen</button>';
+    html += '<button class="trk-btn" data-act="delete">Delete</button></div>';
+    if(w.refine.status==='pending') html += '<p class="trk-note" style="margin-top:8px">Queued for Sentinel\'s trainer agent'+(w.refine.request?' with your note: "'+esc(w.refine.request)+'"':'')+'. It shows up here once the agent has run.</p>';
+    return html + '</div></div>';
+  }
+
+  function blockHtml(w,b){
+    var h = '<div class="wk-block" data-bid="'+esc(b.id)+'"><h4>'+esc(b.title)+'<span>'+(b.minutes?esc(b.minutes)+' min':'')+'</span></h4>';
+    if(b.notes) h += '<p class="wk-bnote">'+esc(b.notes)+'</p>';
+    var timed = b.items.some(function(it){ return (it.log_as==='engine'||it.log_as==='test') && it.sets.length; });
+    if(timed) h += '<button class="trk-btn" data-act="timer" style="margin-bottom:8px;padding:6px 11px;font-size:12px">&#9654; Start interval timer</button>';
+    b.items.forEach(function(it){
+      // Metcon pieces already name the movement in the prescription ("15 cal Row").
+      h += '<div class="wk-item" data-iid="'+esc(it.id)+'">'+(b.kind==='metcon' && it.prescription
+        ? '<span class="mv">'+esc(it.prescription)+'</span>'
+        : '<span class="mv">'+esc(it.movement)+'</span>'+(it.prescription?'<span class="rx">'+esc(it.prescription)+'</span>':''));
+      if(it.load_source) h += '<div class="src">'+esc(it.load_source)+'</div>';
+      else if(it.notes) h += '<div class="src">'+esc(it.notes)+'</div>';
+      if(b.kind!=='metcon' && it.log_as!=='none' && it.sets.length){
+        h += '<div class="wk-sets">'+it.sets.map(function(s,i){ return setHtml(it,s,i); }).join('')+'</div>';
+      }
+      h += '</div>';
+    });
+    if(b.kind==='metcon'){
+      if(b.result) h += '<div class="wk-set done"><span class="res">&#10003; '+esc(b.result.text)+'</span><button class="wk-undo" data-act="unmetcon" title="Undo">&times;</button></div>';
+      else h += '<div class="wk-set"><input type="text" style="width:170px" class="mc-res" placeholder="'+(/time/i.test(b.title)?'11:42':'6 rounds + 4')+'"><button class="trk-btn" data-act="metcon" style="padding:6px 11px;font-size:12px">Log result</button></div>';
+    }
+    return h+'</div>';
+  }
+
+  function setHtml(it,s,i){
+    var n='<span class="n">'+(it.sets.length>1?'#'+(i+1):'')+'</span>';
+    var done = !!s.entry;
+    if(done){
+      var res='';
+      if(it.log_as==='lift') res = s.entry.reps+' &times; '+s.entry.load_lb+' lb';
+      else if(it.log_as==='gymnastics') res = s.entry.reps+' reps';
+      else if(it.log_as==='engine'||it.log_as==='test'){
+        res = esc(s.actual)+' '+esc(s.unit);
+        if(s.target){ var pct=Math.round(s.actual/s.target*100); res += ' <span style="color:var(--'+(pct>=100?'green':pct>=95?'amber':'red')+')">('+pct+'%)</span>'; }
+      } else res='done';
+      return '<div class="wk-set done" data-si="'+i+'">'+n+'<span class="res">&#10003; '+res+'</span><button class="wk-undo" data-act="unlog" title="Undo">&times;</button></div>';
+    }
+    var inputs='';
+    if(it.log_as==='lift'){
+      inputs = '<input type="number" class="in-reps" value="'+esc(s.reps)+'"><span class="u">reps</span>'+
+        '<input type="number" step="2.5" class="in-load" value="'+(s.load_lb!=null?esc(s.load_lb):'')+'" placeholder="lb"><span class="u">lb'+(s.rpe?' &middot; RPE '+esc(s.rpe):'')+'</span>';
+    } else if(it.log_as==='gymnastics'){
+      inputs = '<input type="number" class="in-reps" value="'+esc(s.reps)+'"><span class="u">reps</span>';
+    } else if(it.log_as==='engine'||it.log_as==='test'){
+      inputs = '<span class="u">'+mmss(s.duration_s)+'</span>'+(s.target?'<span class="tgt">&rarr; '+esc(s.target)+' '+esc(s.unit)+'</span>':'<span class="tgt">max</span>')+
+        '<input type="number" class="in-out"'+(s.target?' value="'+esc(s.target)+'"':'')+' placeholder="'+esc(s.unit)+'"><span class="u">'+esc(s.unit)+'</span>';
+    }
+    return '<div class="wk-set" data-si="'+i+'">'+n+inputs+'<button class="wk-tick" data-act="log" title="Log this set">&#10003;</button></div>';
+  }
+
+  async function onTrainClick(e){
+    var t=e.target.closest('[data-act]'); if(!t) return;
+    var card=t.closest('.wk-card'); if(!card) return;
+    var id=Number(card.dataset.wid), act=t.dataset.act;
+    var w=train.workouts.find(function(x){ return x.id===id; });
+    if(act==='toggle'){ train.open[id]=!card.classList.contains('open'); card.classList.toggle('open'); return; }
+    if(act==='timer'){ var tb=w.body.blocks.find(function(b){ return b.id===(t.closest('.wk-block')||{}).dataset.bid; }); startTimer(tb); return; }
+    // One request per workout at a time — the server serializes too, this
+    // just stops a fast double-tap from queuing duplicates.
+    if(train.busy && train.busy[id]) return;
+    train.busy = train.busy || {}; train.busy[id] = true; card.style.opacity = '.6';
+    try{ await trainAction(e, t, card, id, act, w); } finally { train.busy[id] = false; card.style.opacity = ''; }
+  }
+  async function trainAction(e, t, card, id, act, w){
+    var blockEl=t.closest('.wk-block'), itemEl=t.closest('.wk-item'), setEl=t.closest('.wk-set');
+    var bid=blockEl&&blockEl.dataset.bid, iid=itemEl&&itemEl.dataset.iid, si=setEl&&setEl.dataset.si;
+    try{
+      var out=null, touchesLogs=false;
+      if(act==='log'){
+        var payload={block_id:bid,item_id:iid,set_index:Number(si)};
+        var r=setEl.querySelector('.in-reps'), l=setEl.querySelector('.in-load'), o=setEl.querySelector('.in-out');
+        if(r && r.value!=='') payload.reps=Number(r.value);
+        if(l && l.value!=='') payload.load_lb=Number(l.value);
+        if(o && o.value!=='') payload.output=Number(o.value);
+        t.disabled=true;
+        out=await api('POST','/workouts/'+id+'/log', payload); touchesLogs=true;
+      } else if(act==='unlog'){ out=await api('POST','/workouts/'+id+'/unlog', {block_id:bid,item_id:iid,set_index:Number(si)}); touchesLogs=true; }
+      else if(act==='metcon'){
+        var v=blockEl.querySelector('.mc-res').value.trim(); if(!v){ toast('Enter your score'); return; }
+        var dur=null, m=/^(\d+):(\d{2})$/.exec(v); if(m) dur=Number(m[1])*60+Number(m[2]);
+        out=await api('POST','/workouts/'+id+'/metcon', {block_id:bid,result:v,duration_s:dur}); touchesLogs=true;
+      }
+      else if(act==='unmetcon'){ out=await api('DELETE','/workouts/'+id+'/metcon/'+encodeURIComponent(bid)); touchesLogs=true; }
+      else if(act==='regen'){ out=await api('POST','/workouts/'+id+'/regenerate'); toast('Regenerated'); }
+      else if(act==='refine'){
+        var note=window.prompt('Anything Sentinel should know? (optional — e.g. "shoulder is cranky", "only 40 min")','');
+        if(note===null) return;
+        out=await api('POST','/workouts/'+id+'/refine', {note:note}); toast('Sent to Sentinel\'s queue');
+      }
+      else if(act==='unrefine'){ out=await api('DELETE','/workouts/'+id+'/refine'); }
+      else if(act==='revert'){ out=await api('POST','/workouts/'+id+'/revert'); toast('Back to the rules version'); }
+      else if(act==='status'){ out=await api('PUT','/workouts/'+id+'/status', {status:t.dataset.status}); }
+      else if(act==='delete'){
+        if(!window.confirm('Delete this workout plan? Sets you already logged stay in your history.')) return;
+        await api('DELETE','/workouts/'+id); train.workouts=train.workouts.filter(function(x){ return x.id!==id; }); renderPlan(); return;
+      }
+      if(out){ train.open[id]=true; upsertWorkout(out); renderPlan(); }
+      if(touchesLogs){ refresh().catch(function(){}); reloadEngine(); }
+    }catch(err){ toast(err.message); t.disabled=false; }
+  }
+  document.getElementById('wkPlan').addEventListener('click', onTrainClick);
+  document.getElementById('wkPast').addEventListener('click', onTrainClick);
+
+  function renderEngine(){
+    var g=document.getElementById('engGrid'); if(!train.engine) return;
+    var TL={tt10:'10-min',sprint60:'1-min',repeat:'Repeat'};
+    var any=false;
+    g.innerHTML = train.engine.baselines.map(function(b){
+      var has = b.tt10||b.sprint60||b.repeat; if(has) any=true;
+      if(!has) return '';
+      function age(t){ return t ? ' <span style="color:var(--'+(t.stale?'red':'ink3')+')">'+t.age_days+'d</span>' : ''; }
+      var due = b.testsDue.length ? '<span class="wk-chip red">Test due: '+b.testsDue.map(function(x){ return TL[x]; }).join(', ')+'</span>' : '<span class="wk-chip green">Current</span>';
+      var adj = b.adjEndurance && b.adjEndurance.factor!==1 ? ' ('+(b.adjEndurance.factor>1?'+':'')+Math.round((b.adjEndurance.factor-1)*100)+'% from recent sessions)' : '';
+      return '<div class="eng-card"><div class="m">'+esc(b.name)+due+'</div>'+
+        '<div class="row"><span>Endurance (10-min)'+age(b.tt10)+'</span><b>'+(b.endurance_pace?esc(b.endurance_pace):'—')+'</b></div>'+
+        '<div class="row"><span>Speed (1-min)'+age(b.sprint60)+'</span><b>'+(b.speed_pace?esc(b.speed_pace):'—')+'</b></div>'+
+        '<div class="row"><span>Speed reserve</span><b>'+(b.speedReserve!=null?b.speedReserve+'&times;':'—')+'</b></div>'+
+        '<div class="row"><span>Repeatability'+age(b.repeat)+'</span><b>'+(b.repeatability!=null?Math.round(b.repeatability*100)+'%':'—')+'</b></div>'+
+        (adj?'<div class="lim">Targets'+esc(adj)+'</div>':'')+
+        (b.limiter?'<div class="lim">'+esc(b.limiter.text)+'</div>':'')+'</div>';
+    }).join('');
+    if(!any) g.innerHTML='<p class="trk-note">No tests yet. Generate an Engine session — with no baseline on a machine it schedules the 10-min time trial first.</p>';
+    var tb=document.querySelector('#etTable tbody'); tb.innerHTML='';
+    if(!train.engine.tests.length){ tb.innerHTML='<tr><td colspan="5" class="empty">No tests logged.</td></tr>'; return; }
+    train.engine.tests.forEach(function(t){
+      var tr=document.createElement('tr');
+      var res = t.output+' '+t.unit+(t.intervals?' avg ('+t.intervals.join(', ')+')':'');
+      tr.innerHTML='<td>'+fmtDate(t.entry_date)+'</td><td>'+esc(t.modality)+'</td><td>'+esc(TL[t.test]||t.test)+'</td><td>'+esc(res)+'</td><td><button class="trk-del" aria-label="Delete">&times;</button></td>';
+      tr.querySelector('button').addEventListener('click', async function(){
+        try{ await api('DELETE','/engine-tests/'+t.id); reloadEngine(); }catch(e){ toast(e.message); }
+      });
+      tb.appendChild(tr);
+    });
+  }
+
+  document.getElementById('etSubmit').addEventListener('click', async function(){
+    var test=document.getElementById('etTest').value, raw=document.getElementById('etOutput').value.trim();
+    var body={entry_date:document.getElementById('etDate').value, modality:document.getElementById('etMachine').value, test:test};
+    if(test==='repeat') body.intervals = raw.split(/[,\s]+/).filter(Boolean).map(Number);
+    else body.output = Number(raw);
+    try{ await api('POST','/engine-tests', body); document.getElementById('etOutput').value=''; toast('Test saved'); reloadEngine(); }
+    catch(e){ toast('Could not save: '+e.message); }
+  });
+
+  // ---- interval timer: work/rest countdown with the target for each round ----
+  var tm={phases:[],i:0,end:0,paused:false,left:0,iv:null,ctx:null};
+  function beep(freq,len){
+    try{
+      tm.ctx = tm.ctx || new (window.AudioContext||window.webkitAudioContext)();
+      var o=tm.ctx.createOscillator(), g=tm.ctx.createGain(); o.frequency.value=freq; o.connect(g); g.connect(tm.ctx.destination);
+      g.gain.value=0.15; o.start(); o.stop(tm.ctx.currentTime+(len||0.15));
+    }catch(e){}
+  }
+  function startTimer(block){
+    var phases=[{kind:'ready',secs:10,label:'Get ready'}];
+    var items=block.items.filter(function(it){ return it.sets.length; });
+    items.forEach(function(it){
+      it.sets.forEach(function(s,i){
+        phases.push({kind:'work',secs:s.duration_s,label:'Work',round:(i+1)+' / '+it.sets.length,target:s.target?('Target '+s.target+' '+s.unit):'Max effort',movement:it.movement});
+        if(s.rest_s) phases.push({kind:'rest',secs:s.rest_s,label:'Rest',round:(i+1)+' / '+it.sets.length});
+      });
+    });
+    tm.phases=phases; tm.i=0; tm.paused=false; document.getElementById('tmPause').textContent='Pause';
+    document.getElementById('wkTimer').classList.add('on');
+    beginPhase();
+    clearInterval(tm.iv); tm.iv=setInterval(tick,200);
+  }
+  function beginPhase(){
+    var p=tm.phases[tm.i];
+    if(!p){ stopTimer(); toast('Intervals done — log each one'); return; }
+    tm.end=Date.now()+p.secs*1000;
+    var ph=document.getElementById('tmPhase'); ph.textContent=p.label+(p.movement?' — '+p.movement:''); ph.className='ph '+p.kind;
+    document.getElementById('tmRound').textContent=p.round?'Interval '+p.round:'';
+    document.getElementById('tmTarget').textContent=p.target||'';
+    var nx=tm.phases[tm.i+1];
+    document.getElementById('tmNext').textContent=nx?'Next: '+nx.label+' '+mmss(nx.secs)+(nx.target?' · '+nx.target:''):'Last one';
+    if(p.kind!=='ready') beep(p.kind==='work'?880:440,0.3);
+    tm.lastSec=null;
+  }
+  function tick(){
+    if(tm.paused) return;
+    var left=(tm.end-Date.now())/1000;
+    if(left<=0){ tm.i++; beginPhase(); return; }
+    var sec=Math.ceil(left);
+    document.getElementById('tmClock').textContent=mmss(sec);
+    if(sec<=3 && sec!==tm.lastSec){ tm.lastSec=sec; beep(660,0.08); }
+  }
+  function stopTimer(){ clearInterval(tm.iv); document.getElementById('wkTimer').classList.remove('on'); }
+  document.getElementById('tmClose').addEventListener('click', stopTimer);
+  document.getElementById('tmSkip').addEventListener('click', function(){ tm.i++; beginPhase(); });
+  document.getElementById('tmPause').addEventListener('click', function(){
+    if(tm.paused){ tm.end=Date.now()+tm.left; tm.paused=false; this.textContent='Pause'; }
+    else { tm.left=tm.end-Date.now(); tm.paused=true; this.textContent='Resume'; }
+  });
+
 
   refresh().catch(function(e){ toast('Could not load: '+e.message); });
 })();

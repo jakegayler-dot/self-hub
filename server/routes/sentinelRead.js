@@ -35,6 +35,7 @@ const MEASUREMENTS = [
 const PATTERNS = Array.from(new Set([
   ...Object.values(strength.LIFT_PATTERN),
   ...Object.values(strength.GYMNASTICS_PATTERN),
+  ...Object.values(strength.GENERATOR_PATTERN),
   'Balance', 'Core', 'Accessory', 'Uncategorized',
 ])).sort();
 
@@ -177,6 +178,35 @@ const COLLECTIONS = [
         id: r.id, date: ymd(r.entry_date), lift: r.lift, load_lb: num(r.load_lb), reps: num(r.reps), rpe: num(r.rpe),
         e1rm_lb: e1rm(r.load_lb, r.reps), pattern: strength.liftPattern(r.lift), benchmark_lift: bench.has(r.lift),
       }));
+    },
+  },
+  {
+    name: 'workouts',
+    description: "Generated workouts (planned, done or skipped): title, focus, minutes, whether Sentinel refined it, progress, and the full workout as readable lines (plan). Use for \"what's my workout today\" or \"what's planned this week\".",
+    kind: 'log',
+    dated: true,
+    search: ['title', 'focus', 'plan'],
+    custom: { status: enumFilter('status', ['planned', 'done', 'skipped']) },
+    fields: ['id', 'date', 'title', 'focus', 'minutes', 'status', 'source', 'refine_status', 'sets_logged', 'sets_total', 'plan'],
+    async load({ pool }) {
+      const rows = await rowsOf(pool, 'SELECT id, workout_date, title, focus, minutes, status, source, refine_status, body FROM fitness_workouts ORDER BY workout_date ASC, id ASC');
+      return rows.map((r) => {
+        const body = typeof r.body === 'string' ? JSON.parse(r.body) : r.body;
+        let done = 0; let total = 0;
+        const lines = [];
+        for (const b of body.blocks || []) {
+          lines.push(`${b.title}${b.minutes ? ` (${b.minutes} min)` : ''}${b.notes ? ` — ${b.notes}` : ''}`);
+          if (b.kind === 'metcon') { total++; if (b.result) done++; }
+          for (const it of b.items || []) {
+            lines.push(`  ${it.movement}: ${it.prescription || ''}`);
+            if (b.kind !== 'metcon' && it.log_as !== 'none') for (const s of it.sets || []) { total++; if (s.entry) done++; }
+          }
+        }
+        return {
+          id: r.id, date: ymd(r.workout_date), title: r.title, focus: r.focus, minutes: num(r.minutes), status: r.status,
+          source: r.source, refine_status: r.refine_status, sets_logged: done, sets_total: total, plan: lines.join('\n'),
+        };
+      });
     },
   },
   {

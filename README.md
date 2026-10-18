@@ -119,6 +119,56 @@ The body is `{ generated_at, summary: { strength, training_week, needs_input } }
 `GET /api/fitness/sentinel-preview` (behind the normal login) returns exactly
 what would be sent, without sending it.
 
+## Workout generator (Train tab)
+
+Generates single sessions or a whole week from your logged data and a few
+constraints — date, minutes, focus, equipment, engine machine — and saves them
+so each set logs with one tap into the same tables the Log tab writes.
+
+- **Strength / gymnastics** (`server/lib/workoutGen.js`, movement library in
+  `server/lib/movements.js`): fills this week's least-trained patterns (vs the
+  ≥10 sets/pattern/week bar on the dashboard), gives the heavy work to your
+  weakest strength-profile patterns, steers accessories to the V-taper levers
+  (lateral delts first), and avoids repeating a pattern or family within a day.
+  Loads are % of your best e1RM in the last 60 days; gymnastics reps come from
+  your best set. Core work is bodyweight only.
+- **Engine** (`server/lib/engine.js`), built the way The Gains Lab works:
+  time trials per machine (10-min max, 1-min max, 6 × 0:30/0:30) → endurance
+  pace, speed pace, repeatability → every interval gets a personal target
+  (e.g. threshold = 92% of your 10-min pace for 4 min). Logged results move the
+  next targets up to ±6%; tests older than 8 weeks are rescheduled; your
+  speed-reserve and repeatability scores pick which energy system gets
+  priority. Gains Lab's own formulas aren't public — these percentages are
+  standard energy-system targets, tunable in `SESSION_TYPES`.
+- Every workout carries `rationale` — why each choice was made — shown under
+  "Why this workout".
+
+## Sentinel trainer agent: refining workouts
+
+Hybrid: the rules build the workout; Sentinel's trainer agent can refine it.
+Sentinel **pulls** — nothing new is needed on Sentinel's API. Using the
+`SENTINEL_USER`/`SENTINEL_PASS` login:
+
+1. `GET /api/fitness/workouts/refine-queue` → `{ pending, requests: [...] }`.
+   Each request has the rule-built `workout`, Jake's `jake_note`, the
+   `constraints` (minutes, equipment), an `athlete` block (goals,
+   measurements, strength scores, 60-day e1RMs, gymnastics bests, engine
+   baselines, sets this week by pattern, last 7 days, this week's plan),
+   `known_movements`, `instructions` and the `response_schema`.
+2. `PUT /api/fitness/workouts/:id/refined` with `{ "body": {...}, "notes": "..." }`.
+   The body is validated and rebuilt from known fields only (logging state is
+   never accepted from outside); a `422` lists exactly what to fix. The rules
+   version is kept, so Jake can revert from the Train tab.
+
+Refinement is refused (`409`) once Jake has logged a set from that workout.
+The agent can also read workouts through the Sentinel read API
+(`/api/sentinel/read/workouts`) or call any route via the action bridge.
+
+Main routes (all under `/api/fitness`): `POST /workouts/generate`,
+`POST /workouts/generate-week`, `GET /workouts`, `POST /workouts/:id/log`,
+`/unlog`, `/metcon`, `/regenerate`, `/refine`, `/revert`, `GET /engine`,
+`POST /engine-tests`. See the header of `server/routes/workouts.js`.
+
 ## A security note from the build
 
 While building this, `dotenv@17.4.2` was found to print an unsolicited
