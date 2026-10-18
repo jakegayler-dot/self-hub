@@ -187,11 +187,13 @@ const COLLECTIONS = [
     dated: true,
     search: ['title', 'focus', 'plan'],
     custom: { status: enumFilter('status', ['planned', 'done', 'skipped']) },
-    fields: ['id', 'date', 'title', 'focus', 'minutes', 'status', 'source', 'refine_status', 'sets_logged', 'sets_total', 'plan'],
+    fields: ['id', 'date', 'title', 'focus', 'minutes', 'status', 'source', 'refine_status', 'sets_logged', 'sets_total', 'objective', 'intensity', 'systems', 'qualities', 'plan'],
     async load({ pool }) {
-      const rows = await rowsOf(pool, 'SELECT id, workout_date, title, focus, minutes, status, source, refine_status, body FROM fitness_workouts ORDER BY workout_date ASC, id ASC');
+      const rows = await rowsOf(pool, 'SELECT id, workout_date, title, focus, minutes, status, source, refine_status, body, meta FROM fitness_workouts ORDER BY workout_date ASC, id ASC');
       return rows.map((r) => {
         const body = typeof r.body === 'string' ? JSON.parse(r.body) : r.body;
+        // What the session is for, when Sentinel's trainer planned it (meta, 2026-10-18).
+        const meta = (typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta) || {};
         let done = 0; let total = 0;
         const lines = [];
         for (const b of body.blocks || []) {
@@ -204,7 +206,9 @@ const COLLECTIONS = [
         }
         return {
           id: r.id, date: ymd(r.workout_date), title: r.title, focus: r.focus, minutes: num(r.minutes), status: r.status,
-          source: r.source, refine_status: r.refine_status, sets_logged: done, sets_total: total, plan: lines.join('\n'),
+          source: r.source, refine_status: r.refine_status, sets_logged: done, sets_total: total,
+          objective: meta.objective || null, intensity: meta.intensity || null, systems: meta.systems || null, qualities: meta.qualities || null,
+          plan: lines.join('\n'),
         };
       });
     },
