@@ -586,6 +586,24 @@ function createWorkoutsRouter({ pool }) {
     res.json(shape(await getRow(w.id)));
   }));
 
+  // Where he ranks against the field (the Dashboard's CrossFit percentiles), so the trainer weighs his
+  // weaknesses against other CrossFitters as well as his own history. null if it can't be worked out.
+  async function percentilesFor(date) {
+    try {
+      const { loadPercentileRows } = require('./percentiles');
+      const { computePercentiles } = require('../lib/percentiles');
+      const p = computePercentiles(await loadPercentileRows(pool), date, strength);
+      return {
+        note: 'Percent of male CrossFitters each best beats (2019 Open athlete profiles; rows vs Concept2 2025 lightweight men; Open from his leaderboard rank). Self-reported, so optimistic; not bodyweight-adjusted.',
+        by_area: p.categories.filter((c) => c.percentile != null).map((c) => ({ area: c.category, percentile: c.percentile, basis: c.basis })),
+        benchmarks: p.benchmarks.filter((b) => b.percentile != null).map((b) => ({ name: b.label, best: b.display, date: b.date, percentile: b.percentile, field_median: b.median })),
+        open: p.open.map((o) => ({ year: o.year, workout: o.workout, percentile: o.percentile })),
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
   // Everything about Jake the trainer needs, as of a date.
   async function athleteContext(date, excludeId = null) {
     const rows = await loadGenRows(date, excludeId);
@@ -617,6 +635,7 @@ function createWorkoutsRouter({ pool }) {
         e1rm_60d_lb: Object.fromEntries(Object.entries(ctx.e1rm).map(([k, v]) => [k, Math.round(v)])),
         gymnastics_best_set_60d: ctx.gymBest,
         engine_baselines: baselines,
+        crossfit_percentiles: await percentilesFor(date),
         sets_this_week_by_pattern: ctx.weekSets,
         weekly_set_target: gen.WEEKLY_SET_TARGET,
         last_28_days: {
@@ -698,6 +717,7 @@ function createWorkoutsRouter({ pool }) {
         e1rm_60d_lb: Object.fromEntries(Object.entries(ctx.e1rm).map(([k, v]) => [k, Math.round(v)])),
         gymnastics_best_set_60d: ctx.gymBest,
         engine_baselines: baselines,
+        crossfit_percentiles: await percentilesFor(w.date),
         sets_this_week_by_pattern: ctx.weekSets,
         weekly_set_target: gen.WEEKLY_SET_TARGET,
         last_7_days: { lifts: recentLifts.slice(-40), gymnastics: recentGym.slice(-40) },

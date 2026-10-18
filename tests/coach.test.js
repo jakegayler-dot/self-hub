@@ -96,6 +96,10 @@ test('plan a week with Sentinel: what each session is for, every set loggable, e
   assert.equal(asked[0].context.week_start, START);
   assert.ok(asked[0].context.athlete.e1rm_60d_lb['Bench Press'] || Object.keys(asked[0].context.athlete.e1rm_60d_lb).length);
   assert.ok(asked[0].context.schema.body);
+  // Where he ranks against the field goes too (the Dashboard's CrossFit percentiles).
+  const pct = asked[0].context.athlete.crossfit_percentiles;
+  assert.ok(pct && Array.isArray(pct.by_area) && Array.isArray(pct.benchmarks) && Array.isArray(pct.open), JSON.stringify(pct));
+  assert.match(pct.note, /^Percent of male CrossFitters/);
   // The broken day went back with its errors and came back fixed.
   assert.equal(asked[1].previous.days.length, 4);
   assert.match(asked[1].errors[0], /^days\[3\]\.body\.blocks must be an array/);
