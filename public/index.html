@@ -254,6 +254,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <th>Pattern</th><th>Fiber type</th><th>Lift</th><th>Best e1RM (2mo)</th><th>÷ Bodyweight (2mo avg)</th><th>Level</th><th>Score</th>
         </tr></thead><tbody></tbody></table></div>
       </div>
+      <div class="trk-sec">
+        <h2>CrossFit percentiles</h2>
+        <p class="trk-note" style="margin-bottom:10px">% of the field you beat. Lifts, pull-ups, runs and benchmark WODs are against <a href="https://leblancfg.com/crossfit_open_2019_analysis_exercise_statistics.html" target="_blank" rel="noopener" style="color:var(--ink2)">male CrossFitters' self-reported 2019 Open profiles</a>. That pool skews optimistic and isn't bodyweight-adjusted, so read yours as slightly conservative. Rows are against <a href="https://log.concept2.com/rankings/2025/rower/2000?gender=M&amp;weight=L" target="_blank" rel="noopener" style="color:var(--ink2)">Concept2 2025 lightweight men</a>, and the Open is your rank in your division. Lifts use your best e1RM in 60 days (12 months if nothing recent); everything else uses your best Rx result in 12 months. The bodyweight-ratio level is shown alongside.</p>
+        <div class="trk-grid" id="pctGrid"></div>
+        <div class="trk-log" style="max-height:none"><table id="pctTable"><thead><tr>
+          <th>Area</th><th>Benchmark</th><th>Your best</th><th>Beats</th><th>Median</th><th>Bodyweight level</th>
+        </tr></thead><tbody></tbody></table></div>
+        <p class="trk-note" id="pctNote" style="margin-top:8px"></p>
+      </div>
     </div>
 
 
@@ -341,14 +350,34 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <div class="trk-field">
             <label>Benchmark</label>
             <select id="bmName">
-              <option>Fran</option><option>Murph</option><option>Grace</option><option>Helen</option><option>Diane</option>
-              <option>2k row</option><option>5k run</option><option>Other</option>
+              <optgroup label="Benchmark WODs"><option>Fran</option><option>Grace</option><option>Helen</option><option>Filthy 50</option><option>Fight Gone Bad</option><option>Diane</option><option>Murph</option></optgroup>
+              <optgroup label="Runs"><option>400m run</option><option>5k run</option></optgroup>
+              <optgroup label="Concept2 row"><option>500m row</option><option>2k row</option><option>5k row</option></optgroup>
+              <option>Other</option>
             </select>
           </div>
           <div class="trk-field"><label>Result</label><input type="text" id="bmResult" placeholder="4:12"></div>
+          <div class="trk-field" style="flex:0 0 80px;min-width:70px"><label>Rx</label><label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin-top:8px"><input type="checkbox" id="bmRx" checked style="width:auto"> Rx</label></div>
         </div>
+        <p class="trk-note" style="margin-bottom:8px">Times as m:ss (or h:mm:ss). Fight Gone Bad as total reps. Only Rx results count toward percentiles.</p>
         <button class="trk-btn primary" id="bmSubmit">Log entry</button>
         <div class="trk-err" id="bmErr">Enter a date and a result.</div>
+      </div>
+      <div class="trk-sec">
+        <h2>CrossFit Open</h2>
+        <p class="trk-note" style="margin-bottom:10px">Copy your rank and the number of athletes from the official leaderboard (your division, worldwide). That gives an exact percentile. Log "overall" for your final standing.</p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Year</label><input type="number" id="opYear" placeholder="2026"></div>
+          <div class="trk-field"><label>Workout</label><input type="text" id="opWorkout" list="opWorkouts" placeholder="overall or 26.1"><datalist id="opWorkouts"><option>overall</option></datalist></div>
+          <div class="trk-field"><label>Division</label><input type="text" id="opDivision" placeholder="Men 35-39"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Your rank</label><input type="number" id="opRank" placeholder="41250"></div>
+          <div class="trk-field"><label>Total athletes</label><input type="number" id="opTotal" placeholder="120000"></div>
+          <div class="trk-field"><label>Score (optional)</label><input type="text" id="opScore" placeholder="182 reps"></div>
+        </div>
+        <button class="trk-btn primary" id="opSubmit">Log Open result</button>
+        <div class="trk-err" id="opErr">Enter year, workout, division, rank and total (rank ≤ total).</div>
       </div>
       <div class="trk-sec">
         <h2>Conditioning</h2>
@@ -460,6 +489,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       </div>
       <div class="trk-sec"><h2>Benchmark log</h2>
         <div class="trk-log"><table id="bmTable"><thead><tr><th>Date</th><th>Benchmark</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="trk-sec"><h2>CrossFit Open log</h2>
+        <div class="trk-log"><table id="opTable"><thead><tr><th>Year</th><th>Workout</th><th>Division</th><th>Rank</th><th>Beats</th><th>Score</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
       <div class="trk-sec"><h2>Conditioning log</h2>
         <div class="trk-log"><table id="cdTable"><thead><tr>
@@ -793,7 +825,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     if(!d || !res){ err.style.display='block'; return; }
     err.style.display='none';
     try{
-      await api('POST','/benchmarks',{entry_date:d, name:name, result:res});
+      await api('POST','/benchmarks',{entry_date:d, name:name, result:res, rx:document.getElementById('bmRx').checked});
       document.getElementById('bmResult').value='';
       await refresh(); toast('Logged');
     }catch(e){ toast('Could not save: '+e.message); }
@@ -898,7 +930,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   // ---- state + rendering ----
   var bwChartRef, liftChartRef, measureChartRef, strengthTrendChartRef;
-  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[], gymnastics:[] };
+  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[], gymnastics:[], percentiles:null, open:[] };
 
   (function populateLiftFilters(){
     var names = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
@@ -927,14 +959,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
   async function refresh(){
     var results = await Promise.all([
-      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), api('GET','/coach-notes'), api('GET','/measurements'), api('GET','/benchmark-lifts'), api('GET','/conditioning'), api('GET','/gymnastics')
+      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), api('GET','/coach-notes'), api('GET','/measurements'), api('GET','/benchmark-lifts'), api('GET','/conditioning'), api('GET','/gymnastics'), api('GET','/percentiles?date='+localISO()), api('GET','/open-results')
     ]);
-    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7]; cache.conditioning=results[8]; cache.gymnastics=results[9];
+    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7]; cache.conditioning=results[8]; cache.gymnastics=results[9]; cache.percentiles=results[10]; cache.open=results[11];
     render();
   }
 
   function render(){
-    renderPhaseBar(); renderStats(); renderWeeklyLoad(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile();
+    renderPhaseBar(); renderStats(); renderWeeklyLoad(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderCoachNotes(); renderStrengthProfile(); renderPercentiles();
     growMovementDatalists(); renderMovementProfile(); renderLiftHistoryPreview(); renderGymHistoryPreview(); renderPhysique();
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
     document.getElementById('wgStrength').value = cache.profile.weekly_strength_sessions_goal;
@@ -1938,8 +1970,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       return [fmtDate(x.entry_date), x.lift, x.load_lb+'&times;'+x.reps, x.rpe!=null?x.rpe:'—'];
     }, 'lifts');
     fillTable('bmTable', cache.benchmarks.slice().reverse(), function(x){
-      return [fmtDate(x.entry_date), x.name, x.result];
+      return [fmtDate(x.entry_date), esc(x.name), esc(x.result)+(x.rx===false?' <span style="color:var(--ink3)">(scaled)</span>':'')];
     }, 'benchmarks');
+    fillTable('opTable', cache.open||[], function(x){
+      var pct = x.rank>0 && x.total>=x.rank ? Math.max(1,Math.min(99,Math.round((x.total-x.rank)/x.total*100)))+'%' : '—';
+      return [x.year, esc(x.workout), esc(x.division), x.rank.toLocaleString()+' / '+x.total.toLocaleString(), pct, esc(x.score||'—')];
+    }, 'open-results');
     fillTable('mTable', cache.measurements.slice().reverse(), function(x){
       var inseam = (x.inseam_low!=null || x.inseam_high!=null) ? (x.inseam_low??'?')+'&ndash;'+(x.inseam_high??'?') : '—';
       var v=function(f){ return x[f]!=null? x[f] : '—'; };
@@ -2001,6 +2037,52 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   document.getElementById('copyPrompt').addEventListener('click', function(){
     var txt=document.getElementById('coachPrompt').textContent;
     if(navigator.clipboard){ navigator.clipboard.writeText(txt).then(function(){ toast('Copied'); }); }
+  });
+
+  // ======================= CrossFit percentiles =======================
+  // Computed server-side (server/lib/percentiles.js) so the dashboard and
+  // Sentinel's read API show the same numbers.
+  function ordinal(n){ var s=['th','st','nd','rd'], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); }
+  function pctClass(p){ return p==null?'':p>=75?'green':p>=40?'amber':'red'; }
+  function renderPercentiles(){
+    var P = cache.percentiles; if(!P) return;
+    var grid=document.getElementById('pctGrid'); grid.innerHTML='';
+    P.categories.forEach(function(c){
+      var d=document.createElement('div'); d.className='trk-card';
+      d.innerHTML='<div class="lbl">'+esc(c.category)+'</div><div class="val '+pctClass(c.percentile)+'">'+(c.percentile!=null?ordinal(c.percentile):'—')+'</div>'+
+        '<div class="trk-note" style="margin-top:4px">'+(c.basis?esc(c.basis):'nothing logged yet')+'</div>';
+      grid.appendChild(d);
+    });
+    var tb=document.querySelector('#pctTable tbody'); tb.innerHTML='';
+    var last=null;
+    P.benchmarks.forEach(function(b){
+      var tr=document.createElement('tr');
+      var bar = b.percentile!=null
+        ? '<div style="display:flex;align-items:center;gap:6px"><div style="flex:0 0 70px;height:6px;background:var(--panel2);border-radius:3px;overflow:hidden"><div style="height:100%;width:'+b.percentile+'%;background:var(--'+(pctClass(b.percentile)||'ink3')+')"></div></div><span>'+b.percentile+'%</span></div>'
+        : '<span style="color:var(--ink3)">—</span>';
+      var best = b.display ? esc(b.display)+'<div style="color:var(--ink3);font-size:10.5px">'+esc(b.detail||'')+(b.date?' · '+fmtDate(b.date):'')+(b.stale?' · older than 60 days':'')+'</div>'
+        : '<span style="color:var(--ink3)">log one</span>';
+      var lvl = b.bodyweight_level ? esc(b.bodyweight_level.level)+' ('+b.bodyweight_level.ratio+'&times;)' : (b.unit==='lb'?'—':'');
+      tr.innerHTML='<td>'+(b.category!==last?esc(b.category):'')+'</td><td title="'+esc(b.reference+(b.note?' — '+b.note:''))+'">'+esc(b.label)+'</td><td>'+best+'</td><td>'+bar+'</td><td>'+esc(b.median)+'</td><td>'+lvl+'</td>';
+      last=b.category; tb.appendChild(tr);
+    });
+    var openRows = (P.open||[]).map(function(o){ return o.year+' '+o.workout+' ('+o.division+'): '+ordinal(o.percentile); });
+    document.getElementById('pctNote').textContent = P.calisthenics_note + (openRows.length ? ' Open: '+openRows.join(' · ')+'.' : ' No Open results logged yet. Add them in Log → CrossFit Open.');
+  }
+
+  document.getElementById('opYear').value = new Date().getFullYear();
+  document.getElementById('opSubmit').addEventListener('click', async function(){
+    var body={ year:parseInt(document.getElementById('opYear').value,10), workout:document.getElementById('opWorkout').value.trim(),
+      division:document.getElementById('opDivision').value.trim(), rank:parseInt(document.getElementById('opRank').value,10),
+      total:parseInt(document.getElementById('opTotal').value,10), score:document.getElementById('opScore').value.trim() };
+    var err=document.getElementById('opErr');
+    if(!body.year || !body.workout || !body.division || !(body.rank>0) || !(body.total>=body.rank)){ err.style.display='block'; return; }
+    err.style.display='none';
+    try{
+      await api('POST','/open-results', body);
+      ['opWorkout','opRank','opTotal','opScore'].forEach(function(id){ document.getElementById(id).value=''; });
+      await refresh(); toast('Open result logged');
+    }catch(e){ toast('Could not save: '+e.message); }
   });
 
   // ======================= Train tab: generated workouts =======================

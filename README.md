@@ -143,6 +143,24 @@ so each set logs with one tap into the same tables the Log tab writes.
 - Every workout carries `rationale` — why each choice was made — shown under
   "Why this workout".
 
+## CrossFit percentiles (Dashboard)
+
+Shown alongside the bodyweight-ratio strength levels: % of the field each of
+your bests beats (`server/lib/percentiles.js`, `GET /api/fitness/percentiles`,
+Sentinel read collection `crossfit_percentiles`).
+
+- Back squat, deadlift, clean & jerk, snatch, max pull-ups, 400 m / 5 km run,
+  Fran, Grace, Helen, Filthy 50, Fight Gone Bad → male CrossFitters'
+  self-reported 2019 Open athlete profiles (quartiles, leblancfg.com).
+  Optimistic pool, not bodyweight-adjusted.
+- 500 m / 2k / 5k row → Concept2 2025 rankings, lightweight men (times at the
+  10/25/50/75/90% positions).
+- Open → your rank ÷ athletes in your division from the official leaderboard
+  (`/open-results`).
+- Lifts: best e1RM in 60 days (singles at face value), else 12 months,
+  flagged. Everything else: best Rx result in 12 months. Benchmarks now have
+  an Rx flag; scaled results don't count.
+
 ## Sentinel trainer agent: refining workouts
 
 Hybrid: the rules build the workout; Sentinel's trainer agent can refine it.

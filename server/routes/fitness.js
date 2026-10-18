@@ -115,9 +115,9 @@ router.put('/lifts/rename', async (req, res) => {
 // ---- benchmarks ----
 router.get('/benchmarks', async (req, res) => {
   const { rows } = await pool.query(
-    'SELECT id, entry_date, name, result FROM fitness_benchmarks ORDER BY entry_date ASC'
+    'SELECT id, entry_date, name, result, rx FROM fitness_benchmarks ORDER BY entry_date ASC'
   );
-  res.json(rows);
+  res.json(rows.map((r) => ({ ...r, rx: r.rx !== false }))); // NULL (older rows) = Rx
 });
 
 router.post('/benchmarks', async (req, res) => {
@@ -125,10 +125,11 @@ router.post('/benchmarks', async (req, res) => {
   if (!isValidDate(entry_date) || !name || !result) {
     return res.status(400).json({ error: 'entry_date, name and result are required' });
   }
+  const rx = req.body.rx === false ? false : true;
   const { rows } = await pool.query(
-    `INSERT INTO fitness_benchmarks (entry_date, name, result)
-     VALUES ($1, $2, $3) RETURNING id, entry_date, name, result`,
-    [entry_date, name, result]
+    `INSERT INTO fitness_benchmarks (entry_date, name, result, rx)
+     VALUES ($1, $2, $3, $4) RETURNING id, entry_date, name, result, rx`,
+    [entry_date, name, result, rx]
   );
   res.status(201).json(rows[0]);
 });

@@ -181,6 +181,25 @@ const COLLECTIONS = [
     },
   },
   {
+    name: 'crossfit_percentiles',
+    description: "Where Jake ranks against real populations: % of male CrossFitters he beats on back squat, deadlift, clean & jerk, snatch, max pull-ups, 400 m / 5 km run, Fran, Grace, Helen, Filthy 50 and Fight Gone Bad (2019 Open athlete profiles), rowing 500 m / 2k / 5k vs Concept2 2025 lightweight men, and CrossFit Open rank → percentile. Category rows average their benchmarks. Use for \"how do I compare\" or \"what's my weakest area\".",
+    kind: 'summary',
+    search: ['category', 'label'],
+    custom: { category: enumFilter('category', ['Strength', 'Olympic', 'Gymnastics', 'Cardio', 'Metcon', 'Open']) },
+    fields: ['id', 'kind', 'category', 'label', 'your_best', 'date', 'percentile', 'population_median', 'reference', 'bodyweight_level'],
+    async load({ pool, now }) {
+      const { loadPercentileRows } = require('./percentiles');
+      const { computePercentiles } = require('../lib/percentiles');
+      const today = new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10);
+      const p = computePercentiles(await loadPercentileRows(pool), today, strength);
+      return [
+        ...p.categories.map((c) => ({ id: `category-${slug(c.category)}`, kind: 'category', category: c.category, label: c.category, your_best: c.basis, date: null, percentile: c.percentile, population_median: null, reference: null, bodyweight_level: null })),
+        ...p.benchmarks.map((b) => ({ id: b.id, kind: 'benchmark', category: b.category, label: b.label, your_best: b.display, date: b.date, percentile: b.percentile, population_median: b.median, reference: b.reference, bodyweight_level: b.bodyweight_level ? `${b.bodyweight_level.level} (${b.bodyweight_level.ratio}× bodyweight)` : null })),
+        ...p.open.map((o) => ({ id: `open-${o.year}-${slug(o.workout)}`, kind: 'open', category: 'Open', label: `${o.year} Open ${o.workout}`, your_best: `rank ${o.rank} of ${o.total}${o.score ? ` (${o.score})` : ''}`, date: null, percentile: o.percentile, population_median: null, reference: o.division, bodyweight_level: null })),
+      ];
+    },
+  },
+  {
     name: 'workouts',
     description: "Generated workouts (planned, done or skipped): title, focus, minutes, whether Sentinel refined it, progress, and the full workout as readable lines (plan). Use for \"what's my workout today\" or \"what's planned this week\".",
     kind: 'log',
