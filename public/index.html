@@ -127,6 +127,30 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .wk-why{margin-top:10px;font-size:12px;color:var(--ink2)}
 .wk-why summary{cursor:pointer;color:var(--ink3);font-size:11.5px;text-transform:uppercase;letter-spacing:.05em}
 .wk-why li{margin:5px 0;line-height:1.45}
+.wk-meta{margin:2px 0 12px;display:flex;flex-direction:column;gap:7px}
+.wk-obj{font-size:13.5px;color:var(--ink);line-height:1.45}
+.wk-sys{display:flex;height:9px;border-radius:5px;overflow:hidden;background:var(--panel2)}
+.wk-sys i{display:block;height:100%}
+.wk-sys .ph{background:#e4a33c}.wk-sys .gl{background:#d9604c}.wk-sys .ox{background:#4f9bd8}
+.wk-syslab{display:flex;gap:12px;font-size:11.5px;color:var(--ink2);flex-wrap:wrap}
+.wk-syslab b{font-weight:600}
+.wk-q{display:flex;gap:6px;flex-wrap:wrap}
+.wk-q span{font-size:11.5px;padding:2px 8px;border-radius:10px;border:1px solid var(--line2);color:var(--ink2)}
+.wk-q span.q3{border-color:var(--amber, #e4a33c);color:var(--ink);font-weight:600}
+.wk-change{font-size:12px;color:var(--ink2);border-left:3px solid #e4a33c;padding-left:8px}
+.cw{display:flex;flex-direction:column;gap:12px}
+.cw h3{margin:0;font-size:15px}
+.cw .row2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+.cw .box{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.45}
+.cw .box b{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2);margin-bottom:4px}
+.cw ul{margin:4px 0 0;padding-left:18px}
+.wp{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:8px 0;border-bottom:1px solid var(--line2)}
+.wp:last-child{border-bottom:0}
+.wp .n{font-weight:700;color:#e4a33c;font-size:15px}
+.wp .a{font-weight:600}
+.wp .e,.wp .w,.wp .p{font-size:12.5px;color:var(--ink2)}
+.wp .p{color:var(--ink)}
+.wk-busy{font-size:12.5px;color:var(--ink2);margin-top:8px}
 .wk-refined{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;font-size:12px;color:var(--ink2);margin-top:8px}
 .eng-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:12px}
 .eng-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:11px 13px;font-size:12px;color:var(--ink2)}
@@ -252,6 +276,19 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <button class="trk-btn" id="wkGenWeek">Generate week</button>
         </div>
         <p class="trk-note">A week plan starts on the date above and replaces untouched plans in those 7 days — anything you've started logging is kept.</p>
+        <h3 style="margin:16px 0 6px">Plan my week with Sentinel</h3>
+        <p class="trk-note" style="margin-bottom:10px">Sentinel's trainer builds the whole week from your numbers and goals, knowing your calendar (harvest days get short sessions you can do near the truck). Every session says what it's for, which energy systems and qualities it trains, and why. After each workout you finish, it reviews the week, adjusts the days you haven't started and ranks where to work. Uses the date, minutes, equipment and engine machine above.</p>
+        <div class="trk-row" style="align-items:flex-end">
+          <div class="trk-field" style="flex:0 0 120px"><label>Training days</label><select id="cwDays"><option>4</option><option selected>5</option><option>6</option></select></div>
+          <div class="trk-field" style="flex:1 1 260px"><label>Anything to know this week? (optional)</label><input type="text" id="cwNote" maxlength="500" placeholder="e.g. shoulder is cranky; travelling Thursday"></div>
+          <button class="trk-btn primary" id="cwPlan">Plan my week</button>
+        </div>
+        <div class="wk-busy" id="cwBusy" hidden></div>
+      </div>
+
+      <div class="trk-sec">
+        <h2>This week with Sentinel</h2>
+        <div id="cwWeek"><p class="trk-note">Loading…</p></div>
       </div>
 
       <div class="trk-sec">
@@ -2030,8 +2067,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   async function loadTrain(){
     try{
       if(!train.options){ train.options = await api('GET','/workout-options'); setupTrainForm(train.options); }
-      var r = await Promise.all([api('GET','/workouts'), api('GET','/engine?date='+localISO())]);
-      train.workouts = r[0]; train.engine = r[1]; train.loaded = true;
+      var r = await Promise.all([api('GET','/workouts'), api('GET','/engine?date='+localISO()), api('GET','/workouts/week?start='+localISO()).catch(function(){ return {week:null}; })]);
+      train.workouts = r[0]; train.engine = r[1]; train.week = r[2].week; train.trainerReady = r[2].trainer_ready; train.loaded = true;
       renderTrain();
     }catch(e){ toast('Could not load workouts: '+e.message); }
   }
@@ -2061,7 +2098,67 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     this.disabled=false;
   });
 
-  function renderTrain(){ renderPlan(); renderEngine(); }
+  function renderTrain(){ renderWeek(); renderPlan(); renderEngine(); }
+
+  // ---- the coached week: plan, targets, the latest review, where to work ----
+  var QLABEL = { max_strength:'Max strength', power:'Power', hypertrophy:'Hypertrophy', muscular_endurance:'Muscular endurance', aerobic_capacity:'Aerobic capacity', anaerobic_capacity:'Anaerobic capacity', skill:'Skill', mobility:'Mobility' };
+  function listHtml(v){
+    if(v==null) return '';
+    if(Array.isArray(v)) return '<ul>'+v.map(function(x){ return '<li>'+esc(typeof x==='object'?JSON.stringify(x):x)+'</li>'; }).join('')+'</ul>';
+    if(typeof v==='object') return '<ul>'+Object.keys(v).map(function(k){ var x=v[k]; return '<li><b style="display:inline;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink)">'+esc(k.replace(/_/g,' '))+':</b> '+esc(typeof x==='object'?JSON.stringify(x):x)+'</li>'; }).join('')+'</ul>';
+    return '<div>'+esc(v)+'</div>';
+  }
+  function renderWeek(){
+    var el=document.getElementById('cwWeek'); if(!el) return;
+    var wk=train.week;
+    if(!wk){ el.innerHTML='<p class="trk-note">'+(train.trainerReady===false?'Sentinel isn\'t connected (SENTINEL_URL and SENTINEL_API_KEY), so the trainer is off.':'No week planned with Sentinel yet. Pick 4, 5 or 6 days above and tap Plan my week.')+'</p>'; return; }
+    var p=wk.plan||{}, rv=wk.review;
+    var h='<div class="cw"><h3>Week of '+esc(fmtDay(wk.week_start))+' · '+esc(wk.days)+' training days</h3>';
+    if(p.objective) h+='<div class="wk-obj"><b>Objective:</b> '+esc(p.objective)+'</div>';
+    h+='<div class="row2">';
+    if(p.phase_note) h+='<div class="box"><b>Where this week sits</b>'+esc(p.phase_note)+'</div>';
+    if(p.weekly_targets) h+='<div class="box"><b>Weekly targets</b>'+listHtml(p.weekly_targets)+'</div>';
+    if(p.progression) h+='<div class="box"><b>Progression</b>'+esc(p.progression)+'</div>';
+    if(p.watch && p.watch.length) h+='<div class="box"><b>Numbers to watch</b>'+listHtml(p.watch)+'</div>';
+    h+='</div>';
+    if(rv){
+      h+='<h3>Review · '+esc(fmtDay(rv.reviewed_for||wk.week_start))+'</h3><div class="wk-obj">'+esc(rv.summary||'')+'</div><div class="row2">';
+      if(rv.readiness) h+='<div class="box"><b>Readiness '+esc(rv.readiness.score)+' / 5</b>'+esc(rv.readiness.why||'')+'</div>';
+      if(rv.sessions && rv.sessions.length) h+='<div class="box"><b>Sessions so far</b><ul>'+rv.sessions.map(function(x){ return '<li><b style="display:inline;text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink)">'+esc(fmtDay(x.date))+' · '+esc(x.verdict)+':</b> '+esc(x.vs_prescription||'')+(x.signals&&x.signals.length?' ('+esc(x.signals.join('; '))+')':'')+'</li>'; }).join('')+'</ul></div>';
+      if(rv.applied && rv.applied.length) h+='<div class="box"><b>Changed for the rest of the week</b><ul>'+rv.applied.map(function(a){ return '<li>'+esc(fmtDay(a.date))+': '+esc(a.title)+(a.change?' — '+esc(a.change):'')+'</li>'; }).join('')+'</ul></div>';
+      if(rv.next_week) h+='<div class="box"><b>Next week</b>'+esc(rv.next_week)+'</div>';
+      h+='</div>';
+      if(rv.weak_points && rv.weak_points.length){
+        h+='<div class="box"><b>Where to work</b>'+rv.weak_points.slice().sort(function(a,b){ return (a.priority||9)-(b.priority||9); }).map(function(x,i){
+          return '<div class="wp"><div class="n">'+(i+1)+'</div><div><div class="a">'+esc(x.area)+'</div><div class="e">Evidence: '+esc(x.evidence||'')+'</div>'+(x.why_it_matters?'<div class="w">Why it matters: '+esc(x.why_it_matters)+'</div>':'')+'<div class="p">Do: '+esc(x.prescription||'')+'</div></div></div>';
+        }).join('')+'</div>';
+      }
+    } else h+='<p class="trk-note">No review yet: it runs when you mark a workout done, or tap Review now.</p>';
+    h+='<div><button class="trk-btn" id="cwReview">Review my week now</button></div></div>';
+    el.innerHTML=h;
+    document.getElementById('cwReview').addEventListener('click', reviewNow);
+  }
+  async function reviewNow(){
+    var b=document.getElementById('cwReview'); if(b){ b.disabled=true; b.textContent='Sentinel is reviewing… (about a minute)'; }
+    try{
+      train.week = await api('POST','/workouts/review-week', { start_date: train.week.week_start });
+      train.workouts = await api('GET','/workouts'); renderTrain(); toast('Week reviewed');
+    }catch(e){ toast('Review failed: '+e.message); if(b){ b.disabled=false; b.textContent='Review my week now'; } }
+  }
+  document.getElementById('cwPlan').addEventListener('click', async function(){
+    var p=currentInputs(); if(!p.date){ toast('Pick the start date above'); return; }
+    p.start_date=p.date; p.days=parseInt(document.getElementById('cwDays').value,10); p.note=document.getElementById('cwNote').value;
+    var busy=document.getElementById('cwBusy'); this.disabled=true; busy.hidden=false;
+    busy.textContent='Sentinel is planning your week from your numbers and calendar. This takes a minute or two…';
+    try{
+      var r=await api('POST','/workouts/plan-week', p);
+      train.week=r.week; train.workouts = await api('GET','/workouts');
+      train.open={}; if(r.workouts[0]) train.open[r.workouts[0].id]=true;
+      renderTrain(); toast(r.workouts.length+' sessions planned'+(r.kept_existing.length?' — kept '+r.kept_existing.length+' already started':''));
+      busy.hidden=true;
+    }catch(e){ busy.textContent='Could not plan the week: '+e.message; }
+    this.disabled=false;
+  });
 
   function renderPlan(){
     var today = localISO();
@@ -2085,12 +2182,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     var chips = '<span class="wk-chip">'+esc(w.focus)+'</span><span class="wk-chip">'+esc(w.minutes)+' min</span>';
     if(w.status==='done') chips+='<span class="wk-chip green">Done</span>';
     if(w.status==='skipped') chips+='<span class="wk-chip red">Skipped</span>';
-    if(w.source==='sentinel') chips+='<span class="wk-chip amber">Refined by Sentinel</span>';
-    if(w.refine.status==='pending') chips+='<span class="wk-chip amber">Waiting on Sentinel</span>';
+    if(w.source==='sentinel') chips+='<span class="wk-chip amber">'+(w.meta?'Sentinel':'Refined by Sentinel')+'</span>';
+    if(w.meta && w.meta.intensity) chips+='<span class="wk-chip">'+esc(w.meta.intensity)+'</span>';
+    if(w.refine.status==='pending' && !train.trainerReady) chips+='<span class="wk-chip amber">Waiting on Sentinel</span>';
     var html = '<div class="wk-card'+(open?' open':'')+(w.date===today?' today':'')+'" data-wid="'+w.id+'">'+
       '<div class="wk-head" data-act="toggle"><div><div class="d">'+esc(fmtDay(w.date))+(w.date===today?' &middot; TODAY':'')+'</div>'+
       '<div class="t">'+esc(w.title)+'</div><div class="wk-chips">'+chips+'</div></div>'+
       '<div class="wk-prog">'+w.progress.done+' / '+w.progress.total+'</div></div><div class="wk-body">';
+    if(w.meta) html += metaHtml(w.meta);
     (w.body.blocks||[]).forEach(function(b){ html += blockHtml(w,b); });
     if(w.source==='sentinel' && w.refine.notes) html += '<div class="wk-refined"><b>Sentinel:</b> '+esc(w.refine.notes)+'</div>';
     if(w.body.rationale && w.body.rationale.length){
@@ -2108,6 +2207,23 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     html += '<button class="trk-btn" data-act="delete">Delete</button></div>';
     if(w.refine.status==='pending') html += '<p class="trk-note" style="margin-top:8px">Queued for Sentinel\'s trainer agent'+(w.refine.request?' with your note: "'+esc(w.refine.request)+'"':'')+'. It shows up here once the agent has run.</p>';
     return html + '</div></div>';
+  }
+
+  // What a session is for: objective, energy systems, qualities, muscles, and why (Sentinel's trainer).
+  function metaHtml(m){
+    var h='<div class="wk-meta">';
+    if(m.objective) h+='<div class="wk-obj"><b>Objective:</b> '+esc(m.objective)+'</div>';
+    if(m.change) h+='<div class="wk-change"><b>Changed after the review:</b> '+esc(m.change)+'</div>';
+    var s=m.systems||{};
+    if((s.phosphagen||0)+(s.glycolytic||0)+(s.oxidative||0)>0){
+      h+='<div class="wk-sys" title="Energy systems"><i class="ph" style="width:'+(s.phosphagen||0)+'%"></i><i class="gl" style="width:'+(s.glycolytic||0)+'%"></i><i class="ox" style="width:'+(s.oxidative||0)+'%"></i></div>'+
+        '<div class="wk-syslab"><span><b style="color:#e4a33c">Phosphagen</b> '+(s.phosphagen||0)+'% (power, sprints)</span><span><b style="color:#d9604c">Glycolytic</b> '+(s.glycolytic||0)+'% (metcons, repeats)</span><span><b style="color:#4f9bd8">Aerobic</b> '+(s.oxidative||0)+'% (base, recovery)</span></div>';
+    }
+    var q=m.qualities||{}, ks=Object.keys(q).sort(function(a,b){ return q[b]-q[a]; });
+    if(ks.length) h+='<div class="wk-q">'+ks.map(function(k){ return '<span class="q'+q[k]+'">'+esc(QLABEL[k]||k)+(q[k]===3?' · primary':q[k]===2?' · secondary':'')+'</span>'; }).join('')+'</div>';
+    if(m.muscles && m.muscles.length) h+='<div class="wk-syslab">Muscles: '+esc(m.muscles.join(', '))+'</div>';
+    if(m.why) h+='<details class="wk-why"><summary>Why this session, this day</summary><p style="margin:6px 0 0">'+esc(m.why)+'</p></details>';
+    return h+'</div>';
   }
 
   function blockHtml(w,b){
@@ -2197,11 +2313,19 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       else if(act==='refine'){
         var note=window.prompt('Anything Sentinel should know? (optional — e.g. "shoulder is cranky", "only 40 min")','');
         if(note===null) return;
-        out=await api('POST','/workouts/'+id+'/refine', {note:note}); toast('Sent to Sentinel\'s queue');
+        toast(train.trainerReady?'Sentinel is refining this session… about a minute':'Sent to Sentinel\'s queue');
+        out=await api('POST','/workouts/'+id+'/refine', {note:note}); if(train.trainerReady) toast('Refined by Sentinel');
       }
       else if(act==='unrefine'){ out=await api('DELETE','/workouts/'+id+'/refine'); }
       else if(act==='revert'){ out=await api('POST','/workouts/'+id+'/revert'); toast('Back to the rules version'); }
-      else if(act==='status'){ out=await api('PUT','/workouts/'+id+'/status', {status:t.dataset.status}); }
+      else if(act==='status'){
+        out=await api('PUT','/workouts/'+id+'/status', {status:t.dataset.status});
+        // In a coached week, finishing a session sets off the review: show it when it's in.
+        if(t.dataset.status==='done' && train.week && train.trainerReady){
+          toast('Sentinel is reviewing your week — adjustments land in a minute or two');
+          setTimeout(async function(){ try{ var r=await api('GET','/workouts/week?start='+w.date); train.week=r.week; train.workouts=await api('GET','/workouts'); renderTrain(); }catch(e){} }, 90000);
+        }
+      }
       else if(act==='delete'){
         if(!window.confirm('Delete this workout plan? Sets you already logged stay in your history.')) return;
         await api('DELETE','/workouts/'+id); train.workouts=train.workouts.filter(function(x){ return x.id!==id; }); renderPlan(); return;

@@ -15,8 +15,13 @@
 //   POST   /workouts/:id/metcon             { block_id, result, duration_s? }
 //   DELETE /workouts/:id/metcon/:blockId
 //
-//   Sentinel refinement (Sentinel pulls — see README):
-//   POST   /workouts/:id/refine             { note? }  → queues it
+//   The coached week (Sentinel's trainer, called directly — lib/coach.js):
+//   POST   /workouts/plan-week              { start_date, days: 4-6, minutes, equipment, engine_modality, note? }
+//   POST   /workouts/review-week            { start_date }  → review, adjust the days not started, rank weak points
+//   GET    /workouts/week?start=            the week's plan and latest review
+//
+//   Sentinel refinement:
+//   POST   /workouts/:id/refine             { note? }  → refined now by Sentinel's trainer (about a minute)
 //   DELETE /workouts/:id/refine             cancel a pending request
 //   GET    /workouts/refine-queue           pending requests + full context + response schema
 //   PUT    /workouts/:id/refined            { body, notes }  ← Sentinel's write-back
@@ -31,11 +36,19 @@ const strength = require('../lib/strength');
 const gen = require('../lib/workoutGen');
 const engine = require('../lib/engine');
 const { EQUIPMENT, EQUIPMENT_PRESETS, MOVEMENTS } = require('../lib/movements');
+const coach = require('../lib/coach');
 
 const { ymd, mondayOfStr, addDaysStr } = gen;
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const num = (v) => (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
 const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high'];
+
+// Trainer errors carry their own status (503 not connected, 429 budget, 502 Sentinel); everything else is a 500.
+function coachFail(res, err) {
+  if (err && err.status && err.status < 600) return res.status(err.status).json({ error: err.message });
+  console.error(err);
+  res.status(500).json({ error: 'server error' });
+}
 
 function createWorkoutsRouter({ pool }) {
   const router = express.Router();
@@ -66,6 +79,7 @@ function createWorkoutsRouter({ pool }) {
       inputs: typeof r.inputs === 'string' ? JSON.parse(r.inputs) : r.inputs,
       body, has_rules_version: r.rules_body != null,
       refine: { status: r.refine_status, request: r.refine_request, requested_at: r.refine_requested_at, notes: r.refine_notes, refined_at: r.refined_at },
+      meta: r.meta == null ? null : (typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta),
       progress: progressOf(body),
     };
   }
@@ -225,6 +239,114 @@ function createWorkoutsRouter({ pool }) {
     res.json(rows.map(shape).filter((w) => (!from || w.date >= from) && (!to || w.date <= to)));
   });
 
+  // ---- the coached week (before /workouts/:id so these aren't read as an id) ----
+  router.post('/workouts/plan-week', async (req, res) => {
+    try {
+      const raw = req.body || {};
+      const start = raw.start_date || raw.date;
+      const { inputs, errors } = gen.normalizeInputs({ ...raw, date: start });
+      if (errors.length) return res.status(400).json({ error: errors.join('; ').replace('date', 'start_date') });
+      const days = Math.max(4, Math.min(6, Math.round(Number(raw.days) || 5)));
+      const end = addDaysStr(inputs.date, 6);
+      const note = typeof raw.note === 'string' ? raw.note.trim().slice(0, 500) : '';
+      const ctx = await athleteContext(inputs.date);
+      const context = { ...ctx, week_start: inputs.date, days, minutes: inputs.minutes, equipment: inputs.equipment, engine_machine: inputs.engine_modality, note };
+      const fallbackFor = (d) => ({ date: d.date, title: d.title, focus: gen.FOCI.includes(d.focus) ? d.focus : inputs.focus, minutes: d.minutes || inputs.minutes, equipment: inputs.equipment });
+      const check = (r) => {
+        const out = [];
+        if (!Array.isArray(r.days) || !r.days.length) return ['days must list the sessions'];
+        r.days.forEach((d, i) => {
+          if (!isDate(d.date) || d.date < inputs.date || d.date > end) out.push(`days[${i}].date must be a date from ${inputs.date} to ${end}`);
+          out.push(...sessionFrom(d, `days[${i}]`, fallbackFor(d)).errors);
+        });
+        return out;
+      };
+      const plan = await askTrainer('week', context, check);
+      if (plan.errors.length) return res.status(502).json({ error: "Sentinel's plan didn't fit Self Hub's workout format, even after a fix — try again", errors: plan.errors.slice(0, 20) });
+      // Replace untouched planned workouts that week; anything started stays.
+      const existing = await q("SELECT * FROM fitness_workouts WHERE status = 'planned' AND workout_date >= $1 AND workout_date <= $2", [inputs.date, end]);
+      const kept = [];
+      for (const r of existing) {
+        const w = shape(r);
+        if (!anyLogged(w.body)) await pool.query('DELETE FROM fitness_workouts WHERE id = $1', [w.id]);
+        else kept.push(w.id);
+      }
+      const out = [];
+      for (const d of plan.result.days) {
+        const { body, meta } = sessionFrom(d, 'day', fallbackFor(d));
+        const rows = await q(
+          `INSERT INTO fitness_workouts (workout_date, title, focus, minutes, inputs, body, seed, source, meta)
+           VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, 0, 'sentinel', $7::jsonb) RETURNING *`,
+          [d.date, body.title, body.focus, body.minutes, JSON.stringify({ ...inputs, date: d.date }), JSON.stringify({ ...body, date: d.date }), JSON.stringify(meta)]);
+        out.push(shape(rows[0]));
+      }
+      const { days: _d, ...week } = plan.result;
+      const weekRow = { ...week, calendar: plan.calendar || [], planned_at: new Date().toISOString(), note };
+      await pool.query(`INSERT INTO fitness_weeks (week_start, days, plan) VALUES ($1, $2, $3::jsonb)
+        ON CONFLICT (week_start) DO UPDATE SET days = EXCLUDED.days, plan = EXCLUDED.plan, review = NULL, reviewed_at = NULL, updated_at = now()`,
+      [inputs.date, days, JSON.stringify(weekRow)]);
+      res.status(201).json({ week: { week_start: inputs.date, days, plan: weekRow, review: null }, workouts: out, kept_existing: kept });
+    } catch (err) { coachFail(res, err); }
+  });
+
+  // The week a date falls in: the coached week that started on or before it, within 7 days.
+  async function weekOf(date) {
+    const rows = await q('SELECT * FROM fitness_weeks WHERE week_start <= $1 AND week_start > $2 ORDER BY week_start DESC LIMIT 1', [date, addDaysStr(date, -7)]);
+    if (!rows[0]) return null;
+    const r = rows[0];
+    const j = (v) => (v == null ? null : typeof v === 'string' ? JSON.parse(v) : v);
+    return { week_start: ymd(r.week_start), days: Number(r.days), plan: j(r.plan), review: j(r.review), reviewed_at: r.reviewed_at };
+  }
+
+  // Review the week: what he did against the plan, adjust the days not started, rank where to work.
+  async function reviewWeek(start) {
+    const wk = await weekOf(start);
+    if (!wk) { const e = new Error('No coached week starts then — plan one with Sentinel first'); e.status = 404; throw e; }
+    const today = gen.ymd(new Date(Date.now() - 6 * 3600e3));
+    const end = addDaysStr(wk.week_start, 6);
+    const rows = await q('SELECT * FROM fitness_workouts WHERE workout_date >= $1 AND workout_date <= $2 ORDER BY workout_date ASC, id ASC', [wk.week_start, end]);
+    const workouts = rows.map(shape);
+    const tests = await q('SELECT entry_date, modality, test, output, unit FROM fitness_engine_tests WHERE entry_date >= $1 AND entry_date <= $2', [wk.week_start, end]);
+    const ctx = await athleteContext(today > end ? end : today);
+    const context = { ...ctx, week_start: wk.week_start, today, plan: wk.plan,
+      sessions: workouts.map((w) => ({ date: w.date, title: w.title, status: w.status, started: anyLogged(w.body), progress: w.progress, meta: w.meta, body: w.body })),
+      engine_tests_this_week: tests.map((t) => ({ date: ymd(t.entry_date), machine: t.modality, test: t.test, output: Number(t.output), unit: t.unit })) };
+    const open = (date) => workouts.find((w) => w.date === date && !anyLogged(w.body) && w.status !== 'done');
+    const fb = (d) => ({ date: d.date, title: d.title, focus: gen.FOCI.includes(d.focus) ? d.focus : 'mixed', minutes: d.minutes || 45, equipment: ((open(d.date) || {}).inputs || {}).equipment || [] });
+    const check = (r) => (r.adjustments || []).flatMap((d, i) => (d.date >= today && d.date <= end ? sessionFrom(d, `adjustments[${i}]`, fb(d)).errors : []));
+    const out = await askTrainer('review', context, check);
+    const applied = [];
+    for (const d of out.result.adjustments || []) {
+      if (!(d.date >= today && d.date <= end)) continue;
+      const { body, meta, errors } = sessionFrom(d, 'adjustment', fb(d));
+      if (errors.length) continue;
+      const w = open(d.date);
+      if (w) {
+        await pool.query(`UPDATE fitness_workouts SET rules_body = COALESCE(rules_body, body), body = $1::jsonb, title = $2, focus = $3, minutes = $4, meta = $5::jsonb,
+          source = 'sentinel', updated_at = now() WHERE id = $6`, [JSON.stringify({ ...body, date: d.date }), body.title, body.focus, body.minutes, JSON.stringify(meta), w.id]);
+      } else if (!workouts.some((x) => x.date === d.date)) {
+        await pool.query(`INSERT INTO fitness_workouts (workout_date, title, focus, minutes, inputs, body, seed, source, meta) VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, 0, 'sentinel', $7::jsonb)`,
+          [d.date, body.title, body.focus, body.minutes, JSON.stringify({ date: d.date, minutes: body.minutes, focus: body.focus, equipment: [] }), JSON.stringify({ ...body, date: d.date }), JSON.stringify(meta)]);
+      } else continue;
+      applied.push({ date: d.date, title: body.title, change: meta.change || '' });
+    }
+    const review = { ...out.result, adjustments: undefined, applied, reviewed_for: today };
+    await pool.query('UPDATE fitness_weeks SET review = $1::jsonb, reviewed_at = now(), updated_at = now() WHERE week_start = $2', [JSON.stringify(review), wk.week_start]);
+    return { ...wk, review, reviewed_at: new Date().toISOString() };
+  }
+  router.post('/workouts/review-week', async (req, res) => {
+    try {
+      const start = (req.body && req.body.start_date) || gen.ymd(new Date(Date.now() - 6 * 3600e3));
+      if (!isDate(start)) return res.status(400).json({ error: 'start_date must be YYYY-MM-DD' });
+      res.json(await reviewWeek(start));
+    } catch (err) { coachFail(res, err); }
+  });
+  router.get('/workouts/week', async (req, res) => {
+    const d = req.query.start || gen.ymd(new Date(Date.now() - 6 * 3600e3));
+    if (!isDate(d)) return res.status(400).json({ error: 'start must be YYYY-MM-DD' });
+    res.json({ week: await weekOf(d), trainer_ready: coach.trainerReady() });
+  });
+
   // (before /workouts/:id so "refine-queue" isn't read as an id)
   router.get('/workouts/refine-queue', async (req, res) => {
     try {
@@ -248,6 +370,10 @@ function createWorkoutsRouter({ pool }) {
     if (!r) return res.status(404).json({ error: 'not found' });
     await pool.query('UPDATE fitness_workouts SET status = $1, updated_at = now() WHERE id = $2', [status, r.id]);
     res.json(shape(await getRow(r.id)));
+    // A finished session in a coached week: the trainer reviews it and adjusts the rest of the week.
+    if (status === 'done' && coach.trainerReady() && !process.env.SELF_HUB_NO_AUTO_REVIEW) {
+      weekOf(ymd(r.workout_date)).then((wk) => wk && reviewWeek(wk.week_start)).catch((e) => console.error('  !! week review: ' + e.message));
+    }
   });
 
   router.delete('/workouts/:id', async (req, res) => {
@@ -388,6 +514,28 @@ function createWorkoutsRouter({ pool }) {
 
   // ---- Sentinel refinement ----
   router.post('/workouts/:id/refine', locked(async (req, res) => {
+    // With the trainer connected, refine now: Sentinel answers in about a minute. Otherwise it's queued as before.
+    if (coach.trainerReady()) {
+      try {
+        const r = await getRow(req.params.id);
+        if (!r) return res.status(404).json({ error: 'not found' });
+        const w = shape(r);
+        if (anyLogged(w.body)) return res.status(409).json({ error: 'sets are already logged — refinement only applies before you start' });
+        const note = typeof (req.body && req.body.note) === 'string' ? req.body.note.trim().slice(0, 500) : '';
+        await pool.query("UPDATE fitness_workouts SET refine_request = $1 WHERE id = $2", [note || null, w.id]);
+        const pkg = await refineRequest({ ...w, refine: { ...w.refine, request: note || null } });
+        const ctx = await athleteContext(w.date, w.id);
+        const fb = { date: w.date, title: w.title, focus: w.focus, minutes: w.minutes, equipment: w.inputs.equipment };
+        const out = await askTrainer('refine', { ...ctx, ...pkg, workout: { date: w.date, ...pkg.workout } }, (x) => sessionFrom(x, 'session', fb).errors);
+        if (out.errors.length) return res.status(502).json({ error: "Sentinel's session didn't fit Self Hub's workout format — try again", errors: out.errors.slice(0, 20) });
+        const { body, meta } = sessionFrom(out.result, 'session', fb);
+        await pool.query(
+          `UPDATE fitness_workouts SET rules_body = COALESCE(rules_body, body), body = $1::jsonb, title = $2, focus = $3, minutes = $4, meta = $5::jsonb,
+             source = 'sentinel', refine_status = 'done', refine_notes = $6, refined_at = now(), updated_at = now() WHERE id = $7`,
+          [JSON.stringify({ ...body, date: w.date }), body.title, body.focus, body.minutes, JSON.stringify(meta), String(out.result.notes || '').slice(0, 2000) || null, w.id]);
+        return res.json(shape(await getRow(w.id)));
+      } catch (err) { return coachFail(res, err); }
+    }
     const r = await getRow(req.params.id);
     if (!r) return res.status(404).json({ error: 'not found' });
     const w = shape(r);
@@ -437,6 +585,78 @@ function createWorkoutsRouter({ pool }) {
     );
     res.json(shape(await getRow(w.id)));
   }));
+
+  // Everything about Jake the trainer needs, as of a date.
+  async function athleteContext(date, excludeId = null) {
+    const rows = await loadGenRows(date, excludeId);
+    const ctx = gen.makeContext(rows, date);
+    const profile = (await q('SELECT * FROM fitness_profile WHERE id = 1'))[0] || {};
+    const bw = rows.bodyweight[rows.bodyweight.length - 1];
+    const bw30 = rows.bodyweight.filter((b) => ymd(b.entry_date) >= addDaysStr(date, -30))[0];
+    const m = (await q(`SELECT entry_date, ${MEASUREMENT_FIELDS.join(', ')} FROM fitness_measurements ORDER BY entry_date DESC LIMIT 1`))[0];
+    const since = addDaysStr(date, -28);
+    const known = Array.from(new Set([...MOVEMENTS.map((x) => x.name), ...rows.lifts.map((l) => l.lift), ...rows.gymnastics.map((g) => g.movement)])).sort();
+    const baselines = Object.values(ctx.baselines).filter((b) => b.tt10 || b.sprint60 || b.repeat).map((b) => ({
+      machine: b.name, unit: b.unit,
+      ten_min_test: b.tt10 && { output: b.tt10.output, date: b.tt10.date, pace_per_min: b.enduranceRate },
+      one_min_test: b.sprint60 && { output: b.sprint60.output, date: b.sprint60.date },
+      repeatability: b.repeatability, speed_reserve: b.speedReserve,
+      adaptation: { endurance: b.adjEndurance, speed: b.adjSpeed }, limiter: b.limiter && b.limiter.text, tests_due: b.testsDue,
+    }));
+    return {
+      athlete: {
+        goals: {
+          phase: profile.phase, body_fat_target_pct: num(profile.body_fat_target), bodyweight_goal_lb: num(profile.bodyweight_goal_lb),
+          leaderboard_goal: profile.leaderboard_goal,
+          summary: 'Casino Royale physique (lean, V-taper — shoulder:waist is the key ratio) and top of the local CrossFit leaderboard; continuous lean gain, no cut.',
+        },
+        bodyweight_lb: bw ? num(bw.weight_lb) : null,
+        bodyweight_30d_ago_lb: bw30 ? num(bw30.weight_lb) : null,
+        measurements_in: m ? Object.fromEntries(MEASUREMENT_FIELDS.filter((f) => m[f] != null).map((f) => [f, num(m[f])])) : null,
+        strength_scores: ctx.strengthPatterns,
+        e1rm_60d_lb: Object.fromEntries(Object.entries(ctx.e1rm).map(([k, v]) => [k, Math.round(v)])),
+        gymnastics_best_set_60d: ctx.gymBest,
+        engine_baselines: baselines,
+        sets_this_week_by_pattern: ctx.weekSets,
+        weekly_set_target: gen.WEEKLY_SET_TARGET,
+        last_28_days: {
+          lifts: rows.lifts.filter((l) => ymd(l.entry_date) >= since && ymd(l.entry_date) <= date).map((l) => `${ymd(l.entry_date)} ${l.lift} ${Number(l.load_lb)}×${l.reps}${l.rpe ? ` @${l.rpe}` : ''}`).slice(-120),
+          gymnastics: rows.gymnastics.filter((g) => ymd(g.entry_date) >= since && ymd(g.entry_date) <= date).map((g) => `${ymd(g.entry_date)} ${g.movement} ×${g.reps}`).slice(-80),
+        },
+      },
+      known_movements: known,
+      foci: gen.FOCI,
+      schema: gen.REFINE_SCHEMA,
+    };
+  }
+
+  // A trainer session → a body Self Hub can log, plus what it's for. errors are prefixed with where.
+  function sessionFrom(day, where, fallback) {
+    const { body, errors } = gen.sanitizeBody({ ...(day.body || {}), title: (day.body && day.body.title) || day.title, focus: day.focus, minutes: day.minutes }, fallback);
+    const sys = day.systems || {};
+    const total = ['phosphagen', 'glycolytic', 'oxidative'].reduce((a, k) => a + (Number(sys[k]) || 0), 0) || 1;
+    const meta = {
+      objective: String(day.objective || '').slice(0, 600),
+      systems: Object.fromEntries(['phosphagen', 'glycolytic', 'oxidative'].map((k) => [k, Math.round(((Number(sys[k]) || 0) / total) * 100)])),
+      qualities: Object.fromEntries(Object.entries(day.qualities || {}).map(([k, v]) => [k, Math.max(0, Math.min(3, Math.round(Number(v) || 0)))]).filter(([, v]) => v > 0)),
+      muscles: Array.isArray(day.muscles) ? day.muscles.map(String).slice(0, 12) : [],
+      intensity: String(day.intensity || '').slice(0, 200),
+      why: String(day.why || '').slice(0, 1500),
+      ...(day.change ? { change: String(day.change).slice(0, 600) } : {}),
+    };
+    return { body, meta, errors: errors.map((e) => `${where}.${e}`) };
+  }
+
+  // Ask the trainer; when Self Hub can't take what comes back, send the errors once to be fixed.
+  async function askTrainer(task, context, check) {
+    let out = await coach.callTrainer(task, { context });
+    let errors = check(out.result);
+    if (errors.length) {
+      out = await coach.callTrainer(task, { context, previous: out.result, errors });
+      errors = check(out.result);
+    }
+    return { ...out, errors };
+  }
 
   // The package Sentinel's trainer agent gets for each pending request:
   // the rule-built workout, why it was built that way, everything about Jake
