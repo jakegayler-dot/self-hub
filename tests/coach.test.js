@@ -271,3 +271,30 @@ test('the data ledger: tests due, measurements and facts missing, filled in from
   r = await call('POST', '/tests', { test: 'swim_400m', value: '8:05' });
   assert.equal(Number(r.body.value), 485);
 });
+
+test('his days and volume are kept: a truck or off day the plan ignores goes back, volume is counted and capped by level and ramp', async () => {
+  const vol = require('../server/lib/volume');
+  // The stand-in trainer always puts a heavy bench day on day(0): on a truck day that's refused (twice), so no plan.
+  const r = await call('POST', '/workouts/plan-week', { start_date: day(0), days: 4, minutes: 45, equipment: 'box', volume_level: 'beginner', availability: { [day(0)]: 'truck', [day(2)]: 'off' } });
+  assert.equal(r.status, 502, JSON.stringify(r.body));
+  assert.ok(r.body.errors.some((e) => /is a truck day \(harvest: no gym.*\): Bench Press needs a gym$/.test(e)), JSON.stringify(r.body.errors));
+  assert.ok(r.body.errors.some((e) => e.includes(`(${day(2)}): he's off that day`)));
+  const ask = asked.filter((a) => a.task === 'week').at(-1);
+  assert.equal(ask.context.volume.level, 'beginner');
+  assert.equal(ask.context.volume.start_cap_hard_sets, 30);
+  assert.deepEqual(ask.context.availability, { [day(0)]: 'truck', [day(2)]: 'off' });
+  // Volume per session and the week's checks.
+  const body = { blocks: [{ kind: 'strength', items: [{ log_as: 'lift', pattern: 'Squat', sets: [{ reps: 5, load_lb: 200 }, { reps: 5, load_lb: 200, entry: { reps: 5, load_lb: 205 } }] }] },
+    { kind: 'conditioning', items: [{ log_as: 'conditioning', sets: [{ distance_m: 400, duration_s: 600 }] }] }] };
+  assert.deepEqual(vol.sessionVolume(body), { hard_sets: 2, by_pattern: { Squat: 2 }, tonnage_lb: 2000, conditioning_min: 10, distance_m: 400 });
+  assert.equal(vol.sessionVolume(body, { logged: true }).tonnage_lb, 1025);
+  const many = (n, pattern) => ({ blocks: [{ kind: 'strength', items: [{ log_as: 'lift', pattern, sets: Array.from({ length: n }, () => ({ reps: 5, load_lb: 100 })) }] }] });
+  assert.match(vol.checkWeekVolume([many(12, 'Squat')], 'beginner', 0)[0], /^Squat: 12 hard sets this week; at Beginner level the most is 10/);
+  assert.match(vol.checkWeekVolume([many(8, 'Squat'), many(8, 'Hinge'), many(8, 'Push Horizontal'), many(8, 'Pull Vertical')], 'beginner', 0)[0], /^32 hard sets this week with nothing logged last week: start at about 30/);
+  assert.deepEqual(vol.checkWeekVolume([many(8, 'Squat'), many(8, 'Hinge'), many(8, 'Push Horizontal'), many(8, 'Pull Vertical')], 'beginner', 40), []);
+  // Workouts and the week show volume.
+  const w = (await call('GET', '/workouts')).body[0];
+  assert.ok(w.volume && Number.isFinite(w.volume.planned.hard_sets));
+  const wk = (await call('GET', `/workouts/week?start=${day(0)}`)).body.week;
+  assert.ok(wk.volume && Number.isFinite(wk.volume.planned.hard_sets) && Number.isFinite(wk.volume.last_week_hard_sets));
+});

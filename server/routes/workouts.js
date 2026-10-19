@@ -35,9 +35,10 @@ const express = require('express');
 const strength = require('../lib/strength');
 const gen = require('../lib/workoutGen');
 const engine = require('../lib/engine');
-const { EQUIPMENT, EQUIPMENT_PRESETS, MOVEMENTS } = require('../lib/movements');
+const { EQUIPMENT, EQUIPMENT_PRESETS, MOVEMENTS, BY_NAME } = require('../lib/movements');
 const coach = require('../lib/coach');
 const ledger = require('../lib/ledger');
+const volume = require('../lib/volume');
 
 const { ymd, mondayOfStr, addDaysStr } = gen;
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
@@ -82,6 +83,7 @@ function createWorkoutsRouter({ pool }) {
       refine: { status: r.refine_status, request: r.refine_request, requested_at: r.refine_requested_at, notes: r.refine_notes, refined_at: r.refined_at },
       meta: r.meta == null ? null : (typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta),
       progress: progressOf(body),
+      volume: { planned: volume.sessionVolume(body), logged: volume.sessionVolume(body, { logged: true }) },
       // What he logged for the session as a whole; load = session RPE × minutes (the usual training-load unit).
       session: {
         minutes: r.actual_minutes == null ? null : Number(r.actual_minutes),
@@ -374,6 +376,12 @@ function createWorkoutsRouter({ pool }) {
       if (errors.length) return res.status(400).json({ error: errors.join('; ').replace('date', 'start_date') });
       const days = Math.max(4, Math.min(6, Math.round(Number(raw.days) || 5)));
       const note = typeof raw.note === 'string' ? raw.note.trim().slice(0, 500) : '';
+      // How much he can take (Oct 19): a volume level, and each day of the week gym, truck (no gym: near the truck) or off.
+      inputs.volume_level = volume.LEVELS[raw.volume_level] ? raw.volume_level : 'intermediate';
+      inputs.availability = {};
+      for (const [d, mode] of Object.entries((raw.availability && typeof raw.availability === 'object') ? raw.availability : {})) {
+        if (isDate(d) && ['gym', 'truck', 'off'].includes(mode)) inputs.availability[d] = mode;
+      }
       if (raw.background === true) {
         if (planJob && planJob.status === 'running') return res.status(409).json({ error: 'Already planning a week — give it a minute', job: planJob });
         const job = planJob = { status: 'running', week_start: inputs.date, started_at: new Date().toISOString() };
@@ -385,19 +393,60 @@ function createWorkoutsRouter({ pool }) {
       res.status(201).json(await planWeek(inputs, days, note));
     } catch (err) { if (err.errors) return res.status(502).json({ error: err.message, errors: err.errors }); coachFail(res, err); }
   });
+
+  // Hard sets he actually logged in the 7 days before a date (lifts and gymnastics), for the ramp.
+  async function lastWeekHardSets(date) {
+    const from = addDaysStr(date, -7), to = addDaysStr(date, -1);
+    const [l, g] = await Promise.all([
+      q('SELECT COUNT(*)::int AS n FROM fitness_lifts WHERE entry_date >= $1 AND entry_date <= $2', [from, to]),
+      q('SELECT COUNT(*)::int AS n FROM fitness_gymnastics WHERE entry_date >= $1 AND entry_date <= $2', [from, to]),
+    ]);
+    return Number(l[0].n) + Number(g[0].n);
+  }
+  // What a truck day can't have: anything that needs gym kit (a barbell, rack, bench, machines, a pool, rings…).
+  const TRUCK_KIT = ['dumbbells', 'kettlebells', 'jumprope'];
+  function truckBreaks(body) {
+    const out = new Set();
+    for (const b of body.blocks || []) {
+      if (b.engine && ['bike', 'row', 'ski'].includes(b.engine.modality)) out.add(b.title || 'engine machine');
+      for (const it of b.items || []) {
+        const m = BY_NAME.get(it.movement);
+        if (!m || !m.equip || !m.equip.length) continue;
+        if (!m.equip.some((opt) => opt.every((e) => TRUCK_KIT.includes(e)))) out.add(it.movement);
+      }
+    }
+    return [...out];
+  }
+
   async function planWeek(inputs, days, note) {
     {
       const end = addDaysStr(inputs.date, 6);
       const ctx = await athleteContext(inputs.date);
-      const context = { ...ctx, week_start: inputs.date, days, minutes: inputs.minutes, equipment: inputs.equipment, engine_machine: inputs.engine_modality, note };
+      const lastWeek = await lastWeekHardSets(inputs.date);
+      const level = volume.LEVELS[inputs.volume_level];
+      const context = { ...ctx, week_start: inputs.date, days, minutes: inputs.minutes, equipment: inputs.equipment, engine_machine: inputs.engine_modality, note,
+        availability: inputs.availability,
+        volume: { level: inputs.volume_level, ...level, start_cap_hard_sets: volume.startCap(level), last_week_hard_sets_logged: lastWeek,
+          this_week_max_hard_sets: lastWeek > 0 ? Math.max(Math.round(lastWeek * volume.RAMP), volume.startCap(level)) : volume.startCap(level) } };
       const fallbackFor = (d) => ({ date: d.date, title: d.title, focus: gen.FOCI.includes(d.focus) ? d.focus : inputs.focus, minutes: d.minutes || inputs.minutes, equipment: inputs.equipment });
       const check = (r) => {
         const out = [];
         if (!Array.isArray(r.days) || !r.days.length) return ['days must list the sessions'];
+        const built = [];
         r.days.forEach((d, i) => {
           if (!isDate(d.date) || d.date < inputs.date || d.date > end) out.push(`days[${i}].date must be a date from ${inputs.date} to ${end}`);
-          out.push(...sessionFrom(d, `days[${i}]`, fallbackFor(d)).errors);
+          const sf = sessionFrom(d, `days[${i}]`, fallbackFor(d));
+          out.push(...sf.errors);
+          if (sf.body) built.push({ date: d.date, title: d.title, body: sf.body });
+          // His availability is a hard rule: no session on an off day; on a truck day nothing that needs a gym.
+          const mode = inputs.availability[d.date];
+          if (mode === 'off') out.push(`days[${i}] (${d.date}): he's off that day (no session at all)`);
+          if (mode === 'truck' && sf.body) {
+            const gym = truckBreaks(sf.body);
+            if (gym.length) out.push(`days[${i}] (${d.date}) is a truck day (harvest: no gym, near the truck: bodyweight, a kettlebell or dumbbells, running): ${gym.join(', ')} ${gym.length === 1 ? 'needs' : 'need'} a gym`);
+          }
         });
+        out.push(...volume.checkWeekVolume(built, inputs.volume_level, lastWeek));
         return out;
       };
       const plan = await askTrainer('week', context, check);
@@ -420,7 +469,7 @@ function createWorkoutsRouter({ pool }) {
         out.push(shape(rows[0]));
       }
       const { days: _d, ...week } = plan.result;
-      const weekRow = { ...week, calendar: plan.calendar || [], planned_at: new Date().toISOString(), note };
+      const weekRow = { ...week, calendar: plan.calendar || [], planned_at: new Date().toISOString(), note, volume_level: inputs.volume_level, availability: inputs.availability };
       await pool.query(`INSERT INTO fitness_weeks (week_start, days, plan) VALUES ($1, $2, $3::jsonb)
         ON CONFLICT (week_start) DO UPDATE SET days = EXCLUDED.days, plan = EXCLUDED.plan, review = NULL, reviewed_at = NULL, updated_at = now()`,
       [inputs.date, days, JSON.stringify(weekRow)]);
@@ -484,7 +533,18 @@ function createWorkoutsRouter({ pool }) {
   router.get('/workouts/week', async (req, res) => {
     const d = req.query.start || gen.ymd(new Date(Date.now() - 6 * 3600e3));
     if (!isDate(d)) return res.status(400).json({ error: 'start must be YYYY-MM-DD' });
-    res.json({ week: await weekOf(d), trainer_ready: coach.trainerReady() });
+    const week = await weekOf(d);
+    if (week) {
+      const rows = await q("SELECT body FROM fitness_workouts WHERE workout_date >= $1 AND workout_date <= $2 AND status <> 'skipped'", [week.week_start, addDaysStr(week.week_start, 6)]);
+      const bodies = rows.map((r) => (typeof r.body === 'string' ? JSON.parse(r.body) : r.body));
+      week.volume = {
+        planned: bodies.reduce((a, b) => volume.addVolume(a, volume.sessionVolume(b)), volume.emptyVolume()),
+        logged: bodies.reduce((a, b) => volume.addVolume(a, volume.sessionVolume(b, { logged: true })), volume.emptyVolume()),
+        last_week_hard_sets: await lastWeekHardSets(week.week_start),
+        level: (week.plan && week.plan.volume_level) || null,
+      };
+    }
+    res.json({ week, trainer_ready: coach.trainerReady() });
   });
 
   // (before /workouts/:id so "refine-queue" isn't read as an id)

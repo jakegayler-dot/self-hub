@@ -129,6 +129,14 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .wk-setnote{flex:1 1 100%;margin-left:44px;font-size:11.5px;color:var(--ink3)}
 .wk-addset{background:none;border:1px dashed var(--line2);color:var(--ink3);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;margin-top:6px}
 .wk-session{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.cw-avail{display:flex;gap:4px;flex:1 1 100%;flex-wrap:wrap}
+.av{flex:1 1 0;min-width:40px;background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink2);padding:4px 2px;font-size:11px;display:flex;flex-direction:column;align-items:center;gap:1px;cursor:pointer}
+.av b{font-weight:600;color:var(--ink);font-size:11.5px}
+.av-truck{border-color:var(--amber-dim);color:var(--amber)}
+.av-off{opacity:.55;text-decoration:line-through}
+.wk-vol{font-size:12.5px;color:var(--ink2);line-height:1.5;margin-bottom:4px}
+.wk-vol b{color:var(--ink);font-weight:600}
+.wk-vol.sub{font-size:11.5px;color:var(--ink3)}
 .ldg{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px}
 .ldg summary{cursor:pointer;color:var(--amber);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
 .ldg-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
@@ -322,8 +330,10 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <h2>This week</h2>
           <div class="tr-plan">
             <select id="cwDays" title="Training days"><option value="4">4 days</option><option value="5" selected>5 days</option><option value="6">6 days</option></select>
+            <select id="cwLevel" title="Volume level: how much training load to build to"><option value="beginner">Beginner</option><option value="intermediate" selected>Intermediate</option><option value="advanced">Advanced</option><option value="elite">Elite</option></select>
             <button class="trk-btn primary" id="cwPlan">Plan my week</button>
             <input type="text" id="cwNote" maxlength="500" placeholder="Anything to know this week? (optional)">
+            <div class="cw-avail" id="cwAvail" title="Tap a day: Gym, Truck (harvest: no gym, near the truck), Off"></div>
           </div>
         </div>
         <details class="tr-opts"><summary>Options</summary>
@@ -2152,7 +2162,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     var eq = Array.prototype.filter.call(document.querySelectorAll('#wkEquip input'), function(i){ return i.checked; }).map(function(i){ return i.value; });
     var p = { date: document.getElementById('wkDate').value, minutes: parseInt(document.getElementById('wkMinutes').value,10),
       engine_modality: document.getElementById('wkMachine').value, equipment: eq };
-    savePrefs({ minutes:p.minutes, engine_modality:p.engine_modality, equipment:eq, days: document.getElementById('cwDays').value });
+    savePrefs({ minutes:p.minutes, engine_modality:p.engine_modality, equipment:eq, days: document.getElementById('cwDays').value, level: document.getElementById('cwLevel').value });
     return p;
   }
 
@@ -2177,6 +2187,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       document.getElementById('etOutput').placeholder = rep ? '12, 11, 11, 10, 10, 9' : 'e.g. 165';
     });
     if(prefs.days) document.getElementById('cwDays').value = String(prefs.days);
+    if(prefs.level) document.getElementById('cwLevel').value = prefs.level;
+    document.getElementById('wkDate').addEventListener('change', renderAvail);
+    renderAvail();
     var eqBox=document.getElementById('wkEquip'); eqBox.innerHTML='';
     var chosen = prefs.equipment || o.presets.box.equipment;
     o.equipment.forEach(function(e){
@@ -2212,6 +2225,36 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   }
 
   function renderTrain(){ renderWeek(); renderPlan(); renderEngine(); renderLedger(); }
+
+  // The week's days (Oct 19: "I said I will be harvesting Monday and Tuesday so no gym those days"): each Gym,
+  // Truck (harvest: no gym, near the truck) or Off. The trainer has to keep to them; Self Hub checks.
+  var AVAIL_NEXT = { gym:'truck', truck:'off', off:'gym' }, AVAIL_LABEL = { gym:'Gym', truck:'Truck', off:'Off' };
+  function renderAvail(){
+    var el=document.getElementById('cwAvail'); if(!el) return;
+    var start=document.getElementById('wkDate').value || localISO();
+    train.avail = train.avail || {};
+    var h='';
+    for(var i=0;i<7;i++){
+      var d=new Date(start+'T12:00:00'); d.setDate(d.getDate()+i); var iso=localISO(d);
+      var mode=train.avail[iso]||'gym';
+      h+='<button type="button" class="av av-'+mode+'" data-date="'+iso+'"><b>'+d.toLocaleDateString(undefined,{weekday:'short'})+'</b><span>'+AVAIL_LABEL[mode]+'</span></button>';
+    }
+    el.innerHTML=h;
+    el.querySelectorAll('.av').forEach(function(b){ b.addEventListener('click', function(){
+      var cur=train.avail[b.dataset.date]||'gym', next=AVAIL_NEXT[cur];
+      if(next==='gym') delete train.avail[b.dataset.date]; else train.avail[b.dataset.date]=next;
+      renderAvail();
+    }); });
+  }
+  function volText(v){
+    if(!v) return '';
+    var bits=[];
+    if(v.hard_sets) bits.push(v.hard_sets+' hard sets');
+    if(v.tonnage_lb) bits.push(v.tonnage_lb.toLocaleString()+' lb');
+    if(v.conditioning_min) bits.push(v.conditioning_min+' min conditioning');
+    if(v.distance_m) bits.push((v.distance_m/1000).toFixed(1)+' km');
+    return bits.join(' · ');
+  }
 
   // ---- What the plan needs from him (lib/ledger.js): numbers to enter, questions, and the tests coming up ----
   var LDG_INPUT = { thigh:'thigh', calf:'calf', upper_arm:'upper_arm', waist:'waist', body_fat:'body_fat_pct' };
@@ -2266,6 +2309,13 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     var p=wk.plan||{}, rv=wk.review;
     var h='<div class="cw tr-week">';
     if(p.objective) h+='<div class="wk-obj">'+esc(p.objective)+'</div>';
+    if(wk.volume){
+      var V=wk.volume;
+      h+='<div class="wk-vol"><b>Volume</b> planned '+esc(volText(V.planned)||'—')+(V.level?' · '+esc(V.level)+' level':'')+
+        ' · last week '+esc(V.last_week_hard_sets)+' hard sets logged'+(V.logged && (V.logged.hard_sets||V.logged.conditioning_min)?'<br><b>Done so far</b> '+esc(volText(V.logged)):'')+'</div>';
+      var bp=V.planned.by_pattern||{}, ks=Object.keys(bp).filter(function(k){ return k!=='Other'; });
+      if(ks.length) h+='<div class="wk-vol sub">'+ks.map(function(k){ return esc(k)+' '+bp[k]; }).join(' · ')+'</div>';
+    }
     if(rv && rv.summary) h+='<div class="trk-note">'+esc(rv.summary)+'</div>';
     var more='';
     if(rv && rv.weak_points && rv.weak_points.length){
@@ -2317,6 +2367,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   document.getElementById('cwPlan').addEventListener('click', async function(){
     var p=currentInputs(); if(!p.date){ toast('Pick a start date under Options'); return; }
     p.start_date=p.date; p.days=parseInt(document.getElementById('cwDays').value,10); p.note=document.getElementById('cwNote').value; p.background=true;
+    p.volume_level=document.getElementById('cwLevel').value; p.availability=train.avail||{};
     var busy=document.getElementById('cwBusy'); this.disabled=true; busy.hidden=false; busy.textContent='Starting…';
     try{
       var r=await api('POST','/workouts/plan-week', p);
@@ -2344,6 +2395,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   function workoutCard(w, open){
     var today=localISO();
     var chips = '<span class="wk-chip">'+esc(w.minutes)+' min</span>';
+    if(w.volume && w.volume.planned && (w.volume.planned.hard_sets || w.volume.planned.conditioning_min)) chips+='<span class="wk-chip">'+esc(volText(w.volume.planned))+'</span>';
     if(w.meta && w.meta.intensity) chips+='<span class="wk-chip">'+esc(w.meta.intensity)+'</span>';
     if(w.status==='done') chips+='<span class="wk-chip green">Done</span>';
     if(w.status==='skipped') chips+='<span class="wk-chip red">Skipped</span>';
