@@ -191,3 +191,23 @@ test('the log: actual RPE and a note per set, extra sets, the session time/RPE/n
   r = await call('PUT', `/workouts/${w.id}/session`, { rpe: 0 });
   assert.equal(r.status, 400);
 });
+
+test('a Sentinel restart (the platform 502s, or the connection drops) is retried once', async () => {
+  const { callTrainer } = require('../server/lib/coach');
+  const env = { SENTINEL_URL: 'https://sentinel.test', SENTINEL_API_KEY: 'k' };
+  const ok = new Response(JSON.stringify({ result: { ok: true } }), { status: 200, headers: { 'content-type': 'application/json' } });
+  let n = 0;
+  const flaky = async () => (++n === 1 ? new Response('Bad Gateway', { status: 502, headers: { 'content-type': 'text/html' } }) : ok);
+  assert.deepEqual((await callTrainer('week', {}, { env, fetchImpl: flaky, retryMs: 1 })).result, { ok: true });
+  assert.equal(n, 2);
+  n = 0;
+  const dropped = async () => { if (++n === 1) throw new TypeError('fetch failed'); return new Response(JSON.stringify({ result: { ok: 1 } }), { status: 200, headers: { 'content-type': 'application/json' } }); };
+  assert.equal((await callTrainer('week', {}, { env, fetchImpl: dropped, retryMs: 1 })).result.ok, 1);
+  // Sentinel's own 502 (its JSON error) isn't a restart: no retry, its message comes through.
+  n = 0;
+  const refused = async () => { n++; return new Response(JSON.stringify({ error: { message: 'The trainer declined this request' } }), { status: 502, headers: { 'content-type': 'application/json' } }); };
+  await assert.rejects(callTrainer('week', {}, { env, fetchImpl: refused, retryMs: 1 }), /The trainer declined this request/);
+  assert.equal(n, 1);
+  const down = async () => new Response('Service Unavailable', { status: 503 });
+  await assert.rejects(callTrainer('week', {}, { env, fetchImpl: down, retryMs: 1 }), /restarting/);
+});

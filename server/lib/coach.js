@@ -16,17 +16,28 @@ function target(env = process.env) {
   return url && key ? { url, key } : null;
 }
 
-async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) => fetch(...a) } = {}) {
+// Sentinel restarting (a deploy) answers 502/503 for a few seconds, or drops the connection: wait and try once more.
+const RETRY_MS = 20000;
+async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) => fetch(...a), retryMs = RETRY_MS } = {}) {
   const t = target(env);
   if (!t) throw new CoachError(503, "Sentinel isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so the trainer is off");
   let res;
-  try {
-    res = await fetchImpl(`${t.url}/v1/selfhub/trainer`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.key}` },
-      body: JSON.stringify({ task, ...body }), signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (e) {
-    throw new CoachError(502, e.name === 'TimeoutError' ? 'Sentinel took too long to answer — try again' : "Couldn't reach Sentinel");
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let lost = false;
+    try {
+      res = await fetchImpl(`${t.url}/v1/selfhub/trainer`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.key}` },
+        body: JSON.stringify({ task, ...body }), signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (e) {
+      if (e.name === 'TimeoutError') throw new CoachError(502, 'Sentinel took too long to answer — try again');
+      lost = true;
+    }
+    // A restart: no JSON error of Sentinel's own, just the platform's 502/503.
+    const restarting = lost || ((res.status === 502 || res.status === 503) && !String(res.headers.get('content-type') || '').includes('json'));
+    if (!restarting) break;
+    if (attempt === 1) throw new CoachError(502, lost ? "Couldn't reach Sentinel — try again in a minute" : 'Sentinel is restarting — try again in a minute');
+    await new Promise((r) => setTimeout(r, retryMs));
   }
   const data = await res.json().catch(() => ({}));
   const msg = data && data.error && (data.error.message || data.error);
