@@ -27,6 +27,13 @@ router.put('/profile', async (req, res) => {
   if (phase !== undefined && (phase < 0 || phase > 4)) {
     return res.status(400).json({ error: 'phase must be 0-4' });
   }
+  // The look he's after and his own read of where he is: free text the trainer works from.
+  const text = (v) => (typeof v === 'string' ? v.trim().slice(0, 1000) : null);
+  const physique_target = text(req.body.physique_target), physique_assessment = text(req.body.physique_assessment);
+  if (physique_target !== null || physique_assessment !== null) {
+    await pool.query(`UPDATE fitness_profile SET physique_target = COALESCE($1, physique_target),
+      physique_assessment = COALESCE($2, physique_assessment), updated_at = now() WHERE id = 1`, [physique_target, physique_assessment]);
+  }
   const { rows } = await pool.query(
     `UPDATE fitness_profile SET
        phase = COALESCE($1, phase),

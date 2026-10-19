@@ -141,3 +141,14 @@ test('refine runs straight away through Sentinel (no more waiting)', async () =>
   assert.equal(asked.at(-1).task, 'refine');
   assert.equal(asked.at(-1).context.jake_note, 'shoulder is cranky');
 });
+
+test('the trainer gets the target look and his own critical read of where he is, editable on the profile', async () => {
+  const before = await call('GET', '/profile');
+  assert.match(before.body.physique_assessment, /^Big, broad shoulders already/);
+  await call('PUT', '/profile', { physique_assessment: 'Shoulders broad; legs and waist small; lean.' });
+  await call('POST', '/workouts/plan-week', { start_date: day(14), days: 4, minutes: 45, equipment: 'box' });
+  const goals = asked.filter((a) => a.task === 'week').at(-1).context.athlete.goals;
+  assert.equal(goals.physique_now, 'Shoulders broad; legs and waist small; lean.');
+  assert.match(goals.physique_target, /^Daniel Craig in Casino Royale/);
+  assert.doesNotMatch(JSON.stringify(goals), /V-taper/);
+});

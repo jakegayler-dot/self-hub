@@ -15,8 +15,8 @@
 //         in other workouts that week)
 //       + strength-profile weakness — your weakest patterns (same scores as the
 //         Health tab) get the heavy work
-//       + physique priority — accessories lean to the V-taper levers: lateral
-//         delts first (shoulder width), then chest/back thickness, then traps
+//       + physique priority — accessories lean to Jake's gaps (legs and glutes
+//         first), not the target's defining features (his shoulders are already broad)
 //       − recovery — a pattern trained heavy within a day either side, or the
 //         same movement within two days, is pushed down the list
 //       + variety, ± a small seeded jitter so regenerating changes things
@@ -34,7 +34,9 @@ const engine = require('./engine');
 const MAJOR = ['Squat', 'Hinge', 'Push Vertical', 'Push Horizontal', 'Pull Vertical', 'Pull Horizontal'];
 const WEEKLY_SET_TARGET = 10; // ACSM ≥10 sets/muscle group/week — same threshold as the dashboard bar
 const REGION = { Squat: 'lower', Hinge: 'lower', 'Push Vertical': 'upper', 'Push Horizontal': 'upper', 'Pull Vertical': 'upper', 'Pull Horizontal': 'upper', Olympic: 'full' };
-const PHYSIQUE_PRIORITY = { shoulder: 1.0, bust: 0.6, neck: 0.4, arms: 0.35, seat_hips: 0.15 };
+// Jake's gaps, not the target's features (2026-10-18): legs and glutes are furthest behind; his shoulders
+// are already big and broad, so they get maintenance only.
+const PHYSIQUE_PRIORITY = { seat_hips: 1.0, bust: 0.5, arms: 0.35, neck: 0.3, shoulder: 0.1 };
 const PHYSIQUE_REASON = { shoulder: 'shoulder width', bust: 'chest/back thickness', neck: 'traps/neck', arms: 'arms', seat_hips: 'glutes' };
 // Push / pull / legs families — used to keep a session balanced and to avoid
 // hammering the same family on back-to-back days.
@@ -233,7 +235,7 @@ function physiqueScore(m) {
   const base = (m.tags || []).reduce((best, tag) => Math.max(best, PHYSIQUE_PRIORITY[tag] || 0), 0);
   // Dedicated isolation for a physique lever (lateral raises etc.) beats a
   // compound that only touches it.
-  return base + (m.physique ? 0.5 : 0);
+  return base + (m.physique && base >= 0.5 ? 0.5 : 0);
 }
 function physiqueReason(m) {
   const top = (m.tags || []).slice().sort((a, b) => (PHYSIQUE_PRIORITY[b] || 0) - (PHYSIQUE_PRIORITY[a] || 0))[0];
@@ -533,7 +535,7 @@ function generateSession(rows, rawInputs, seed = 0) {
           const r = m && physiqueReason(m);
           return r ? `${it.movement} (${r})` : it.movement;
         });
-        why.push(`Accessories lean on the V-taper levers — lateral delts first, then chest/back thickness: ${parts.join(', ')}.`);
+        why.push(`Accessories lean on the physique gaps (legs and glutes first; shoulders are already there): ${parts.join(', ')}.`);
       } else {
         const core = choose(avail.filter((m) => m.roles.includes('core') && free(m)), (x) => movementRecency(ctx, x.name), rng);
         if (core) {

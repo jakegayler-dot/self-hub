@@ -55,7 +55,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .trk-row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
 .trk-field{flex:1;min-width:110px}
 .trk-field label{display:block;font-size:11px;color:var(--ink2);margin-bottom:5px}
-.trk-field input,.trk-field select{width:100%;background:var(--panel2);border:1px solid var(--line2);
+.trk-field textarea{resize:vertical;line-height:1.4}
+.trk-field input,.trk-field select,.trk-field textarea{width:100%;background:var(--panel2);border:1px solid var(--line2);
   border-radius:6px;color:var(--ink);padding:8px 10px;font-size:13px;font-family:var(--sans)}
 .trk-btn{background:var(--panel2);border:1px solid var(--line2);color:var(--ink);
   padding:9px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:var(--sans)}
@@ -257,6 +258,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         </div>
         <div class="trk-physique-info" id="physiqueInfo"></div>
         <div class="trk-grid" id="physiqueMetrics" style="margin-top:12px"></div>
+        <div class="trk-field" style="margin-top:4px"><label>Target look</label><textarea id="pqTarget" rows="2" maxlength="1000" class="pq-text"></textarea></div>
+        <div class="trk-field"><label>Where I am now (be critical: the trainer works on the gap)</label><textarea id="pqNow" rows="3" maxlength="1000" class="pq-text"></textarea></div>
+        <button class="trk-btn" id="pqSave">Save</button>
       </div>
       <div class="trk-sec">
         <h2>Lift trend</h2>
@@ -825,6 +829,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }catch(e){ toast('Could not save: '+e.message); }
   });
 
+  document.getElementById('pqSave').addEventListener('click', async function(){
+    this.disabled=true;
+    try{
+      await api('PUT','/profile',{ physique_target: document.getElementById('pqTarget').value, physique_assessment: document.getElementById('pqNow').value });
+      await refresh(); toast('Saved: the trainer works from this');
+    }catch(e){ toast('Could not save: '+e.message); }
+    this.disabled=false;
+  });
+
   document.getElementById('bmSubmit').addEventListener('click', async function(){
     var d=document.getElementById('bmDate').value, name=document.getElementById('bmName').value, res=document.getElementById('bmResult').value.trim();
     var err=document.getElementById('bmErr');
@@ -1229,6 +1242,10 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   });
 
   function renderPhysique(){
+    // The target and his own read of where he is (the trainer programs the gap); don't clobber unsaved typing.
+    var pt=document.getElementById('pqTarget'), pn=document.getElementById('pqNow');
+    if(document.activeElement!==pt) pt.value = cache.profile.physique_target || '';
+    if(document.activeElement!==pn) pn.value = cache.profile.physique_assessment || '';
     var prof = computeBodyProfile();
     var layout = computeBodyLayout(prof);
     var overlay = buildClickOverlay(layout);

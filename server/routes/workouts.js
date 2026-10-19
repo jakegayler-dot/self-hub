@@ -626,7 +626,10 @@ function createWorkoutsRouter({ pool }) {
         goals: {
           phase: profile.phase, body_fat_target_pct: num(profile.body_fat_target), bodyweight_goal_lb: num(profile.bodyweight_goal_lb),
           leaderboard_goal: profile.leaderboard_goal,
-          summary: 'Casino Royale physique (lean, V-taper — shoulder:waist is the key ratio) and top of the local CrossFit leaderboard; continuous lean gain, no cut.',
+          summary: 'Top of the local CrossFit leaderboard and the physique below; continuous lean gain, no cut.',
+          physique_target: profile.physique_target || null,
+          // His own critical read of his body now: program the gap to the target, not the target's defining features.
+          physique_now: profile.physique_assessment || null,
         },
         bodyweight_lb: bw ? num(bw.weight_lb) : null,
         bodyweight_30d_ago_lb: bw30 ? num(bw30.weight_lb) : null,
@@ -709,7 +712,10 @@ function createWorkoutsRouter({ pool }) {
         goals: {
           phase: profile.phase, body_fat_target_pct: num(profile.body_fat_target), bodyweight_goal_lb: num(profile.bodyweight_goal_lb),
           leaderboard_goal: profile.leaderboard_goal,
-          summary: 'Casino Royale physique (lean, V-taper — shoulder:waist is the key ratio) and top of the local CrossFit leaderboard; continuous lean gain, no cut.',
+          summary: 'Top of the local CrossFit leaderboard and the physique below; continuous lean gain, no cut.',
+          physique_target: profile.physique_target || null,
+          // His own critical read of his body now: program the gap to the target, not the target's defining features.
+          physique_now: profile.physique_assessment || null,
         },
         bodyweight_lb: bw ? num(bw.weight_lb) : null,
         measurements_in: m ? Object.fromEntries(MEASUREMENT_FIELDS.filter((f) => m[f] != null).map((f) => [f, num(m[f])])) : null,
