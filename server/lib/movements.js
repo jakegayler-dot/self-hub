@@ -42,14 +42,21 @@ const EQUIPMENT = [
   { id: 'rower', label: 'Rower' },
   { id: 'bike', label: 'Assault/Echo bike' },
   { id: 'ski', label: 'Ski erg' },
+  // Swimming, the Navy SEAL guide's way (Jake, 2026-10-18: the pool at the Northern Lights Palace, Melfort).
+  { id: 'pool', label: 'Pool' },
+  { id: 'fins', label: 'Swim fins' },
+  { id: 'swim_gear', label: 'Kickboard / pull buoy / paddles' },
 ];
-const ALL_EQUIPMENT = EQUIPMENT.map((e) => e.id);
+const SWIM_EQUIPMENT = ['pool', 'fins', 'swim_gear'];
+// A gym's kit: everything but the pool (the box has no pool; a swim is its own trip).
+const ALL_EQUIPMENT = EQUIPMENT.map((e) => e.id).filter((id) => !SWIM_EQUIPMENT.includes(id));
 
 const EQUIPMENT_PRESETS = {
   box: { label: 'CrossFit box', equipment: ALL_EQUIPMENT },
   home: { label: 'Home gym', equipment: ['barbell', 'rack', 'bench', 'dumbbells', 'kettlebells', 'pullup_bar', 'box', 'jumprope'] },
   dumbbells: { label: 'Dumbbells only', equipment: ['dumbbells', 'bench'] },
   bodyweight: { label: 'Bodyweight only', equipment: [] },
+  pool: { label: 'Pool', equipment: SWIM_EQUIPMENT },
 };
 
 const BB = [['barbell']];
@@ -152,6 +159,13 @@ const MOVEMENTS = [
   { name: 'Bike', kind: 'cond', pattern: 'Conditioning', roles: ['mono'], equip: [['bike']], tags: [], metcon: { cal: 12 } },
   { name: 'Ski Erg', kind: 'cond', pattern: 'Conditioning', roles: ['mono'], equip: [['ski']], tags: [], metcon: { cal: 12 } },
   { name: 'Run', kind: 'cond', pattern: 'Conditioning', roles: ['mono'], equip: NONE, tags: [], metcon: { meters: 400 } },
+  // Swims (log distance and time). No generator roles: the trainer programs swims.
+  { name: 'Swim (freestyle)', kind: 'cond', pattern: 'Conditioning', roles: [], equip: [['pool']], tags: [] },
+  { name: 'Swim with fins', kind: 'cond', pattern: 'Conditioning', roles: [], equip: [['pool', 'fins']], tags: [] },
+  { name: 'Sidestroke with fins', kind: 'cond', pattern: 'Conditioning', roles: [], equip: [['pool', 'fins']], tags: [] },
+  { name: 'Breaststroke', kind: 'cond', pattern: 'Conditioning', roles: [], equip: [['pool']], tags: [] },
+  { name: 'Kick with fins', kind: 'cond', pattern: 'Conditioning', roles: [], equip: [['pool', 'fins']], tags: [] },
+  { name: 'Pull (pull buoy)', kind: 'cond', pattern: 'Conditioning', roles: [], equip: [['pool', 'swim_gear']], tags: [] },
 ];
 
 const BY_NAME = new Map(MOVEMENTS.map((m) => [m.name, m]));

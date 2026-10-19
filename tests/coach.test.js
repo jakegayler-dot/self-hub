@@ -211,3 +211,16 @@ test('a Sentinel restart (the platform 502s, or the connection drops) is retried
   const down = async () => new Response('Service Unavailable', { status: 503 });
   await assert.rejects(callTrainer('week', {}, { env, fetchImpl: down, retryMs: 1 }), /restarting/);
 });
+
+test('swims: the pool, fins and swim gear are equipment, swim strokes are movements, and a swim logs as distance and time', async () => {
+  const { EQUIPMENT_PRESETS, BY_NAME } = require('../server/lib/movements');
+  assert.ok(!EQUIPMENT_PRESETS.box.equipment.includes('pool')); // the box has no pool
+  assert.deepEqual(EQUIPMENT_PRESETS.pool.equipment, ['pool', 'fins', 'swim_gear']);
+  assert.ok(BY_NAME.get('Sidestroke with fins'));
+  const r = await call('POST', '/workouts/log-entry', { date: day(6), movement: 'Swim with fins', distance_m: 400, duration_s: 480, notes: 'sidestroke legs burning' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.logged.table, 'conditioning');
+  const c = (await call('GET', '/conditioning')).body.find((x) => x.movement === 'Swim with fins');
+  assert.equal(Number(c.distance_m), 400);
+  assert.equal(Number(c.duration_seconds), 480);
+});

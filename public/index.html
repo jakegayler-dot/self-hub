@@ -2359,6 +2359,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       else if(it.log_as==='engine'||it.log_as==='test'){
         res = esc(s.actual)+' '+esc(s.unit);
         if(s.target){ var pct=Math.round(s.actual/s.target*100); res += ' <span style="color:var(--'+(pct>=100?'green':pct>=95?'amber':'red')+')">('+pct+'%)</span>'; }
+      } else if(it.log_as==='conditioning'){
+        var d=s.entry.distance_m!=null?s.entry.distance_m:s.distance_m, ts=s.entry.duration_s;
+        res = [d!=null?esc(d)+' m':'', ts!=null?mmss(ts):''].filter(Boolean).join(' in ') || 'done';
       } else res='done';
       if(s.entry.rpe!=null) res += ' <span class="u">@ RPE '+esc(s.entry.rpe)+'</span>';
       return '<div class="wk-set done" data-si="'+i+'">'+n+'<span class="res">&#10003; '+res+(s.extra?' <span class="u">extra</span>':'')+'</span><button class="wk-undo" data-act="unlog" title="Undo">&times;</button>'+
@@ -2375,7 +2378,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       inputs = '<span class="u">'+mmss(s.duration_s)+'</span>'+(s.target?'<span class="tgt">&rarr; '+esc(s.target)+' '+esc(s.unit)+'</span>':'<span class="tgt">max</span>')+
         '<input type="number" class="in-out"'+(s.target?' value="'+esc(s.target)+'"':'')+' placeholder="'+esc(s.unit)+'"><span class="u">'+esc(s.unit)+'</span>';
     } else if(it.log_as==='conditioning'){
-      inputs = '<input type="text" class="in-time" placeholder="m:ss" title="Time taken"><span class="u">time</span>';
+      inputs = '<input type="number" class="in-dist" value="'+(s.distance_m!=null?esc(s.distance_m):'')+'" placeholder="m"><span class="u">m</span>'+
+        '<input type="text" class="in-time" placeholder="'+(s.duration_s?mmss(s.duration_s):'m:ss')+'" title="Time taken"><span class="u">time</span>'+rpe;
     }
     return '<div class="wk-set" data-si="'+i+'">'+n+inputs+'<button class="wk-tick" data-act="log" title="Log this set">&#10003;</button>'+
       (s.extra?'<button class="wk-undo" data-act="unset" title="Remove this extra set">&times;</button>':'')+
@@ -2406,7 +2410,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         if(r && r.value!=='') payload.reps=Number(r.value);
         if(l && l.value!=='') payload.load_lb=Number(l.value);
         if(o && o.value!=='') payload.output=Number(o.value);
-        var rp=setEl.querySelector('.in-rpe'), nt=setEl.querySelector('.in-note'), tm=setEl.querySelector('.in-time');
+        var rp=setEl.querySelector('.in-rpe'), nt=setEl.querySelector('.in-note'), tm=setEl.querySelector('.in-time'), ds=setEl.querySelector('.in-dist');
+        if(ds && ds.value!=='') payload.distance_m=Number(ds.value);
         if(rp && rp.value!=='') payload.rpe=Number(rp.value);
         if(nt && nt.value.trim()) payload.notes=nt.value.trim();
         if(tm && tm.value.trim()){ var mt=/^(\d+):(\d{1,2})$/.exec(tm.value.trim()); payload.duration_s = mt ? Number(mt[1])*60+Number(mt[2]) : Number(tm.value)*60; }
