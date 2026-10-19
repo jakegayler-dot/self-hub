@@ -80,7 +80,7 @@ router.delete('/bodyweight/:id', async (req, res) => {
 // ---- lifts ----
 router.get('/lifts', async (req, res) => {
   const { rows } = await pool.query(
-    'SELECT id, entry_date, lift, load_lb, reps, rpe FROM fitness_lifts ORDER BY entry_date ASC'
+    'SELECT id, entry_date, lift, load_lb, reps, rpe, notes FROM fitness_lifts ORDER BY entry_date ASC'
   );
   res.json(rows);
 });

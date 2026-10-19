@@ -158,3 +158,36 @@ test('the trainer gets the target look and objective evidence of where he needs 
   assert.ok(ev.not_measured.includes('thigh circumference'));
   assert.doesNotMatch(JSON.stringify(a), /tiny|V-taper/i);
 });
+
+test('the log: actual RPE and a note per set, extra sets, the session time/RPE/notes, and logging by movement (as Sentinel does)', async () => {
+  const w = (await call('GET', `/workouts?from=${day(5)}&to=${day(5)}`)).body[0]; // Accessories: Bench Press × 2 sets
+  const it = w.body.blocks[0].items[0];
+  const b = { block_id: w.body.blocks[0].id, item_id: it.id };
+  let r = await call('POST', `/workouts/${w.id}/log`, { ...b, set_index: 0, reps: 4, load_lb: 170, rpe: 8.5, notes: 'bar speed slow on rep 4' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const e = r.body.body.blocks[0].items[0].sets[0].entry;
+  assert.deepEqual([e.load_lb, e.rpe, e.notes], [170, 8.5, 'bar speed slow on rep 4']);
+  assert.equal((await call('POST', `/workouts/${w.id}/log`, { ...b, set_index: 1, reps: 4, rpe: 11 })).status, 400); // RPE 1-10
+  // + set, and an unlogged extra set can come off again.
+  r = await call('POST', `/workouts/${w.id}/sets`, b);
+  assert.equal(r.body.body.blocks[0].items[0].sets.length, 3);
+  assert.equal(r.body.body.blocks[0].items[0].sets[2].extra, true);
+  r = await call('DELETE', `/workouts/${w.id}/sets`, { ...b, set_index: 2 });
+  assert.equal(r.body.body.blocks[0].items[0].sets.length, 2);
+  // Sentinel logs by movement: the next open set; then an extra one once they're all in.
+  r = await call('POST', '/workouts/log-entry', { date: day(5), movement: 'bench press', reps: 3, load_lb: 175, rpe: 9 });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.deepEqual([r.body.logged.into, r.body.logged.set, r.body.logged.extra], ['workout', 2, false]);
+  r = await call('POST', '/workouts/log-entry', { date: day(5), movement: 'Bench Press', reps: 6, load_lb: 135, notes: 'back-off' });
+  assert.deepEqual([r.body.logged.set, r.body.logged.of, r.body.logged.extra], [3, 3, true]);
+  // Nothing planned matches: straight into the history.
+  r = await call('POST', '/workouts/log-entry', { date: day(5), movement: 'Farmer Carry', reps: 4, load_lb: 100 });
+  assert.equal(r.body.logged.into, 'history');
+  // The session: time, RPE, notes; load = RPE × minutes; done.
+  r = await call('POST', '/workouts/log-entry', { date: day(5), minutes: 52, session_rpe: 7, session_notes: 'left shoulder tight', done: true });
+  assert.deepEqual([r.body.session.minutes, r.body.session.rpe, r.body.session.load, r.body.session.status], [52, 7, 364, 'done']);
+  const lifts = (await call('GET', '/lifts')).body.filter((l) => l.lift === 'Bench Press' && Number(l.load_lb) === 170);
+  assert.equal(Number(lifts[0].rpe), 8.5);
+  r = await call('PUT', `/workouts/${w.id}/session`, { rpe: 0 });
+  assert.equal(r.status, 400);
+});

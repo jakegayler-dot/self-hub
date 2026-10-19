@@ -92,7 +92,7 @@ const boolFilter = (field) => ({
 const Q = {
   profile: 'SELECT * FROM fitness_profile WHERE id = 1',
   bodyweight: 'SELECT id, entry_date, weight_lb, body_fat_pct FROM fitness_bodyweight ORDER BY entry_date ASC, id ASC',
-  lifts: 'SELECT id, entry_date, lift, load_lb, reps, rpe FROM fitness_lifts ORDER BY entry_date ASC, id ASC',
+  lifts: 'SELECT id, entry_date, lift, load_lb, reps, rpe, notes FROM fitness_lifts ORDER BY entry_date ASC, id ASC',
   benchmarkLifts: 'SELECT lift FROM fitness_benchmark_lifts ORDER BY lift ASC',
   benchmarks: 'SELECT id, entry_date, name, result FROM fitness_benchmarks ORDER BY entry_date ASC, id ASC',
   conditioning: 'SELECT id, entry_date, movement, distance_m, duration_seconds, notes FROM fitness_conditioning ORDER BY entry_date ASC, id ASC',
@@ -171,11 +171,11 @@ const COLLECTIONS = [
     dated: true,
     search: ['lift', 'pattern'],
     custom: { lift: stringFilter('lift'), pattern: enumFilter('pattern', PATTERNS), benchmark_only: boolFilter('benchmark_lift') },
-    fields: ['id', 'date', 'lift', 'load_lb', 'reps', 'rpe', 'e1rm_lb', 'pattern', 'benchmark_lift'],
+    fields: ['id', 'date', 'lift', 'load_lb', 'reps', 'rpe', 'notes', 'e1rm_lb', 'pattern', 'benchmark_lift'],
     async load({ pool }) {
       const bench = await benchmarkSet(pool);
       return (await rowsOf(pool, Q.lifts)).map((r) => ({
-        id: r.id, date: ymd(r.entry_date), lift: r.lift, load_lb: num(r.load_lb), reps: num(r.reps), rpe: num(r.rpe),
+        id: r.id, date: ymd(r.entry_date), lift: r.lift, load_lb: num(r.load_lb), reps: num(r.reps), rpe: num(r.rpe), notes: r.notes || null,
         e1rm_lb: e1rm(r.load_lb, r.reps), pattern: strength.liftPattern(r.lift), benchmark_lift: bench.has(r.lift),
       }));
     },
@@ -206,27 +206,39 @@ const COLLECTIONS = [
     dated: true,
     search: ['title', 'focus', 'plan'],
     custom: { status: enumFilter('status', ['planned', 'done', 'skipped']) },
-    fields: ['id', 'date', 'title', 'focus', 'minutes', 'status', 'source', 'refine_status', 'sets_logged', 'sets_total', 'objective', 'intensity', 'systems', 'qualities', 'plan'],
+    fields: ['id', 'date', 'title', 'focus', 'minutes', 'status', 'source', 'refine_status', 'sets_logged', 'sets_total', 'objective', 'intensity', 'systems', 'qualities', 'actual_minutes', 'session_rpe', 'session_load', 'session_notes', 'logged', 'plan'],
     async load({ pool }) {
-      const rows = await rowsOf(pool, 'SELECT id, workout_date, title, focus, minutes, status, source, refine_status, body, meta FROM fitness_workouts ORDER BY workout_date ASC, id ASC');
+      const rows = await rowsOf(pool, 'SELECT id, workout_date, title, focus, minutes, status, source, refine_status, body, meta, actual_minutes, session_rpe, session_notes FROM fitness_workouts ORDER BY workout_date ASC, id ASC');
       return rows.map((r) => {
         const body = typeof r.body === 'string' ? JSON.parse(r.body) : r.body;
         // What the session is for, when Sentinel's trainer planned it (meta, 2026-10-18).
         const meta = (typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta) || {};
         let done = 0; let total = 0;
         const lines = [];
+        const logged = []; // what he actually did, set by set (Jake, 2026-10-18: the log goes both ways)
         for (const b of body.blocks || []) {
           lines.push(`${b.title}${b.minutes ? ` (${b.minutes} min)` : ''}${b.notes ? ` — ${b.notes}` : ''}`);
-          if (b.kind === 'metcon') { total++; if (b.result) done++; }
+          if (b.kind === 'metcon') { total++; if (b.result) { done++; logged.push(`${b.title}: ${b.result.text}`); } }
           for (const it of b.items || []) {
             lines.push(`  ${it.movement}: ${it.prescription || ''}`);
-            if (b.kind !== 'metcon' && it.log_as !== 'none') for (const s of it.sets || []) { total++; if (s.entry) done++; }
+            if (b.kind === 'metcon' || it.log_as === 'none') continue;
+            (it.sets || []).forEach((s, i) => {
+              total++;
+              if (!s.entry) return;
+              done++;
+              const e = s.entry;
+              const what = e.load_lb != null ? `${e.reps} × ${e.load_lb} lb` : e.output != null ? `${e.output} ${s.unit || ''}`.trim() : e.reps != null ? `${e.reps} reps` : 'done';
+              logged.push(`${it.movement} set ${i + 1}${s.extra ? ' (extra)' : ''}: ${what}${e.rpe != null ? ` @ RPE ${e.rpe}` : ''}${e.notes ? ` — ${e.notes}` : ''}`);
+            });
           }
         }
         return {
           id: r.id, date: ymd(r.workout_date), title: r.title, focus: r.focus, minutes: num(r.minutes), status: r.status,
           source: r.source, refine_status: r.refine_status, sets_logged: done, sets_total: total,
           objective: meta.objective || null, intensity: meta.intensity || null, systems: meta.systems || null, qualities: meta.qualities || null,
+          actual_minutes: num(r.actual_minutes), session_rpe: num(r.session_rpe),
+          session_load: r.actual_minutes != null && r.session_rpe != null ? Math.round(Number(r.actual_minutes) * Number(r.session_rpe)) : null,
+          session_notes: r.session_notes || null, logged: logged.join('\n'),
           plan: lines.join('\n'),
         };
       });

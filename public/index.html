@@ -123,6 +123,17 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .wk-set.done{color:var(--green)}
 .wk-set.done .res{font-family:var(--mono)}
 .wk-undo{background:none;border:none;color:var(--ink3);cursor:pointer;font-size:13px}
+.wk-set .in-rpe{width:52px}
+.wk-set .in-time{width:70px}
+.wk-set .in-note{order:99;flex:1 1 100%;width:auto;font-family:var(--sans);font-size:12px;padding:4px 7px;margin-left:44px;color:var(--ink2)}
+.wk-setnote{flex:1 1 100%;margin-left:44px;font-size:11.5px;color:var(--ink3)}
+.wk-addset{background:none;border:1px dashed var(--line2);color:var(--ink3);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;margin-top:6px}
+.wk-session{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.wk-session .sub-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-bottom:6px}
+.wk-session .ss-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink2);margin-bottom:6px}
+.wk-session input,.wk-session textarea{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;color:var(--ink);padding:5px 7px;font-size:13px}
+.wk-session input{width:62px;font-family:var(--mono)}
+.wk-session textarea{width:100%;font-family:var(--sans);resize:vertical}
 .wk-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .wk-actions .trk-btn{padding:7px 11px;font-size:12px}
 .wk-why{margin-top:10px;font-size:12px;color:var(--ink2)}
@@ -190,10 +201,12 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   .trk-body{padding:14px 16px}
   .wk-head{padding:11px 12px}
   .wk-body{padding:0 12px 12px}
-  .wk-set{flex-wrap:nowrap}
-  .wk-set .n{width:26px}
-  .wk-set input{width:58px}
+  .wk-set .n{width:22px}
+  .wk-set input{width:54px}
+  .wk-set .in-rpe{width:46px}
+  .wk-set .in-note,.wk-setnote{margin-left:28px}
 }
+@media (max-width:360px){ .wk-set .u{display:none} }
 </style>
 </head>
 <body>
@@ -2273,9 +2286,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     if(!(w.meta && w.meta.why) && w.body.rationale && w.body.rationale.length){
       html += '<details class="wk-why"><summary>Why</summary><ul>'+w.body.rationale.map(function(r){ return '<li>'+esc(r)+'</li>'; }).join('')+'</ul></details>';
     }
-    var started = w.progress.done>0;
+    var started = w.progress.done>0, ss=w.session||{};
+    html += '<div class="wk-session"><div class="sub-h">Session</div><div class="ss-row">'+
+      '<label>Time <input type="number" class="ss-min" min="1" max="600" value="'+(ss.minutes!=null?esc(ss.minutes):'')+'" placeholder="'+esc(w.minutes)+'"> min</label>'+
+      '<label>RPE <input type="number" class="ss-rpe" min="1" max="10" step="0.5" value="'+(ss.rpe!=null?esc(ss.rpe):'')+'" placeholder="1-10"></label>'+
+      (ss.load!=null?'<span class="u">load '+esc(ss.load)+'</span>':'')+'</div>'+
+      '<textarea class="ss-notes" rows="2" maxlength="2000" placeholder="Notes: how it went, what felt off">'+esc(ss.notes||'')+'</textarea></div>';
     html += '<div class="wk-actions">';
-    if(w.status!=='done') html += '<button class="trk-btn primary" data-act="status" data-status="done">Done</button>';
+    if(w.status!=='done') html += '<button class="trk-btn primary" data-act="finish">Finish</button>';
+    html += '<button class="trk-btn" data-act="session">Save</button>';
     if(!started) html += '<button class="trk-btn" data-act="refine">Adjust</button>';
     if(w.status==='planned') html += '<button class="trk-btn" data-act="status" data-status="skipped">Skip</button>';
     if(w.status!=='planned') html += '<button class="trk-btn" data-act="status" data-status="planned">Reopen</button>';
@@ -2319,6 +2338,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       else if(it.notes) h += '<div class="src">'+esc(it.notes)+'</div>';
       if(b.kind!=='metcon' && it.log_as!=='none' && it.sets.length){
         h += '<div class="wk-sets">'+it.sets.map(function(s,i){ return setHtml(it,s,i); }).join('')+'</div>';
+        h += '<button class="wk-addset" data-act="addset">+ set</button>';
       }
       h += '</div>';
     });
@@ -2340,19 +2360,26 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         res = esc(s.actual)+' '+esc(s.unit);
         if(s.target){ var pct=Math.round(s.actual/s.target*100); res += ' <span style="color:var(--'+(pct>=100?'green':pct>=95?'amber':'red')+')">('+pct+'%)</span>'; }
       } else res='done';
-      return '<div class="wk-set done" data-si="'+i+'">'+n+'<span class="res">&#10003; '+res+'</span><button class="wk-undo" data-act="unlog" title="Undo">&times;</button></div>';
+      if(s.entry.rpe!=null) res += ' <span class="u">@ RPE '+esc(s.entry.rpe)+'</span>';
+      return '<div class="wk-set done" data-si="'+i+'">'+n+'<span class="res">&#10003; '+res+(s.extra?' <span class="u">extra</span>':'')+'</span><button class="wk-undo" data-act="unlog" title="Undo">&times;</button>'+
+        (s.entry.notes?'<div class="wk-setnote">'+esc(s.entry.notes)+'</div>':'')+'</div>';
     }
-    var inputs='';
+    // What he actually did: reps, load, RPE (prescribed shown as the placeholder), and an optional note.
+    var inputs='', rpe='<input type="number" class="in-rpe" min="1" max="10" step="0.5" placeholder="'+(s.rpe?esc(s.rpe):'RPE')+'" title="RPE you actually hit"><span class="u">rpe</span>';
     if(it.log_as==='lift'){
       inputs = '<input type="number" class="in-reps" value="'+esc(s.reps)+'"><span class="u">reps</span>'+
-        '<input type="number" step="2.5" class="in-load" value="'+(s.load_lb!=null?esc(s.load_lb):'')+'" placeholder="lb"><span class="u">lb'+(s.rpe?' &middot; RPE '+esc(s.rpe):'')+'</span>';
+        '<input type="number" step="2.5" class="in-load" value="'+(s.load_lb!=null?esc(s.load_lb):'')+'" placeholder="lb"><span class="u">lb</span>'+rpe;
     } else if(it.log_as==='gymnastics'){
-      inputs = '<input type="number" class="in-reps" value="'+esc(s.reps)+'"><span class="u">reps</span>';
+      inputs = '<input type="number" class="in-reps" value="'+esc(s.reps)+'"><span class="u">reps</span>'+rpe;
     } else if(it.log_as==='engine'||it.log_as==='test'){
       inputs = '<span class="u">'+mmss(s.duration_s)+'</span>'+(s.target?'<span class="tgt">&rarr; '+esc(s.target)+' '+esc(s.unit)+'</span>':'<span class="tgt">max</span>')+
         '<input type="number" class="in-out"'+(s.target?' value="'+esc(s.target)+'"':'')+' placeholder="'+esc(s.unit)+'"><span class="u">'+esc(s.unit)+'</span>';
+    } else if(it.log_as==='conditioning'){
+      inputs = '<input type="text" class="in-time" placeholder="m:ss" title="Time taken"><span class="u">time</span>';
     }
-    return '<div class="wk-set" data-si="'+i+'">'+n+inputs+'<button class="wk-tick" data-act="log" title="Log this set">&#10003;</button></div>';
+    return '<div class="wk-set" data-si="'+i+'">'+n+inputs+'<button class="wk-tick" data-act="log" title="Log this set">&#10003;</button>'+
+      (s.extra?'<button class="wk-undo" data-act="unset" title="Remove this extra set">&times;</button>':'')+
+      '<input type="text" class="in-note" maxlength="500" placeholder="note (optional)"></div>';
   }
 
   async function onTrainClick(e){
@@ -2379,9 +2406,27 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         if(r && r.value!=='') payload.reps=Number(r.value);
         if(l && l.value!=='') payload.load_lb=Number(l.value);
         if(o && o.value!=='') payload.output=Number(o.value);
+        var rp=setEl.querySelector('.in-rpe'), nt=setEl.querySelector('.in-note'), tm=setEl.querySelector('.in-time');
+        if(rp && rp.value!=='') payload.rpe=Number(rp.value);
+        if(nt && nt.value.trim()) payload.notes=nt.value.trim();
+        if(tm && tm.value.trim()){ var mt=/^(\d+):(\d{1,2})$/.exec(tm.value.trim()); payload.duration_s = mt ? Number(mt[1])*60+Number(mt[2]) : Number(tm.value)*60; }
         t.disabled=true;
         out=await api('POST','/workouts/'+id+'/log', payload); touchesLogs=true;
       } else if(act==='unlog'){ out=await api('POST','/workouts/'+id+'/unlog', {block_id:bid,item_id:iid,set_index:Number(si)}); touchesLogs=true; }
+      else if(act==='addset'){ out=await api('POST','/workouts/'+id+'/sets', {block_id:bid,item_id:iid}); }
+      else if(act==='unset'){ out=await api('DELETE','/workouts/'+id+'/sets', {block_id:bid,item_id:iid,set_index:Number(si)}); }
+      else if(act==='session' || act==='finish'){
+        var box=card.querySelector('.wk-session'), sp={ minutes: box.querySelector('.ss-min').value, rpe: box.querySelector('.ss-rpe').value, notes: box.querySelector('.ss-notes').value };
+        sp.minutes = sp.minutes==='' ? null : Number(sp.minutes); sp.rpe = sp.rpe==='' ? null : Number(sp.rpe);
+        if(act==='finish') sp.done = true;
+        out=await api('PUT','/workouts/'+id+'/session', sp);
+        toast(act==='finish'?'Workout done':'Saved');
+        if(act==='finish' && train.week && train.trainerReady){
+          await api('PUT','/workouts/'+id+'/status', {status:'done'});
+          toast('Sentinel is reviewing your week — adjustments land in a minute or two');
+          setTimeout(async function(){ try{ var rv=await api('GET','/workouts/week?start='+w.date); train.week=rv.week; train.workouts=await api('GET','/workouts'); renderTrain(); }catch(e){} }, 90000);
+        }
+      }
       else if(act==='metcon'){
         var v=blockEl.querySelector('.mc-res').value.trim(); if(!v){ toast('Enter your score'); return; }
         var dur=null, m=/^(\d+):(\d{2})$/.exec(v); if(m) dur=Number(m[1])*60+Number(m[2]);

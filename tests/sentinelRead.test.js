@@ -125,7 +125,7 @@ test('lifts: newest first, readable fields, e1RM and pattern', async () => {
   const dates = body.rows.map((r) => r.date);
   assert.deepEqual(dates, [...dates].sort().reverse());
   const dl = body.rows.find((r) => r.lift === 'Deadlift' && r.date === '2026-09-30');
-  assert.deepEqual(Object.keys(dl), ['id', 'date', 'lift', 'load_lb', 'reps', 'rpe', 'e1rm_lb', 'pattern', 'benchmark_lift']);
+  assert.deepEqual(Object.keys(dl), ['id', 'date', 'lift', 'load_lb', 'reps', 'rpe', 'notes', 'e1rm_lb', 'pattern', 'benchmark_lift']);
   assert.equal(dl.load_lb, 335);
   assert.equal(dl.e1rm_lb, 368.5);
   assert.equal(dl.pattern, 'Hinge');

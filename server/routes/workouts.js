@@ -81,6 +81,13 @@ function createWorkoutsRouter({ pool }) {
       refine: { status: r.refine_status, request: r.refine_request, requested_at: r.refine_requested_at, notes: r.refine_notes, refined_at: r.refined_at },
       meta: r.meta == null ? null : (typeof r.meta === 'string' ? JSON.parse(r.meta) : r.meta),
       progress: progressOf(body),
+      // What he logged for the session as a whole; load = session RPE × minutes (the usual training-load unit).
+      session: {
+        minutes: r.actual_minutes == null ? null : Number(r.actual_minutes),
+        rpe: r.session_rpe == null ? null : Number(r.session_rpe),
+        notes: r.session_notes || null,
+        load: r.actual_minutes != null && r.session_rpe != null ? Math.round(Number(r.actual_minutes) * Number(r.session_rpe)) : null,
+      },
     };
   }
   function progressOf(body) {
@@ -309,7 +316,8 @@ function createWorkoutsRouter({ pool }) {
     const tests = await q('SELECT entry_date, modality, test, output, unit FROM fitness_engine_tests WHERE entry_date >= $1 AND entry_date <= $2', [wk.week_start, end]);
     const ctx = await athleteContext(today > end ? end : today);
     const context = { ...ctx, week_start: wk.week_start, today, plan: wk.plan,
-      sessions: workouts.map((w) => ({ date: w.date, title: w.title, status: w.status, started: anyLogged(w.body), progress: w.progress, meta: w.meta, body: w.body })),
+      // What he logged: each set's entry (reps, load, RPE, note) is in body; the session's time, RPE, notes and load.
+      sessions: workouts.map((w) => ({ date: w.date, title: w.title, status: w.status, started: anyLogged(w.body), progress: w.progress, session: w.session, meta: w.meta, body: w.body })),
       engine_tests_this_week: tests.map((t) => ({ date: ymd(t.entry_date), machine: t.modality, test: t.test, output: Number(t.output), unit: t.unit })) };
     const open = (date) => workouts.find((w) => w.date === date && !anyLogged(w.body) && w.status !== 'done');
     const fb = (d) => ({ date: d.date, title: d.title, focus: gen.FOCI.includes(d.focus) ? d.focus : 'mixed', minutes: d.minutes || 45, equipment: ((open(d.date) || {}).inputs || {}).equipment || [] });
@@ -390,6 +398,64 @@ function createWorkoutsRouter({ pool }) {
     return { block, item, set, si };
   }
 
+  // Log one set into the history (lifts, gymnastics, conditioning) from what he actually did: reps, load,
+  // RPE, time and a note (Jake, 2026-10-18). Returns an error message, or null once set.entry is filled.
+  async function logSet(w, block, item, set, si, input) {
+    if (set.entry) return 'already logged';
+    if (item.log_as === 'none') return 'this item is not logged';
+    const date = w.date;
+    const reps = num(input.reps) ?? set.reps;
+    const rpe = num(input.rpe);
+    if (rpe != null && (rpe < 1 || rpe > 10)) return 'RPE is 1 to 10';
+    const note = typeof input.notes === 'string' && input.notes.trim() ? input.notes.trim().slice(0, 500) : null;
+    const secs = num(input.duration_s);
+    let entry;
+    if (item.log_as === 'lift') {
+      const load = num(input.load_lb) ?? set.load_lb;
+      if (load == null) return 'enter the load you used — this lift had no prescribed load';
+      if (reps == null) return 'reps required';
+      const row = (await q('INSERT INTO fitness_lifts (entry_date, lift, load_lb, reps, rpe, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [date, item.movement, load, reps, rpe ?? set.rpe ?? null, note]))[0];
+      entry = { table: 'lifts', id: row.id, reps, load_lb: load };
+    } else if (item.log_as === 'gymnastics') {
+      if (reps == null) return 'reps required';
+      const row = (await q('INSERT INTO fitness_gymnastics (entry_date, movement, reps, notes) VALUES ($1, $2, $3, $4) RETURNING id',
+        [date, item.movement, reps, [note, item.notes].filter(Boolean).join(' · ') || null]))[0];
+      entry = { table: 'gymnastics', id: row.id, reps };
+    } else if (item.log_as === 'conditioning') {
+      const dist = num(input.distance_m) ?? set.distance_m ?? null;
+      const row = (await q('INSERT INTO fitness_conditioning (entry_date, movement, distance_m, duration_seconds, notes) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [date, item.movement, dist, secs ?? set.duration_s ?? null, [item.prescription, note].filter(Boolean).join(' · ') || null]))[0];
+      entry = { table: 'conditioning', id: row.id, ...(dist != null ? { distance_m: dist } : {}), ...(secs != null ? { duration_s: secs } : {}) };
+    } else if (item.log_as === 'engine' || item.log_as === 'test') {
+      const output = num(input.output) ?? (item.log_as === 'engine' ? set.target : null);
+      if (output == null || output < 0 || (item.log_as === 'test' && output <= 0)) return `enter your ${set.unit === 'm' ? 'meters' : 'calories'} for this interval`;
+      const n = item.sets.length;
+      const label = item.log_as === 'test' ? block.title : `${block.title} ${si + 1}/${n}`;
+      const pctTxt = set.target ? `, target ${set.target} (${Math.round((output / set.target) * 100)}%)` : '';
+      const row = (await q('INSERT INTO fitness_conditioning (entry_date, movement, distance_m, duration_seconds, notes) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+        [date, item.movement, set.unit === 'm' ? output : null, secs ?? set.duration_s ?? null, [`${label}: ${output} ${set.unit}${pctTxt}`, note].filter(Boolean).join(' · ')]))[0];
+      entry = { table: 'conditioning', id: row.id, output };
+      set.actual = output;
+    } else {
+      return `unknown log_as ${item.log_as}`;
+    }
+    if (rpe != null) entry.rpe = rpe;
+    if (note) entry.notes = note;
+    set.entry = entry;
+    if (item.log_as === 'test') await syncEngineTest(w, block, item);
+    return null;
+  }
+
+  // One more set than planned: a copy of the item's last set (same target), marked extra.
+  function addSet(item) {
+    const last = item.sets[item.sets.length - 1] || {};
+    const copy = { ...last, entry: null, extra: true };
+    delete copy.actual;
+    item.sets.push(copy);
+    return item.sets.length - 1;
+  }
+
   router.post('/workouts/:id/log', locked(async (req, res) => {
     try {
       const r = await getRow(req.params.id);
@@ -397,46 +463,129 @@ function createWorkoutsRouter({ pool }) {
       const w = shape(r);
       const { block, item, set, si } = locate(w.body, req.body.block_id, req.body.item_id, req.body.set_index);
       if (!set) return res.status(404).json({ error: 'no such set' });
-      if (set.entry) return res.status(409).json({ error: 'already logged' });
-      if (item.log_as === 'none') return res.status(400).json({ error: 'this item is not logged' });
-      const date = w.date;
-      const reps = num(req.body.reps) ?? set.reps;
-      let entry;
-
-      if (item.log_as === 'lift') {
-        const load = num(req.body.load_lb) ?? set.load_lb;
-        if (load == null) return res.status(400).json({ error: 'enter the load you used — this lift had no prescribed load' });
-        if (reps == null) return res.status(400).json({ error: 'reps required' });
-        const row = (await q('INSERT INTO fitness_lifts (entry_date, lift, load_lb, reps, rpe) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-          [date, item.movement, load, reps, set.rpe ?? null]))[0];
-        entry = { table: 'lifts', id: row.id, reps, load_lb: load };
-      } else if (item.log_as === 'gymnastics') {
-        if (reps == null) return res.status(400).json({ error: 'reps required' });
-        const row = (await q('INSERT INTO fitness_gymnastics (entry_date, movement, reps, notes) VALUES ($1, $2, $3, $4) RETURNING id',
-          [date, item.movement, reps, item.notes || null]))[0];
-        entry = { table: 'gymnastics', id: row.id, reps };
-      } else if (item.log_as === 'conditioning') {
-        const row = (await q('INSERT INTO fitness_conditioning (entry_date, movement, distance_m, duration_seconds, notes) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-          [date, item.movement, set.distance_m ?? null, set.duration_s ?? null, item.prescription || null]))[0];
-        entry = { table: 'conditioning', id: row.id };
-      } else if (item.log_as === 'engine' || item.log_as === 'test') {
-        const output = num(req.body.output) ?? (item.log_as === 'engine' ? set.target : null);
-        if (output == null || output < 0 || (item.log_as === 'test' && output <= 0)) return res.status(400).json({ error: `enter your ${set.unit === 'm' ? 'meters' : 'calories'} for this interval` });
-        const n = item.sets.length;
-        const label = item.log_as === 'test' ? block.title : `${block.title} ${si + 1}/${n}`;
-        const pctTxt = set.target ? `, target ${set.target} (${Math.round((output / set.target) * 100)}%)` : '';
-        const row = (await q('INSERT INTO fitness_conditioning (entry_date, movement, distance_m, duration_seconds, notes) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-          [date, item.movement, set.unit === 'm' ? output : null, set.duration_s ?? null, `${label}: ${output} ${set.unit}${pctTxt}`]))[0];
-        entry = { table: 'conditioning', id: row.id, output };
-        set.actual = output;
-      } else {
-        return res.status(400).json({ error: `unknown log_as ${item.log_as}` });
-      }
-      set.entry = entry;
-      if (item.log_as === 'test') await syncEngineTest(w, block, item);
+      const err = await logSet(w, block, item, set, si, req.body);
+      if (err) return res.status(err === 'already logged' ? 409 : 400).json({ error: err });
       res.json(await saveBody(w.id, w.body));
     } catch (err) { fail(res, err); }
   }));
+
+  // + set: an extra set on an item; an unlogged extra set can be taken off again.
+  router.post('/workouts/:id/sets', locked(async (req, res) => {
+    try {
+      const r = await getRow(req.params.id);
+      if (!r) return res.status(404).json({ error: 'not found' });
+      const w = shape(r);
+      const { item } = locate(w.body, req.body.block_id, req.body.item_id, 0);
+      if (!item || item.log_as === 'none' || !Array.isArray(item.sets) || !item.sets.length) return res.status(404).json({ error: 'no such item' });
+      if (item.sets.length >= 20) return res.status(400).json({ error: 'that is plenty of sets' });
+      addSet(item);
+      res.json(await saveBody(w.id, w.body));
+    } catch (err) { fail(res, err); }
+  }));
+  router.delete('/workouts/:id/sets', locked(async (req, res) => {
+    try {
+      const r = await getRow(req.params.id);
+      if (!r) return res.status(404).json({ error: 'not found' });
+      const w = shape(r);
+      const { item, set, si } = locate(w.body, req.body.block_id, req.body.item_id, req.body.set_index);
+      if (!set) return res.status(404).json({ error: 'no such set' });
+      if (!set.extra || set.entry) return res.status(400).json({ error: 'only an unlogged extra set can be removed' });
+      item.sets.splice(si, 1);
+      res.json(await saveBody(w.id, w.body));
+    } catch (err) { fail(res, err); }
+  }));
+
+  // The session as a whole: time taken, session RPE (1-10), notes; done: true marks it done too.
+  async function saveSession(w, input) {
+    const mins = input.minutes === undefined ? undefined : num(input.minutes);
+    const rpe = input.rpe === undefined ? undefined : num(input.rpe);
+    if (mins != null && (mins < 1 || mins > 600)) return 'minutes is 1 to 600';
+    if (rpe != null && (rpe < 1 || rpe > 10)) return 'session RPE is 1 to 10';
+    const notes = input.notes === undefined ? undefined : (String(input.notes || '').trim().slice(0, 2000) || null);
+    await pool.query(`UPDATE fitness_workouts SET
+        actual_minutes = CASE WHEN $1 THEN $2 ELSE actual_minutes END,
+        session_rpe = CASE WHEN $3 THEN $4 ELSE session_rpe END,
+        session_notes = CASE WHEN $5 THEN $6 ELSE session_notes END,
+        status = CASE WHEN $7 THEN 'done' ELSE status END, updated_at = now() WHERE id = $8`,
+      [mins !== undefined, mins == null ? null : Math.round(mins), rpe !== undefined, rpe ?? null, notes !== undefined, notes ?? null, input.done === true, w.id]);
+    return null;
+  }
+  router.put('/workouts/:id/session', locked(async (req, res) => {
+    try {
+      const r = await getRow(req.params.id);
+      if (!r) return res.status(404).json({ error: 'not found' });
+      const err = await saveSession(shape(r), req.body || {});
+      if (err) return res.status(400).json({ error: err });
+      res.json(shape(await getRow(r.id)));
+    } catch (err) { fail(res, err); }
+  }));
+
+  // For Sentinel (and anything that knows the movement, not the set): log what he did on a date into that
+  // day's planned workout, at the first open set of that movement (an extra set once they're all in), or
+  // straight into the history when nothing planned matches. Session fields (minutes, session_rpe,
+  // session_notes, done) go on that day's workout.
+  //   POST /workouts/log-entry { date, movement?, reps?, load_lb?, rpe?, notes?, output?, duration_s?, distance_m?,
+  //                              minutes?, session_rpe?, session_notes?, done? }
+  router.post('/workouts/log-entry', async (req, res) => {
+    try {
+      const b = req.body || {};
+      const date = isDate(b.date) ? b.date : gen.ymd(new Date(Date.now() - 6 * 3600e3));
+      const rows = await q("SELECT * FROM fitness_workouts WHERE workout_date = $1 AND status <> 'skipped' ORDER BY id ASC", [date]);
+      const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      const want = norm(b.movement);
+      let logged = null;
+      if (want) {
+        let found = null;
+        for (const r of rows) {
+          const w = shape(r);
+          for (const block of w.body.blocks || []) {
+            for (const item of block.items || []) {
+              const m = norm(item.movement);
+              if (item.log_as !== 'none' && m && (m === want || m.includes(want) || want.includes(m))) { found = found || { id: w.id, block, item }; }
+            }
+          }
+        }
+        if (found) {
+          logged = await withLock(found.id, async () => {
+            const w = shape(await getRow(found.id));
+            const block = w.body.blocks.find((x) => x.id === found.block.id);
+            const item = block.items.find((x) => x.id === found.item.id);
+            let si = item.sets.findIndex((s) => !s.entry);
+            if (si === -1) si = addSet(item);
+            const err = await logSet(w, block, item, item.sets[si], si, b);
+            if (err) { const e = new Error(err); e.status = 400; throw e; }
+            const out = await saveBody(w.id, w.body);
+            return { into: 'workout', workout_id: w.id, workout: w.title, movement: item.movement, set: si + 1, of: item.sets.length, extra: !!item.sets[si].extra, entry: item.sets[si].entry, progress: out.progress };
+          });
+        } else {
+          // Nothing planned matches: straight into the history.
+          const reps = num(b.reps); const load = num(b.load_lb); const rpe = num(b.rpe);
+          const note = typeof b.notes === 'string' && b.notes.trim() ? b.notes.trim().slice(0, 500) : null;
+          if (load != null && reps != null) {
+            const row = (await q('INSERT INTO fitness_lifts (entry_date, lift, load_lb, reps, rpe, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id', [date, String(b.movement).slice(0, 80), load, reps, rpe, note]))[0];
+            logged = { into: 'history', table: 'lifts', id: row.id };
+          } else if (reps != null) {
+            const row = (await q('INSERT INTO fitness_gymnastics (entry_date, movement, reps, notes) VALUES ($1, $2, $3, $4) RETURNING id', [date, String(b.movement).slice(0, 80), reps, note]))[0];
+            logged = { into: 'history', table: 'gymnastics', id: row.id };
+          } else if (num(b.duration_s) != null || num(b.distance_m) != null) {
+            const row = (await q('INSERT INTO fitness_conditioning (entry_date, movement, distance_m, duration_seconds, notes) VALUES ($1, $2, $3, $4, $5) RETURNING id', [date, String(b.movement).slice(0, 80), num(b.distance_m), num(b.duration_s), note]))[0];
+            logged = { into: 'history', table: 'conditioning', id: row.id };
+          } else return res.status(400).json({ error: 'say the reps (and the load for a lift), or the time or distance' });
+        }
+      }
+      let session = null;
+      if (['minutes', 'session_rpe', 'session_notes', 'done'].some((k) => b[k] !== undefined)) {
+        const r = rows[0];
+        if (!r) return res.status(404).json({ error: `no workout on ${date} to put that on`, logged });
+        const err = await withLock(r.id, () => saveSession(shape(r), { minutes: b.minutes, rpe: b.session_rpe, notes: b.session_notes, done: b.done }));
+        if (err) return res.status(400).json({ error: err, logged });
+        const w = shape(await getRow(r.id));
+        session = { workout_id: w.id, workout: w.title, status: w.status, ...w.session };
+      }
+      if (!logged && !session) return res.status(400).json({ error: 'nothing to log: give a movement with what you did, or the session time, RPE or notes' });
+      res.status(201).json({ date, logged, session });
+    } catch (err) { if (err.status === 400) return res.status(400).json({ error: err.message }); fail(res, err); }
+  });
 
   // One test row per test block: single-interval tests store the output;
   // the repeatability test stores every interval and their average.
