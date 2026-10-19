@@ -153,9 +153,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .wk-busy{font-size:12.5px;color:var(--ink2);margin-top:8px}
 .tr-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:6px}
 .tr-head h2{margin:0}
-.tr-plan{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-.tr-plan select,.tr-plan input{background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:7px 9px;font-size:13px}
-.tr-plan input{width:220px;max-width:100%}
+.tr-plan{display:flex;gap:6px;flex-wrap:wrap;align-items:center;width:100%;max-width:420px}
+.tr-plan select,.tr-plan input{background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:8px 9px;font-size:14px}
+.tr-plan .trk-btn{flex:1}
+.tr-plan input{flex:1 1 100%;min-width:0}
+.wk-syslab b.ph{color:#e4a33c}.wk-syslab b.gl{color:#d9604c}.wk-syslab b.ox{color:#4f9bd8}
 .tr-opts,.tr-fold>summary{font-size:12px;color:var(--ink3)}
 .tr-opts{margin-bottom:12px}
 .tr-opts summary,.tr-fold>summary{cursor:pointer;text-transform:uppercase;letter-spacing:.06em}
@@ -179,7 +181,18 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .wk-timer .tg{font-size:20px;color:var(--amber);margin-top:10px;font-family:var(--mono)}
 .wk-timer .nx{font-size:12px;color:var(--ink3);margin-top:8px}
 .wk-timer .ctl{display:flex;gap:8px;margin-top:22px}
-@media (max-width:480px){ .trk-body{padding:14px} }
+@media (max-width:480px){
+  /* Phones: the app is the screen, no frame around it. */
+  .wrap{padding:0}
+  .trk{border:0;border-radius:0}
+  .trk-head{padding:14px 16px 10px}
+  .trk-body{padding:14px 16px}
+  .wk-head{padding:11px 12px}
+  .wk-body{padding:0 12px 12px}
+  .wk-set{flex-wrap:nowrap}
+  .wk-set .n{width:26px}
+  .wk-set input{width:58px}
+}
 </style>
 </head>
 <body>
@@ -283,8 +296,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <h2>This week</h2>
           <div class="tr-plan">
             <select id="cwDays" title="Training days"><option value="4">4 days</option><option value="5" selected>5 days</option><option value="6">6 days</option></select>
-            <input type="text" id="cwNote" maxlength="500" placeholder="Anything to know this week?">
             <button class="trk-btn primary" id="cwPlan">Plan my week</button>
+            <input type="text" id="cwNote" maxlength="500" placeholder="Anything to know this week? (optional)">
           </div>
         </div>
         <details class="tr-opts"><summary>Options</summary>
@@ -2237,7 +2250,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       '<div class="wk-head" data-act="toggle"><div><div class="d">'+esc(fmtDay(w.date))+(w.date===today?' &middot; TODAY':'')+'</div>'+
       '<div class="t">'+esc(w.title)+'</div><div class="wk-chips">'+chips+'</div></div>'+
       '<div class="wk-prog">'+w.progress.done+' / '+w.progress.total+'</div></div><div class="wk-body">';
-    if(w.meta) html += metaHtml(w.meta);
+    if(w.meta) html += metaHtml(w.meta, w.title);
     (w.body.blocks||[]).forEach(function(b){ html += blockHtml(w,b); });
     if(w.source==='sentinel' && w.refine.notes) html += '<div class="wk-refined">'+esc(w.refine.notes)+'</div>';
     if(!(w.meta && w.meta.why) && w.body.rationale && w.body.rationale.length){
@@ -2254,18 +2267,23 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   }
 
   // What a session is for: objective, energy systems, qualities, muscles, and why (Sentinel's trainer).
-  function metaHtml(m){
+  function metaHtml(m, title){
     var h='<div class="wk-meta">';
-    if(m.objective) h+='<div class="wk-obj">'+esc(m.objective)+'</div>';
+    // "Heavy bench: top-set strength" under a card already titled Heavy bench reads twice.
+    var obj=String(m.objective||''), pre=String(title||'')+':';
+    if(title && obj.toLowerCase().indexOf(pre.toLowerCase())===0) obj=obj.slice(pre.length).trim().replace(/^./, function(c){ return c.toUpperCase(); });
+    if(obj) h+='<div class="wk-obj">'+esc(obj)+'</div>';
     if(m.change) h+='<div class="wk-change">'+esc(m.change)+'</div>';
     var s=m.systems||{};
     if((s.phosphagen||0)+(s.glycolytic||0)+(s.oxidative||0)>0){
       h+='<div class="wk-sys" title="Energy systems"><i class="ph" style="width:'+(s.phosphagen||0)+'%"></i><i class="gl" style="width:'+(s.glycolytic||0)+'%"></i><i class="ox" style="width:'+(s.oxidative||0)+'%"></i></div>'+
-        '<div class="wk-syslab"><span><b style="color:#e4a33c">Phosphagen</b> '+(s.phosphagen||0)+'%</span><span><b style="color:#d9604c">Glycolytic</b> '+(s.glycolytic||0)+'%</span><span><b style="color:#4f9bd8">Aerobic</b> '+(s.oxidative||0)+'%</span></div>';
+        '<div class="wk-syslab"><span><b class="ph">Power</b> '+(s.phosphagen||0)+'%</span><span><b class="gl">Glycolytic</b> '+(s.glycolytic||0)+'%</span><span><b class="ox">Aerobic</b> '+(s.oxidative||0)+'%</span></div>';
     }
-    var q=m.qualities||{}, ks=Object.keys(q).sort(function(a,b){ return q[b]-q[a]; });
-    if(ks.length) h+='<div class="wk-q">'+ks.map(function(k){ return '<span class="q'+q[k]+'">'+esc(QLABEL[k]||k)+(q[k]===3?' · primary':q[k]===2?' · secondary':'')+'</span>'; }).join('')+'</div>';
-    if(m.muscles && m.muscles.length) h+='<div class="wk-syslab">Muscles: '+esc(m.muscles.join(', '))+'</div>';
+    // One quiet line: what it trains most, then the muscles.
+    var q=m.qualities||{}, ks=Object.keys(q).filter(function(k){ return q[k]>=2; }).sort(function(a,b){ return q[b]-q[a]; });
+    var line=ks.map(function(k){ return QLABEL[k]||k; });
+    if(m.muscles && m.muscles.length) line.push(m.muscles.join(', '));
+    if(line.length) h+='<div class="wk-syslab">'+esc(line.join(' · '))+'</div>';
     if(m.why) h+='<details class="wk-why"><summary>Why</summary><p style="margin:6px 0 0">'+esc(m.why)+'</p></details>';
     return h+'</div>';
   }
