@@ -14,7 +14,7 @@ function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high'];
+const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high', 'thigh', 'calf', 'upper_arm'];
 
 // ---- profile / phase ----
 router.get('/profile', async (req, res) => {

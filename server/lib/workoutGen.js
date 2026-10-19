@@ -28,6 +28,8 @@
 //   * Core work is bodyweight only — heavy loaded oblique work thickens the
 //     waist, which is the one measurement you want going down.
 const { MOVEMENTS, BY_NAME, hasEquipment, EQUIPMENT_PRESETS, ALL_EQUIPMENT } = require('./movements');
+const { TESTS: LEDGER_TESTS, BENCHMARKS: LEDGER_BENCHMARKS } = require('./ledger');
+const TEST_IDS = Object.keys(LEDGER_TESTS);
 const strength = require('./strength');
 const engine = require('./engine');
 
@@ -686,6 +688,8 @@ function sanitizeBody(input, fallback = {}) {
         pattern: str(it && it.pattern, 40) || (BY_NAME.get(movement) ? BY_NAME.get(movement).pattern : strength.liftPattern(movement || '')),
         prescription: str(it && it.prescription, 200), rest_s: numOrNull(it && it.rest_s, 0, 900) ?? null,
         load_source: str(it && it.load_source, 300), notes: str(it && it.notes, 300), sets,
+        // A test (ledger.TESTS id): logging this item also records the result in fitness_tests.
+        ...(it && it.test && TEST_IDS.includes(it.test) ? { test: it.test } : {}),
       };
     });
     let eng = null;
@@ -701,6 +705,8 @@ function sanitizeBody(input, fallback = {}) {
     return {
       id: `b${bi + 1}`, kind, title: str(b.title, 80) || kind, minutes: numOrNull(b.minutes, 0, 180) ?? null,
       format: str(b.format, 40), notes: str(b.notes, 400), engine: eng, items, result: null,
+      // A CrossFit benchmark metcon (Fran, Grace…): its result logs under the benchmark's own name.
+      ...(kind === 'metcon' && b.benchmark && LEDGER_BENCHMARKS.includes(b.benchmark) ? { benchmark: b.benchmark } : {}),
     };
   }).filter(Boolean);
   const rationale = Array.isArray(input.rationale) ? input.rationale.filter((r) => typeof r === 'string').slice(0, 20).map((r) => r.slice(0, 400)) : [];
@@ -727,12 +733,14 @@ const REFINE_SCHEMA = {
       minutes: 'number',
       format: 'string, metcons only — e.g. "AMRAP"',
       notes: 'string — e.g. the metcon description',
+      benchmark: `string, metcon blocks only, when the metcon IS a CrossFit benchmark (Rx): one of ${LEDGER_BENCHMARKS.join(' | ')} — its result is logged under that name`,
       items: [{
         movement: 'string — use an existing name from known_movements when one fits, so it logs into the same history',
         log_as: `${LOG_AS.join(' | ')} — lift (load × reps), gymnastics (reps), conditioning (distance/time), none (warm-up text, metcon pieces)`,
         prescription: 'string — human-readable, e.g. "5 × 3 @ 225 lb"',
         rest_s: 'number',
         notes: 'string',
+        test: `string, only when this item is a test from the data ledger: one of ${TEST_IDS.join(' | ')}. PRT reps are one set of the max (log_as gymnastics); timed tests are one conditioning set with distance_m (the time is what he logs)`,
         sets: [{ reps: 'number', load_lb: 'number|null', pct_1rm: 'number|null', rpe: 'number|null', distance_m: 'number|null', duration_s: 'number|null — engine: interval length', rest_s: 'number|null', target: 'number|null — engine: output to hit this interval', unit: '"cal" | "m" | null' }],
       }],
       engine: 'object, conditioning blocks only: { modality: bike|row|ski|run, type: aerobic|threshold|vo2|speed|repeat|test, test?: tt10|sprint60|repeat, pct?: number }. Engine targets must come from engine_baselines in the context — keep them personal.',

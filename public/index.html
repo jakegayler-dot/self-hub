@@ -129,6 +129,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .wk-setnote{flex:1 1 100%;margin-left:44px;font-size:11.5px;color:var(--ink3)}
 .wk-addset{background:none;border:1px dashed var(--line2);color:var(--ink3);border-radius:6px;padding:3px 10px;font-size:12px;cursor:pointer;margin-top:6px}
 .wk-session{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+.ldg{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13px}
+.ldg summary{cursor:pointer;color:var(--amber);font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.ldg-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+.ldg-l{flex:1 1 180px;color:var(--ink2)}
+.ldg-row input,.ldg-row select{width:80px;background:var(--panel2);border:1px solid var(--line2);border-radius:5px;color:var(--ink);padding:5px 7px;font-size:13px}
+.ldg .trk-btn{margin-top:10px}
+.ldg-due{margin-top:10px;color:var(--ink2)}
+.ldg-due ul{margin:4px 0 0;padding-left:18px}
+.ldg-due .sub-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3)}
 .wk-session .sub-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-bottom:6px}
 .wk-session .ss-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;font-size:12.5px;color:var(--ink2);margin-bottom:6px}
 .wk-session input,.wk-session textarea{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;color:var(--ink);padding:5px 7px;font-size:13px}
@@ -327,6 +336,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
           <div class="wk-equip" id="wkEquip"></div>
         </details>
         <div class="wk-busy" id="cwBusy" hidden></div>
+        <div id="ldgCard"></div>
         <div id="cwWeek"></div>
         <div id="wkPlan"><p class="trk-note">Loading…</p></div>
       </div>
@@ -587,6 +597,11 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-row">
           <div class="trk-field"><label>Inseam low</label><input type="number" step="0.1" id="mInseamLow" placeholder="29"></div>
           <div class="trk-field"><label>Inseam high</label><input type="number" step="0.1" id="mInseamHigh" placeholder="30"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Thigh (mid, relaxed)</label><input type="number" step="0.1" id="mThigh" placeholder="22"></div>
+          <div class="trk-field"><label>Calf (widest)</label><input type="number" step="0.1" id="mCalf" placeholder="15"></div>
+          <div class="trk-field"><label>Upper arm (flexed)</label><input type="number" step="0.1" id="mUpperArm" placeholder="15"></div>
         </div>
         <button class="trk-btn primary" id="mSubmit">Log entry</button>
         <div class="trk-err" id="mErr">Enter a date and at least one measurement.</div>
@@ -866,7 +881,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   document.getElementById('mSubmit').addEventListener('click', async function(){
     var d=document.getElementById('mDate').value;
     var fieldIds={arm_length:'mArmLength',bust:'mBust',shoulder:'mShoulder',length:'mLength',waist:'mWaist',
-      seat_hips:'mSeatHips',neck:'mNeck',sleeve:'mSleeve',inseam_low:'mInseamLow',inseam_high:'mInseamHigh'};
+      seat_hips:'mSeatHips',neck:'mNeck',sleeve:'mSleeve',inseam_low:'mInseamLow',inseam_high:'mInseamHigh',thigh:'mThigh',calf:'mCalf',upper_arm:'mUpperArm'};
     var body={entry_date:d}; var any=false;
     Object.keys(fieldIds).forEach(function(f){
       var v=document.getElementById(fieldIds[f]).value;
@@ -2186,6 +2201,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       train.workouts = r[0]; train.engine = r[1]; train.week = r[2].week; train.trainerReady = r[2].trainer_ready; train.loaded = true;
       renderTrain();
       if(!train.planWatching){ train.planWatching=true; watchPlan(); } // a plan started earlier may still be running
+      loadLedger();
     }catch(e){ toast('Could not load workouts: '+e.message); }
   }
   async function reloadEngine(){ try{ train.engine = await api('GET','/engine?date='+localISO()); renderEngine(); }catch(e){} }
@@ -2195,7 +2211,44 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     if(i===-1) train.workouts.push(w); else train.workouts[i]=w;
   }
 
-  function renderTrain(){ renderWeek(); renderPlan(); renderEngine(); }
+  function renderTrain(){ renderWeek(); renderPlan(); renderEngine(); renderLedger(); }
+
+  // ---- What the plan needs from him (lib/ledger.js): numbers to enter, questions, and the tests coming up ----
+  var LDG_INPUT = { thigh:'thigh', calf:'calf', upper_arm:'upper_arm', waist:'waist', body_fat:'body_fat_pct' };
+  async function loadLedger(){ try{ train.ledger = await api('GET','/ledger'); }catch(e){ train.ledger = null; } renderLedger(); }
+  function renderLedger(){
+    var el=document.getElementById('ldgCard'); if(!el) return;
+    var L=train.ledger; if(!L){ el.innerHTML=''; return; }
+    var asks = (L.missing_measurements||[]).concat(L.unknown_facts||[]);
+    var due = L.due_tests||[];
+    if(!asks.length && !due.length){ el.innerHTML=''; return; }
+    var h='<details class="ldg"'+(asks.length?' open':'')+'><summary>'+(asks.length?'Needs a number ('+asks.length+')':'')+(asks.length&&due.length?' · ':'')+(due.length?due.length+' test'+(due.length===1?'':'s')+' due':'')+'</summary>';
+    asks.forEach(function(a){
+      var inp;
+      if(a.id==='fins'||a.id==='swim_gear') inp='<select data-ldg="'+a.id+'"><option value="">—</option><option value="yes">Yes</option><option value="no">No</option></select>';
+      else inp='<input type="number" step="0.1" data-ldg="'+a.id+'" placeholder="'+(a.id==='age'?'years':a.id==='body_fat'?'%':'in')+'">';
+      h+='<div class="ldg-row"><span class="ldg-l">'+esc(a.label)+(a.reason?' <span class="u">'+esc(a.reason)+'</span>':'')+'</span>'+inp+
+        '<button class="wk-undo" data-snooze="'+a.id+'" title="Ask again in 30 days">later</button></div>';
+    });
+    if(asks.length) h+='<button class="trk-btn" id="ldgSave">Save</button>';
+    if(due.length) h+='<div class="ldg-due"><div class="sub-h">Tests the next plan will include</div><ul>'+due.map(function(d){ return '<li>'+esc(d.kind==='benchmark'?d.label.replace(/\s*\(.*\)$/,''):d.label)+' <span class="u">'+esc(d.reason)+'</span></li>'; }).join('')+'</ul></div>';
+    el.innerHTML=h+'</details>';
+    var save=document.getElementById('ldgSave');
+    if(save) save.addEventListener('click', async function(){
+      var body={};
+      el.querySelectorAll('[data-ldg]').forEach(function(i){
+        if(i.value==='') return;
+        var id=i.dataset.ldg;
+        if(id==='fins'||id==='swim_gear') body[id] = i.value==='yes';
+        else body[LDG_INPUT[id]||id] = Number(i.value);
+      });
+      if(!Object.keys(body).length){ toast('Fill in at least one'); return; }
+      try{ await api('POST','/body-data', body); toast('Saved'); await loadLedger(); }catch(e){ toast('Could not save: '+e.message); }
+    });
+    el.querySelectorAll('[data-snooze]').forEach(function(b){ b.addEventListener('click', async function(){
+      try{ await api('POST','/ledger/snooze',{ id:b.dataset.snooze, days:30 }); await loadLedger(); }catch(e){ toast(e.message); }
+    }); });
+  }
 
   // ---- the coached week: plan, targets, the latest review, where to work ----
   var QLABEL = { max_strength:'Max strength', power:'Power', hypertrophy:'Hypertrophy', muscular_endurance:'Muscular endurance', aerobic_capacity:'Aerobic capacity', anaerobic_capacity:'Anaerobic capacity', skill:'Skill', mobility:'Mobility' };
@@ -2349,7 +2402,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     if(timed) h += '<button class="trk-btn" data-act="timer" style="margin-bottom:8px;padding:6px 11px;font-size:12px">&#9654; Start interval timer</button>';
     b.items.forEach(function(it){
       // Metcon pieces already name the movement in the prescription ("15 cal Row").
-      h += '<div class="wk-item" data-iid="'+esc(it.id)+'">'+(b.kind==='metcon' && it.prescription
+      h += '<div class="wk-item" data-iid="'+esc(it.id)+'">'+(it.test?'<span class="wk-chip amber" style="margin-right:6px">Test</span>':'')+(b.kind==='metcon' && it.prescription
         ? '<span class="mv">'+esc(it.prescription)+'</span>'
         : '<span class="mv">'+esc(it.movement)+'</span>'+(it.prescription?'<span class="rx">'+esc(it.prescription)+'</span>':''));
       if(it.load_source) h += '<div class="src">'+esc(it.load_source)+'</div>';

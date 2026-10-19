@@ -237,3 +237,37 @@ test('planning a week runs in the background: the page starts it and checks back
   assert.equal(job.week_start, day(0));
   assert.equal((await call('GET', `/workouts/week?start=${day(0)}`)).body.week.week_start, day(0));
 });
+
+test('the data ledger: tests due, measurements and facts missing, filled in from the Train page or Sentinel, and a planned test set records the result', async () => {
+  let L = (await call('GET', `/ledger?date=${day(0)}`)).body;
+  assert.equal(L.age, 34); // he told Sentinel (migration 015)
+  assert.equal(L.max_hr_est, 186);
+  const due = L.due_tests.map((d) => d.id);
+  for (const id of ['prt_pullups', 'prt_situps', 'prt_pushups', 'prt_run_3mi', 'prt_swim_half_mi', 'swim_400m', 'ruck_8km', 'benchmark:Fran']) assert.ok(due.includes(id), id);
+  assert.ok(L.missing_measurements.some((m) => m.id === 'thigh'));
+  assert.deepEqual(L.unknown_facts.map((f) => f.id), ['fins', 'swim_gear']);
+  // He fills some in; one is snoozed.
+  let r = await call('POST', '/body-data', { thigh: 22.5, calf: 15, resting_hr: 52, fins: true });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal((await call('POST', '/body-data', { thigh: 99 })).status, 400);
+  await call('POST', '/ledger/snooze', { id: 'swim_gear', days: 30 });
+  L = (await call('GET', `/ledger?date=${day(0)}`)).body;
+  assert.ok(!L.missing_measurements.some((m) => m.id === 'thigh' || m.id === 'calf'));
+  assert.deepEqual(L.unknown_facts, []);
+  assert.equal(L.gear.fins, true);
+  assert.equal(L.resting_hr_recent[0].bpm, 52);
+  // A planned PRT pull-up set records the test when he logs it; undoing it takes the test back off.
+  const body = { title: 'PRT', blocks: [{ id: 'b1', kind: 'gymnastics', title: 'PRT', items: [{ id: 'b1i1', movement: 'Pull-up', log_as: 'gymnastics', test: 'prt_pullups', sets: [{ reps: 15, entry: null }] }] }] };
+  const w = (await pool.query(`INSERT INTO fitness_workouts (workout_date, title, focus, minutes, inputs, body, seed, source) VALUES ($1, 'PRT', 'gymnastics', 45, '{}'::jsonb, $2::jsonb, 0, 'sentinel') RETURNING id`, [day(0), JSON.stringify(body)])).rows[0];
+  r = await call('POST', `/workouts/${w.id}/log`, { block_id: 'b1', item_id: 'b1i1', set_index: 0, reps: 17 });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const t = (await call('GET', '/tests')).body.find((x) => x.test === 'prt_pullups');
+  assert.equal(Number(t.value), 17);
+  L = (await call('GET', `/ledger?date=${day(0)}`)).body;
+  assert.ok(!L.due_tests.some((d) => d.id === 'prt_pullups' && d.reason === 'never tested'));
+  await call('POST', `/workouts/${w.id}/unlog`, { block_id: 'b1', item_id: 'b1i1', set_index: 0 });
+  assert.ok(!(await call('GET', '/tests')).body.some((x) => x.test === 'prt_pullups'));
+  // A time typed as m:ss.
+  r = await call('POST', '/tests', { test: 'swim_400m', value: '8:05' });
+  assert.equal(Number(r.body.value), 485);
+});

@@ -165,6 +165,35 @@ const COLLECTIONS = [
     },
   },
   {
+    name: 'data_ledger',
+    description: "What Jake's training plan needs from him (Oct 18): tests due (the Navy SEAL PRT every 6-8 weeks, swim and ruck tests, engine baselines, CrossFit benchmarks, a lift untested for 60 days), measurements missing or stale (thigh, calf, upper arm, waist, body fat), and facts not known yet (fins, pull buoy). Use for \"what do you need from me\" or \"what tests are coming\"; give missing numbers with log_body_data.",
+    kind: 'summary',
+    search: ['label', 'kind'],
+    custom: { kind: enumFilter('kind', ['test', 'benchmark', 'lift', 'engine', 'measure', 'fact']) },
+    fields: ['id', 'kind', 'label', 'reason', 'last'],
+    async load({ pool, now }) {
+      const { createWorkoutsRouter } = require('./workouts');
+      const today = new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10);
+      const L = await createWorkoutsRouter({ pool }).ledgerFor(today);
+      const last = (x) => (x && x.last ? JSON.stringify(x.last) : null);
+      return [...L.due_tests, ...L.missing_measurements, ...L.unknown_facts]
+        .map((x) => ({ id: x.id, kind: x.kind, label: x.label, reason: x.reason || 'not known yet', last: last(x) }));
+    },
+  },
+  {
+    name: 'tests',
+    description: 'Every fitness test result and morning resting heart rate (test id, value, unit: reps, seconds or bpm), newest first. PRT events are prt_pullups, prt_situps, prt_pushups, prt_run_3mi, prt_swim_half_mi.',
+    kind: 'log',
+    dated: true,
+    search: ['test', 'notes'],
+    custom: { test: stringFilter('test') },
+    fields: ['id', 'date', 'test', 'value', 'unit', 'notes'],
+    async load({ pool }) {
+      return (await rowsOf(pool, 'SELECT id, entry_date, test, value, unit, notes FROM fitness_tests ORDER BY entry_date ASC, id ASC'))
+        .map((r) => ({ id: r.id, date: ymd(r.entry_date), test: r.test, value: num(r.value), unit: r.unit, notes: r.notes || null }));
+    },
+  },
+  {
     name: 'lifts',
     description: 'Every logged lift set (lift, load lb, reps, RPE) with its estimated 1RM, movement pattern and whether it is a benchmark lift. Use for "what did I squat last week" or a lift\'s history.',
     kind: 'log',

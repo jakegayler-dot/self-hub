@@ -37,11 +37,12 @@ const gen = require('../lib/workoutGen');
 const engine = require('../lib/engine');
 const { EQUIPMENT, EQUIPMENT_PRESETS, MOVEMENTS } = require('../lib/movements');
 const coach = require('../lib/coach');
+const ledger = require('../lib/ledger');
 
 const { ymd, mondayOfStr, addDaysStr } = gen;
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const num = (v) => (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
-const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high'];
+const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high', 'thigh', 'calf', 'upper_arm'];
 
 // Trainer errors carry their own status (503 not connected, 429 budget, 502 Sentinel); everything else is a 500.
 function coachFail(res, err) {
@@ -239,6 +240,119 @@ function createWorkoutsRouter({ pool }) {
   }));
 
   // ---- read / status / delete ----
+
+  // ---- The data ledger: tests due, measurements missing, facts unknown (lib/ledger.js) ----
+  async function ledgerFor(date) {
+    const profile = (await q('SELECT * FROM fitness_profile WHERE id = 1'))[0] || {};
+    const [tests, benchmarks, lifts, mrows, bf] = await Promise.all([
+      q('SELECT entry_date, test, value, unit, notes FROM fitness_tests WHERE entry_date <= $1', [date]),
+      q('SELECT entry_date, name, result, rx FROM fitness_benchmarks WHERE entry_date <= $1', [date]),
+      q('SELECT lift, MAX(entry_date) AS entry_date FROM fitness_lifts WHERE entry_date <= $1 GROUP BY lift', [date]),
+      q(`SELECT entry_date, ${MEASUREMENT_FIELDS.join(', ')} FROM fitness_measurements WHERE entry_date <= $1 ORDER BY entry_date DESC`, [date]),
+      q('SELECT entry_date, body_fat_pct FROM fitness_bodyweight WHERE body_fat_pct IS NOT NULL AND entry_date <= $1 ORDER BY entry_date DESC LIMIT 1', [date]),
+    ]);
+    // Engine: retests on the machines he tests on; one full baseline when there's none at all.
+    const rows = await loadGenRows(date);
+    const base = Object.values(gen.makeContext(rows, date).baselines || {});
+    const tested = base.filter((b) => b.tt10 || b.sprint60 || b.repeat);
+    const engineDue = tested.length
+      ? tested.flatMap((b) => (b.testsDue || []).map((t) => ({ machine: b.name, test: t, reason: 'missing or older than 8 weeks' })))
+      : [{ machine: 'one machine (rower, bike or ski)', test: 'tt10, sprint60 and repeat (over two sessions)', reason: 'no engine baseline at all' }];
+    // Latest value of each measurement (not every entry has every field), with its own date.
+    const measurements = {};
+    for (const f of ['thigh', 'calf', 'upper_arm', 'waist']) {
+      const r = mrows.find((x) => x[f] != null);
+      if (r) measurements[f] = { value: Number(r[f]), date: ymd(r.entry_date) };
+    }
+    const out = ledger.computeLedger({ profile, tests, benchmarks, lifts, measurements, bodyFat: bf[0], engineDue }, date);
+    const rhr = tests.filter((t) => t.test === 'resting_hr').sort((a, b) => (ymd(a.entry_date) < ymd(b.entry_date) ? 1 : -1)).slice(0, 7);
+    out.resting_hr_recent = rhr.map((t) => ({ date: ymd(t.entry_date), bpm: Number(t.value) }));
+    return out;
+  }
+  const todayStr = () => gen.ymd(new Date(Date.now() - 6 * 3600e3));
+  router.ledgerFor = ledgerFor; // for the read API (Sentinel)
+  router.get('/ledger', async (req, res) => {
+    try { res.json(await ledgerFor(isDate(req.query.date) ? req.query.date : todayStr())); } catch (err) { fail(res, err); }
+  });
+  // Snooze a measurement or question (it stops being asked until then).
+  router.post('/ledger/snooze', async (req, res) => {
+    try {
+      const id = String((req.body && req.body.id) || '');
+      if (!ledger.MEASURES[id] && !ledger.FACTS[id]) return res.status(400).json({ error: 'unknown item' });
+      const days = Math.max(1, Math.min(90, Math.round(Number(req.body.days) || 30)));
+      const until = addDaysStr(todayStr(), days);
+      const p = (await q('SELECT ledger_snoozed FROM fitness_profile WHERE id = 1'))[0] || {};
+      const sn = { ...((p.ledger_snoozed && typeof p.ledger_snoozed === 'object') ? p.ledger_snoozed : {}), [id]: until };
+      await pool.query('UPDATE fitness_profile SET ledger_snoozed = $1::jsonb WHERE id = 1', [JSON.stringify(sn)]);
+      res.json({ id, until });
+    } catch (err) { fail(res, err); }
+  });
+  // Numbers he gives (the Train page's card, or Sentinel by voice): measurements, body fat, resting HR, age, gear.
+  //   POST /body-data { date?, thigh?, calf?, upper_arm?, waist?, body_fat_pct?, weight_lb?, resting_hr?, age?, fins?, swim_gear? }
+  router.post('/body-data', async (req, res) => {
+    try {
+      const b = req.body || {};
+      const date = isDate(b.date) ? b.date : todayStr();
+      const saved = {};
+      const n = (v, lo, hi) => { if (v == null || v === '') return null; const x = num(v); return x != null && x >= lo && x <= hi ? x : NaN; };
+      const m = { thigh: n(b.thigh, 10, 45), calf: n(b.calf, 8, 30), upper_arm: n(b.upper_arm, 8, 30), waist: n(b.waist, 20, 60) };
+      const other = { body_fat_pct: n(b.body_fat_pct, 3, 50), weight_lb: n(b.weight_lb, 60, 500), resting_hr: n(b.resting_hr, 25, 120), age: n(b.age, 14, 99) };
+      const bad = [...Object.entries(m), ...Object.entries(other)].filter((e) => Number.isNaN(e[1])).map((e) => e[0]);
+      if (bad.length) return res.status(400).json({ error: `out of range: ${bad.join(', ')} (inches for measurements)` });
+      const mk = Object.keys(m).filter((k) => m[k] != null);
+      if (mk.length) {
+        await pool.query(`INSERT INTO fitness_measurements (entry_date, ${mk.join(', ')}) VALUES ($1, ${mk.map((_, i) => `$${i + 2}`).join(', ')})`, [date, ...mk.map((k) => m[k])]);
+        for (const k of mk) saved[k] = m[k];
+      }
+      if (other.body_fat_pct != null || other.weight_lb != null) {
+        const last = (await q('SELECT weight_lb FROM fitness_bodyweight ORDER BY entry_date DESC, id DESC LIMIT 1'))[0];
+        const weight = other.weight_lb != null ? other.weight_lb : (last ? Number(last.weight_lb) : null);
+        if (weight == null) return res.status(400).json({ error: 'give your weight with the body fat (there is no weigh-in yet)' });
+        await pool.query('INSERT INTO fitness_bodyweight (entry_date, weight_lb, body_fat_pct) VALUES ($1, $2, $3)', [date, weight, other.body_fat_pct]);
+        if (other.body_fat_pct != null) saved.body_fat_pct = other.body_fat_pct;
+        if (other.weight_lb != null) saved.weight_lb = other.weight_lb;
+      }
+      if (other.resting_hr != null) {
+        await pool.query("INSERT INTO fitness_tests (entry_date, test, value, unit) VALUES ($1, 'resting_hr', $2, 'bpm')", [date, other.resting_hr]);
+        saved.resting_hr = other.resting_hr;
+      }
+      if (other.age != null) {
+        await pool.query('UPDATE fitness_profile SET age_years = $1, age_recorded_on = $2 WHERE id = 1', [Math.round(other.age), date]);
+        saved.age = Math.round(other.age);
+      }
+      const gearIn = {};
+      for (const k of ['fins', 'swim_gear']) if (typeof b[k] === 'boolean') gearIn[k] = b[k];
+      if (Object.keys(gearIn).length) {
+        const p = (await q('SELECT gear FROM fitness_profile WHERE id = 1'))[0] || {};
+        const gear = { ...((p.gear && typeof p.gear === 'object') ? p.gear : {}), ...gearIn };
+        await pool.query('UPDATE fitness_profile SET gear = $1::jsonb WHERE id = 1', [JSON.stringify(gear)]);
+        Object.assign(saved, gearIn);
+      }
+      if (!Object.keys(saved).length) return res.status(400).json({ error: 'nothing to save' });
+      res.status(201).json({ date, saved });
+    } catch (err) { fail(res, err); }
+  });
+  // Test results: logged from a planned test item automatically, or entered here (time as m:ss or seconds).
+  router.get('/tests', async (req, res) => {
+    try { res.json(await q('SELECT id, entry_date, test, value, unit, notes, workout_id FROM fitness_tests ORDER BY entry_date DESC, id DESC')); } catch (err) { fail(res, err); }
+  });
+  router.post('/tests', async (req, res) => {
+    try {
+      const b = req.body || {};
+      const t = ledger.TESTS[b.test];
+      if (!t) return res.status(400).json({ error: `test must be one of ${Object.keys(ledger.TESTS).join(', ')}` });
+      const asTime = t.unit === 's' && typeof b.value === 'string' && /^\d+:\d{1,2}(:\d{2})?$/.test(b.value.trim());
+      const value = asTime ? b.value.trim().split(':').reduce((acc, x) => acc * 60 + Number(x), 0) : num(b.value);
+      if (value == null || value <= 0) return res.status(400).json({ error: t.unit === 's' ? 'time as m:ss or seconds' : 'a number' });
+      const row = (await q('INSERT INTO fitness_tests (entry_date, test, value, unit, notes) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+        [isDate(b.date) ? b.date : todayStr(), b.test, value, t.unit, typeof b.notes === 'string' ? b.notes.slice(0, 500) : null]))[0];
+      res.status(201).json(row);
+    } catch (err) { fail(res, err); }
+  });
+  router.delete('/tests/:id', async (req, res) => {
+    try { await pool.query('DELETE FROM fitness_tests WHERE id = $1', [Number(req.params.id)]); res.status(204).end(); } catch (err) { fail(res, err); }
+  });
+
   router.get('/workouts', async (req, res) => {
     const { from, to } = req.query;
     if ((from && !isDate(from)) || (to && !isDate(to))) return res.status(400).json({ error: 'from/to must be YYYY-MM-DD' });
@@ -462,6 +576,16 @@ function createWorkoutsRouter({ pool }) {
     if (note) entry.notes = note;
     set.entry = entry;
     if (item.log_as === 'test') await syncEngineTest(w, block, item);
+    // A planned test (ledger.TESTS) also records its result in fitness_tests.
+    if (item.test && ledger.TESTS[item.test]) {
+      const t = ledger.TESTS[item.test];
+      const value = t.unit === 'reps' ? reps : (secs != null ? secs : null);
+      if (value != null) {
+        const row = (await q('INSERT INTO fitness_tests (entry_date, test, value, unit, notes, workout_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+          [date, item.test, value, t.unit, note, w.id]))[0];
+        entry.test_row = row.id;
+      }
+    }
     return null;
   }
 
@@ -625,6 +749,7 @@ function createWorkoutsRouter({ pool }) {
   const TABLES = { lifts: 'fitness_lifts', gymnastics: 'fitness_gymnastics', conditioning: 'fitness_conditioning', benchmarks: 'fitness_benchmarks' };
   async function deleteEntry(entry) {
     if (entry && TABLES[entry.table]) await pool.query(`DELETE FROM ${TABLES[entry.table]} WHERE id = $1`, [entry.id]);
+    if (entry && entry.test_row) await pool.query('DELETE FROM fitness_tests WHERE id = $1', [entry.test_row]);
   }
 
   router.post('/workouts/:id/unlog', locked(async (req, res) => {
@@ -658,8 +783,10 @@ function createWorkoutsRouter({ pool }) {
       // shows in "Metcons this week" and the Benchmark log.
       const c = (await q('INSERT INTO fitness_conditioning (entry_date, movement, distance_m, duration_seconds, notes) VALUES ($1, $2, $3, $4, $5) RETURNING id',
         [w.date, 'Metcon', null, dur, `${block.title}: ${result}`]))[0];
+      // A benchmark metcon logs under the benchmark's name, so it counts toward the percentiles and the ledger.
+      const bname = block.benchmark || (ledger.BENCHMARKS.includes(block.title) ? block.title : null);
       const b = (await q('INSERT INTO fitness_benchmarks (entry_date, name, result) VALUES ($1, $2, $3) RETURNING id',
-        [w.date, `Metcon: ${block.title}`, result]))[0];
+        [w.date, bname || `Metcon: ${block.title}`, result]))[0];
       block.result = { text: result, duration_s: dur, conditioning_id: c.id, benchmark_id: b.id };
       res.json(await saveBody(w.id, w.body));
     } catch (err) { fail(res, err); }
@@ -782,7 +909,14 @@ function createWorkoutsRouter({ pool }) {
     const mean = (xs) => { const ok = xs.filter(Number.isFinite); return ok.length ? ok.reduce((s, x) => s + x, 0) / ok.length : null; };
     const sp = strengthPatterns || {};
     const lower = mean([sp.Squat, sp.Hinge]), upper = mean([sp['Push Horizontal'], sp['Push Vertical'], sp['Pull Horizontal'], sp['Pull Vertical']]);
-    const missing = ['thigh circumference', 'calf circumference', 'upper-arm circumference'];
+    // The circumferences, each from its latest entry (an entry needn't have every field).
+    const circ = {};
+    for (const f of ['thigh', 'calf', 'upper_arm']) {
+      const r = (await q(`SELECT entry_date, ${f} AS v FROM fitness_measurements WHERE ${f} IS NOT NULL ORDER BY entry_date DESC LIMIT 1`))[0];
+      if (r) circ[f] = { in: Number(r.v), date: ymd(r.entry_date) };
+    }
+    const label = { thigh: 'thigh circumference', calf: 'calf circumference', upper_arm: 'upper-arm circumference' };
+    const missing = Object.keys(label).filter((f) => !circ[f]).map((f) => label[f]);
     if (!m) missing.unshift('body measurements');
     if (!bf) missing.push('body fat %');
     return {
@@ -791,7 +925,11 @@ function createWorkoutsRouter({ pool }) {
       height_in: num(profile.height_in),
       body_fat_pct: bf ? num(bf.body_fat_pct) : null,
       ratios: m ? { chest_to_waist: r2(v('bust') / v('waist')), hips_to_waist: r2(v('seat_hips') / v('waist')), neck_to_waist: r2(v('neck') / v('waist')),
-        shoulder_width_to_waist_circumference: r2(v('shoulder') / v('waist')) } : null,
+        shoulder_width_to_waist_circumference: r2(v('shoulder') / v('waist')),
+        ...(circ.thigh && v('waist') ? { thigh_to_waist: r2(circ.thigh.in / v('waist')) } : {}),
+        ...(circ.upper_arm && circ.thigh ? { upper_arm_to_thigh: r2(circ.upper_arm.in / circ.thigh.in) } : {}),
+        ...(circ.calf && circ.thigh ? { calf_to_thigh: r2(circ.calf.in / circ.thigh.in) } : {}) } : null,
+      circumferences_in: circ,
       strength_by_pattern: sp,
       lower_vs_upper_strength: lower != null && upper != null ? { lower_body: r2(lower), upper_body: r2(upper), difference: r2(lower - upper) } : null,
       not_measured: missing,
@@ -824,6 +962,8 @@ function createWorkoutsRouter({ pool }) {
           ...(profile.physique_assessment ? { his_own_notes: profile.physique_assessment } : {}),
         },
         physique_evidence: await physiqueEvidence(m, ctx.strengthPatterns, profile),
+        // What's due to be tested, what's missing and what's unknown (lib/ledger.js).
+        data_ledger: await ledgerFor(date).catch(() => null),
         bodyweight_lb: bw ? num(bw.weight_lb) : null,
         bodyweight_30d_ago_lb: bw30 ? num(bw30.weight_lb) : null,
         measurements_in: m ? Object.fromEntries(MEASUREMENT_FIELDS.filter((f) => m[f] != null).map((f) => [f, num(m[f])])) : null,
