@@ -2185,6 +2185,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       var r = await Promise.all([api('GET','/workouts'), api('GET','/engine?date='+localISO()), api('GET','/workouts/week?start='+localISO()).catch(function(){ return {week:null}; })]);
       train.workouts = r[0]; train.engine = r[1]; train.week = r[2].week; train.trainerReady = r[2].trainer_ready; train.loaded = true;
       renderTrain();
+      if(!train.planWatching){ train.planWatching=true; watchPlan(); } // a plan started earlier may still be running
     }catch(e){ toast('Could not load workouts: '+e.message); }
   }
   async function reloadEngine(){ try{ train.engine = await api('GET','/engine?date='+localISO()); renderEngine(); }catch(e){} }
@@ -2238,19 +2239,36 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       train.workouts = await api('GET','/workouts'); renderTrain(); toast('Week reviewed');
     }catch(e){ toast('Review failed: '+e.message); if(b){ b.disabled=false; b.textContent='Review my week now'; } }
   }
+  // Planning runs in the background on the server (a few minutes); this starts it and checks back, so the
+  // phone never holds one long request open ("Load failed", Oct 18). Leaving the page doesn't stop it.
+  var planPoll = null;
+  async function watchPlan(){
+    var busy=document.getElementById('cwBusy'), btn=document.getElementById('cwPlan');
+    clearTimeout(planPoll);
+    var job; try{ job=(await api('GET','/workouts/plan-week/status')).job; }catch(e){ planPoll=setTimeout(watchPlan, 8000); return; }
+    if(!job) { btn.disabled=false; return; }
+    if(job.status==='running'){
+      btn.disabled=true; busy.hidden=false;
+      var secs=Math.round((Date.now()-Date.parse(job.started_at))/1000);
+      busy.textContent='Planning your week… '+(secs<60?secs+' s':Math.floor(secs/60)+' min '+(secs%60)+' s')+' (it takes a few minutes; you can leave this page)';
+      planPoll=setTimeout(watchPlan, 5000); return;
+    }
+    btn.disabled=false;
+    if(train.planWatched===job.started_at) return; // already shown
+    train.planWatched=job.started_at;
+    if(job.status==='failed'){ if(Date.now()-Date.parse(job.finished_at)<30*60000){ busy.hidden=false; busy.textContent='Could not plan the week: '+job.error; } return; }
+    busy.hidden=true;
+    try{ var wk=await api('GET','/workouts/week?start='+job.week_start); train.week=wk.week; train.workouts=await api('GET','/workouts'); train.open={}; renderTrain(); }catch(e){}
+    if(train.planStarted===job.started_at) toast(job.sessions+' sessions planned'+(job.kept_existing?' — kept '+job.kept_existing+' already started':''));
+  }
   document.getElementById('cwPlan').addEventListener('click', async function(){
     var p=currentInputs(); if(!p.date){ toast('Pick a start date under Options'); return; }
-    p.start_date=p.date; p.days=parseInt(document.getElementById('cwDays').value,10); p.note=document.getElementById('cwNote').value;
-    var busy=document.getElementById('cwBusy'); this.disabled=true; busy.hidden=false;
-    busy.textContent='Planning your week… a minute or two';
+    p.start_date=p.date; p.days=parseInt(document.getElementById('cwDays').value,10); p.note=document.getElementById('cwNote').value; p.background=true;
+    var busy=document.getElementById('cwBusy'); this.disabled=true; busy.hidden=false; busy.textContent='Starting…';
     try{
       var r=await api('POST','/workouts/plan-week', p);
-      train.week=r.week; train.workouts = await api('GET','/workouts');
-      train.open={}; if(r.workouts[0]) train.open[r.workouts[0].id]=true;
-      renderTrain(); toast(r.workouts.length+' sessions planned'+(r.kept_existing.length?' — kept '+r.kept_existing.length+' already started':''));
-      busy.hidden=true;
-    }catch(e){ busy.textContent='Could not plan the week: '+e.message; }
-    this.disabled=false;
+      train.planStarted=r.job.started_at; watchPlan();
+    }catch(e){ busy.textContent='Could not plan the week: '+e.message; this.disabled=false; }
   });
 
   function renderPlan(){

@@ -224,3 +224,16 @@ test('swims: the pool, fins and swim gear are equipment, swim strokes are moveme
   assert.equal(Number(c.distance_m), 400);
   assert.equal(Number(c.duration_seconds), 480);
 });
+
+test('planning a week runs in the background: the page starts it and checks back (no long request for the phone to drop)', async () => {
+  const r = await call('POST', '/workouts/plan-week', { start_date: day(0), days: 4, minutes: 45, equipment: 'box', background: true });
+  assert.equal(r.status, 202, JSON.stringify(r.body));
+  assert.equal(r.body.job.status, 'running');
+  assert.equal((await call('POST', '/workouts/plan-week', { start_date: day(0), days: 4, minutes: 45, equipment: 'box', background: true })).status, 409);
+  let job;
+  for (let i = 0; i < 100; i++) { job = (await call('GET', '/workouts/plan-week/status')).body.job; if (job.status !== 'running') break; await new Promise((ok) => setTimeout(ok, 50)); }
+  assert.equal(job.status, 'done', JSON.stringify(job));
+  assert.equal(job.sessions, 4);
+  assert.equal(job.week_start, day(0));
+  assert.equal((await call('GET', `/workouts/week?start=${day(0)}`)).body.week.week_start, day(0));
+});

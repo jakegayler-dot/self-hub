@@ -247,6 +247,11 @@ function createWorkoutsRouter({ pool }) {
   });
 
   // ---- the coached week (before /workouts/:id so these aren't read as an id) ----
+  // Planning a week takes a few minutes (the trainer looks things up and its plan is checked), longer than a
+  // phone will hold a request open ("Load failed", Oct 18). background: true starts it and answers at once;
+  // GET /workouts/plan-week/status says how it's going. Without it the request waits, as before.
+  let planJob = null;
+  router.get('/workouts/plan-week/status', (req, res) => res.json({ job: planJob }));
   router.post('/workouts/plan-week', async (req, res) => {
     try {
       const raw = req.body || {};
@@ -254,8 +259,21 @@ function createWorkoutsRouter({ pool }) {
       const { inputs, errors } = gen.normalizeInputs({ ...raw, date: start });
       if (errors.length) return res.status(400).json({ error: errors.join('; ').replace('date', 'start_date') });
       const days = Math.max(4, Math.min(6, Math.round(Number(raw.days) || 5)));
-      const end = addDaysStr(inputs.date, 6);
       const note = typeof raw.note === 'string' ? raw.note.trim().slice(0, 500) : '';
+      if (raw.background === true) {
+        if (planJob && planJob.status === 'running') return res.status(409).json({ error: 'Already planning a week — give it a minute', job: planJob });
+        const job = planJob = { status: 'running', week_start: inputs.date, started_at: new Date().toISOString() };
+        planWeek(inputs, days, note)
+          .then((r) => Object.assign(job, { status: 'done', finished_at: new Date().toISOString(), sessions: r.workouts.length, kept_existing: r.kept_existing.length }))
+          .catch((e) => Object.assign(job, { status: 'failed', finished_at: new Date().toISOString(), error: e.message || 'Could not plan the week', errors: e.errors }));
+        return res.status(202).json({ job });
+      }
+      res.status(201).json(await planWeek(inputs, days, note));
+    } catch (err) { if (err.errors) return res.status(502).json({ error: err.message, errors: err.errors }); coachFail(res, err); }
+  });
+  async function planWeek(inputs, days, note) {
+    {
+      const end = addDaysStr(inputs.date, 6);
       const ctx = await athleteContext(inputs.date);
       const context = { ...ctx, week_start: inputs.date, days, minutes: inputs.minutes, equipment: inputs.equipment, engine_machine: inputs.engine_modality, note };
       const fallbackFor = (d) => ({ date: d.date, title: d.title, focus: gen.FOCI.includes(d.focus) ? d.focus : inputs.focus, minutes: d.minutes || inputs.minutes, equipment: inputs.equipment });
@@ -269,7 +287,7 @@ function createWorkoutsRouter({ pool }) {
         return out;
       };
       const plan = await askTrainer('week', context, check);
-      if (plan.errors.length) return res.status(502).json({ error: "Sentinel's plan didn't fit Self Hub's workout format, even after a fix — try again", errors: plan.errors.slice(0, 20) });
+      if (plan.errors.length) throw Object.assign(new Error("Sentinel's plan didn't fit Self Hub's workout format, even after a fix — try again"), { errors: plan.errors.slice(0, 20) });
       // Replace untouched planned workouts that week; anything started stays.
       const existing = await q("SELECT * FROM fitness_workouts WHERE status = 'planned' AND workout_date >= $1 AND workout_date <= $2", [inputs.date, end]);
       const kept = [];
@@ -292,9 +310,9 @@ function createWorkoutsRouter({ pool }) {
       await pool.query(`INSERT INTO fitness_weeks (week_start, days, plan) VALUES ($1, $2, $3::jsonb)
         ON CONFLICT (week_start) DO UPDATE SET days = EXCLUDED.days, plan = EXCLUDED.plan, review = NULL, reviewed_at = NULL, updated_at = now()`,
       [inputs.date, days, JSON.stringify(weekRow)]);
-      res.status(201).json({ week: { week_start: inputs.date, days, plan: weekRow, review: null }, workouts: out, kept_existing: kept });
-    } catch (err) { coachFail(res, err); }
-  });
+      return { week: { week_start: inputs.date, days, plan: weekRow, review: null }, workouts: out, kept_existing: kept };
+    }
+  }
 
   // The week a date falls in: the coached week that started on or before it, within 7 days.
   async function weekOf(date) {
