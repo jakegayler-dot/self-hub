@@ -605,6 +605,32 @@ function createWorkoutsRouter({ pool }) {
   }
 
   // Everything about Jake the trainer needs, as of a date.
+  // The evidence for where his body needs attention (Jake, 2026-10-18: worked out objectively, not from a
+  // remark): proportions from his measurements, strength by pattern against bodyweight standards (lower body
+  // against upper), body composition, and what isn't measured so can't be judged.
+  async function physiqueEvidence(m, strengthPatterns, profile) {
+    const r2 = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+    const bf = (await q('SELECT entry_date, body_fat_pct FROM fitness_bodyweight WHERE body_fat_pct IS NOT NULL ORDER BY entry_date DESC LIMIT 1'))[0];
+    const v = (f) => (m && m[f] != null ? Number(m[f]) : null);
+    const mean = (xs) => { const ok = xs.filter(Number.isFinite); return ok.length ? ok.reduce((s, x) => s + x, 0) / ok.length : null; };
+    const sp = strengthPatterns || {};
+    const lower = mean([sp.Squat, sp.Hinge]), upper = mean([sp['Push Horizontal'], sp['Push Vertical'], sp['Pull Horizontal'], sp['Pull Vertical']]);
+    const missing = ['thigh circumference', 'calf circumference', 'upper-arm circumference'];
+    if (!m) missing.unshift('body measurements');
+    if (!bf) missing.push('body fat %');
+    return {
+      note: 'Decide where he needs attention from this, not from anything he said in passing. measurements are clothing measurements in inches (shoulder = width across the back; bust = chest circumference; waist and seat_hips = circumferences). strength_by_pattern scores each pattern against bodyweight standards (higher is stronger for his size).',
+      measured: m ? ymd(m.entry_date) : null,
+      height_in: num(profile.height_in),
+      body_fat_pct: bf ? num(bf.body_fat_pct) : null,
+      ratios: m ? { chest_to_waist: r2(v('bust') / v('waist')), hips_to_waist: r2(v('seat_hips') / v('waist')), neck_to_waist: r2(v('neck') / v('waist')),
+        shoulder_width_to_waist_circumference: r2(v('shoulder') / v('waist')) } : null,
+      strength_by_pattern: sp,
+      lower_vs_upper_strength: lower != null && upper != null ? { lower_body: r2(lower), upper_body: r2(upper), difference: r2(lower - upper) } : null,
+      not_measured: missing,
+    };
+  }
+
   async function athleteContext(date, excludeId = null) {
     const rows = await loadGenRows(date, excludeId);
     const ctx = gen.makeContext(rows, date);
@@ -628,9 +654,9 @@ function createWorkoutsRouter({ pool }) {
           leaderboard_goal: profile.leaderboard_goal,
           summary: 'Top of the local CrossFit leaderboard and the physique below; continuous lean gain, no cut.',
           physique_target: profile.physique_target || null,
-          // His own critical read of his body now: program the gap to the target, not the target's defining features.
-          physique_now: profile.physique_assessment || null,
+          ...(profile.physique_assessment ? { his_own_notes: profile.physique_assessment } : {}),
         },
+        physique_evidence: await physiqueEvidence(m, ctx.strengthPatterns, profile),
         bodyweight_lb: bw ? num(bw.weight_lb) : null,
         bodyweight_30d_ago_lb: bw30 ? num(bw30.weight_lb) : null,
         measurements_in: m ? Object.fromEntries(MEASUREMENT_FIELDS.filter((f) => m[f] != null).map((f) => [f, num(m[f])])) : null,
@@ -714,9 +740,9 @@ function createWorkoutsRouter({ pool }) {
           leaderboard_goal: profile.leaderboard_goal,
           summary: 'Top of the local CrossFit leaderboard and the physique below; continuous lean gain, no cut.',
           physique_target: profile.physique_target || null,
-          // His own critical read of his body now: program the gap to the target, not the target's defining features.
-          physique_now: profile.physique_assessment || null,
+          ...(profile.physique_assessment ? { his_own_notes: profile.physique_assessment } : {}),
         },
+        physique_evidence: await physiqueEvidence(m, ctx.strengthPatterns, profile),
         bodyweight_lb: bw ? num(bw.weight_lb) : null,
         measurements_in: m ? Object.fromEntries(MEASUREMENT_FIELDS.filter((f) => m[f] != null).map((f) => [f, num(m[f])])) : null,
         strength_scores: ctx.strengthPatterns,

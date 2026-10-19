@@ -142,13 +142,19 @@ test('refine runs straight away through Sentinel (no more waiting)', async () =>
   assert.equal(asked.at(-1).context.jake_note, 'shoulder is cranky');
 });
 
-test('the trainer gets the target look and his own critical read of where he is, editable on the profile', async () => {
+test('the trainer gets the target look and objective evidence of where he needs attention, not a remark', async () => {
   const before = await call('GET', '/profile');
-  assert.match(before.body.physique_assessment, /^Big, broad shoulders already/);
-  await call('PUT', '/profile', { physique_assessment: 'Shoulders broad; legs and waist small; lean.' });
+  assert.equal(before.body.physique_assessment, null); // the seeded remark is gone
+  await call('POST', '/measurements', { entry_date: day(-1), shoulder: 19, bust: 40, waist: 30, seat_hips: 37, neck: 15.5 });
+  await call('POST', '/lifts', { entry_date: day(-2), lift: 'Back Squat', load_lb: 185, reps: 5 });
   await call('POST', '/workouts/plan-week', { start_date: day(14), days: 4, minutes: 45, equipment: 'box' });
-  const goals = asked.filter((a) => a.task === 'week').at(-1).context.athlete.goals;
-  assert.equal(goals.physique_now, 'Shoulders broad; legs and waist small; lean.');
-  assert.match(goals.physique_target, /^Daniel Craig in Casino Royale/);
-  assert.doesNotMatch(JSON.stringify(goals), /V-taper/);
+  const a = asked.filter((x) => x.task === 'week').at(-1).context.athlete;
+  assert.match(a.goals.physique_target, /^Daniel Craig in Casino Royale/);
+  assert.equal(a.goals.his_own_notes, undefined);
+  const ev = a.physique_evidence;
+  assert.match(ev.note, /^Decide where he needs attention from this/);
+  assert.equal(ev.ratios.chest_to_waist, 1.33);
+  assert.ok(ev.lower_vs_upper_strength && Number.isFinite(ev.lower_vs_upper_strength.difference), JSON.stringify(ev));
+  assert.ok(ev.not_measured.includes('thigh circumference'));
+  assert.doesNotMatch(JSON.stringify(a), /tiny|V-taper/i);
 });
