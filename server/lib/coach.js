@@ -5,6 +5,7 @@
 //   { task: "week" | "review" | "refine", context, errors?, previous? }  →  { result, calendar }
 //
 // The same SENTINEL_URL and SENTINEL_API_KEY as the summary push (lib/sentinel.js).
+// The nutritionist (2026-10-20) is the same call to /v1/selfhub/nutritionist: callNutritionist.
 
 const TIMEOUT_MS = 5 * 60 * 1000; // a full week takes a minute or two
 
@@ -18,14 +19,14 @@ function target(env = process.env) {
 
 // Sentinel restarting (a deploy) answers 502/503 for a few seconds, or drops the connection: wait and try once more.
 const RETRY_MS = 20000;
-async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) => fetch(...a), retryMs = RETRY_MS } = {}) {
+async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) => fetch(...a), retryMs = RETRY_MS, path = '/v1/selfhub/trainer', who = 'the trainer' } = {}) {
   const t = target(env);
-  if (!t) throw new CoachError(503, "Sentinel isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so the trainer is off");
+  if (!t) throw new CoachError(503, `Sentinel isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so ${who} is off`);
   let res;
   for (let attempt = 0; attempt < 2; attempt++) {
     let lost = false;
     try {
-      res = await fetchImpl(`${t.url}/v1/selfhub/trainer`, {
+      res = await fetchImpl(`${t.url}${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t.key}` },
         body: JSON.stringify({ task, ...body }), signal: AbortSignal.timeout(TIMEOUT_MS),
       });
@@ -47,4 +48,6 @@ async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) =
   return data;
 }
 
-module.exports = { callTrainer, CoachError, trainerReady: (env) => !!target(env) };
+const callNutritionist = (task, body, opts = {}) => callTrainer(task, body, { ...opts, path: '/v1/selfhub/nutritionist', who: 'the nutritionist' });
+
+module.exports = { callTrainer, callNutritionist, CoachError, trainerReady: (env) => !!target(env) };

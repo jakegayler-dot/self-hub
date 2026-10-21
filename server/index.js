@@ -6,6 +6,7 @@ const { basicAuth } = require('./middleware/basicAuth');
 const fitnessRouter = require('./routes/fitness');
 const { createWorkoutsRouter } = require('./routes/workouts');
 const { createPercentilesRouter } = require('./routes/percentiles');
+const { createNutritionRouter } = require('./routes/nutrition');
 const { createSentinelPusher } = require('./lib/sentinel');
 const { createSentinelReadRouter } = require('./routes/sentinelRead');
 const { createSentinelActionsRouter, trackMountPaths } = require('./routes/sentinelActions');
@@ -33,6 +34,8 @@ app.use('/api/fitness', fitnessRouter);
 app.use('/api/fitness', createWorkoutsRouter({ pool }));
 // CrossFit / Concept2 percentiles and Open results.
 app.use('/api/fitness', createPercentilesRouter({ pool }));
+// Nutrition: food log, recipes, adaptive targets, meal plan, pantry, groceries (to Sentinel), the nutritionist.
+app.use('/api/fitness', createNutritionRouter({ pool }));
 // Read-only lookup API for Sentinel's voice agent (same Basic auth).
 app.use('/api/sentinel', createSentinelReadRouter({ pool }));
 // Sentinel API bridge: list every /api route and call any of them as the owner.

@@ -3,6 +3,9 @@
 //   POST {SENTINEL_URL}/v1/sources/self_hub/summary
 //   Authorization: Bearer {SENTINEL_API_KEY}
 //
+// With it, the grocery list (Nutrition tab) as a snapshot of Self Hub's "grocery:" items for Sentinel's shopping list:
+//   POST {SENTINEL_URL}/v1/sources/self_hub/snapshot  { prefix: "grocery:", generated_at, items }
+//
 // Triggers: ~60 s after any successful POST/PUT/DELETE under /api
 // (debounced), ~30 s after boot, and every 6 h. Failures retry with backoff
 // 1 → 2 → 4 … → 60 min. Pushing never blocks a request and never throws out
@@ -130,7 +133,22 @@ async function buildSummary(pool, now = new Date()) {
     .map((l) => isoDate(l.entry_date))
     .filter((d) => d >= wk.start && d <= wk.end));
   const measurements = (await pool.query('SELECT * FROM fitness_measurements ORDER BY entry_date ASC, id ASC')).rows;
-  return summarize({ data, profileRow, sessionsDone: days.size, now, measurements });
+  const out = summarize({ data, profileRow, sessionsDone: days.size, now, measurements });
+  // Today's eating against today's targets (the Nutrition tab), for the Fitness tile.
+  try {
+    const store = require('../routes/nutrition').createStore(pool);
+    const day = await store.day(reginaDate(now));
+    const t = day.targets;
+    out.summary.nutrition = {
+      date: day.date, day_type: t.day_type,
+      eaten: { kcal: day.totals.kcal, protein_g: day.totals.protein_g, carbs_g: day.totals.carbs_g, fat_g: day.totals.fat_g },
+      target: { kcal: t.kcal, protein_g: t.protein_g, carbs_g: t.carbs_g, fat_g: t.fat_g },
+      remaining: day.remaining,
+      planned: day.plan.map((m) => ({ slot: m.slot, meal: m.name, servings: m.servings, eaten: m.eaten })),
+      week: { base_kcal: day.week.base_kcal, decision: day.week.decision, rationale: day.week.rationale },
+    };
+  } catch (err) { /* no nutrition data: the tile goes without */ }
+  return out;
 }
 
 function createSentinelPusher({
@@ -139,6 +157,8 @@ function createSentinelPusher({
   fetchImpl = (...a) => fetch(...a),
   logger = console,
   build = () => buildSummary(pool),
+  // The grocery list for Sentinel's shopping list (only with a real database behind it).
+  snapshot = pool ? () => require('../routes/nutrition').createStore(pool).grocerySnapshot() : null,
   debounceMs = 60 * 1000,
   maxWaitMs = 5 * 60 * 1000, // a steady stream of writes still pushes at least every 5 min
   bootDelayMs = 30 * 1000,
@@ -165,9 +185,8 @@ function createSentinelPusher({
     if (state.timer.unref) state.timer.unref();
   }
 
-  async function pushOnce() {
-    const body = await build();
-    const res = await fetchImpl(`${baseUrl}/v1/sources/self_hub/summary`, {
+  async function post(path, body) {
+    const res = await fetchImpl(`${baseUrl}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify(body),
@@ -177,6 +196,10 @@ function createSentinelPusher({
       const text = await res.text().catch(() => '');
       throw new Error(`HTTP ${res.status}${text ? ': ' + text.slice(0, 200) : ''}`);
     }
+  }
+  async function pushOnce() {
+    await post('/v1/sources/self_hub/summary', await build());
+    if (snapshot) await post('/v1/sources/self_hub/snapshot', await snapshot());
   }
 
   async function run() {
@@ -236,9 +259,9 @@ function createSentinelPusher({
     state.timer = null; state.interval = null;
   }
 
-  // Express middleware: schedule a push after successful POST/PUT/DELETE.
+  // Express middleware: schedule a push after successful POST/PUT/PATCH/DELETE.
   function middleware(req, res, next) {
-    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') {
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH' || req.method === 'DELETE') {
       res.on('finish', () => {
         if (res.statusCode >= 200 && res.statusCode < 300) notifyWrite();
       });

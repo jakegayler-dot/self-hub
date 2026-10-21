@@ -16,6 +16,8 @@ const express = require('express');
 const strength = require('../lib/strength');
 const { buildSummary, loadStrengthInputs } = require('../lib/sentinel');
 const { computeWeeklyLoad, addDays } = require('../lib/weeklyLoad');
+const N = require('../lib/nutrition');
+const nutritionStore = (pool) => require('./nutrition').createStore(pool);
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -581,6 +583,106 @@ const COLLECTIONS = [
         });
       }
       return rows;
+    },
+  },
+  // ---- Nutrition (Oct 20) ----
+  {
+    name: 'nutrition_today',
+    description: "Today's eating against today's targets (calories, protein, carbs, fat; training or rest day), what's left, the meals planned for today and this week's adaptive target decision. Use for \"how am I doing on food today\" or \"what should I eat tonight\".",
+    kind: 'summary',
+    fields: ['id', 'date', 'day_type', 'target', 'eaten', 'remaining', 'planned', 'week_rationale'],
+    async load({ pool, now }) {
+      const S = nutritionStore(pool);
+      const d = await S.day(new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10));
+      return [{ id: 'today', date: d.date, day_type: d.targets.day_type, target: { kcal: d.targets.kcal, protein_g: d.targets.protein_g, carbs_g: d.targets.carbs_g, fat_g: d.targets.fat_g },
+        eaten: d.totals, remaining: d.remaining, planned: d.plan.map((m) => `${m.slot}: ${m.name} x${m.servings}${m.eaten ? ' (eaten)' : ''}`), week_rationale: d.week.rationale }];
+    },
+  },
+  {
+    name: 'food_log',
+    description: 'Everything Jake logged eating (food or recipe, amount, calories, protein, carbs, fat), newest first. Use for "what did I eat yesterday" or a food\'s history; daily totals are in nutrition_days.',
+    kind: 'log',
+    dated: true,
+    search: ['name', 'slot'],
+    custom: { slot: enumFilter('slot', ['breakfast', 'lunch', 'dinner', 'snack']) },
+    fields: ['id', 'date', 'slot', 'name', 'amount', 'kcal', 'protein_g', 'carbs_g', 'fat_g'],
+    async load({ pool }) {
+      return (await nutritionStore(pool).entries('2000-01-01', '2100-01-01')).map((e) => ({ id: e.id, date: e.date, slot: e.slot, name: e.name, amount: e.amount, kcal: e.kcal, protein_g: e.protein_g, carbs_g: e.carbs_g, fat_g: e.fat_g }));
+    },
+  },
+  {
+    name: 'nutrition_days',
+    description: "Each logged day's totals (calories, protein, carbs, fat, fibre, sodium) against that day's targets. Use for \"how have I eaten this week\".",
+    kind: 'log',
+    dated: true,
+    fields: ['id', 'date', 'kcal', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g', 'sodium_mg', 'target_kcal', 'target_protein_g', 'day_type'],
+    async load({ pool }) {
+      const S = nutritionStore(pool);
+      const days = await S.dailyTotals('2000-01-01', '2100-01-01');
+      const out = [];
+      for (const d of days.slice(-120)) {
+        const t = (await S.targetsFor(d.date)).day;
+        out.push({ id: d.date, date: d.date, kcal: d.kcal, protein_g: d.protein_g, carbs_g: d.carbs_g, fat_g: d.fat_g, fiber_g: d.fiber_g, sodium_mg: d.sodium_mg, target_kcal: t.kcal, target_protein_g: t.protein_g, day_type: t.day_type });
+      }
+      return out;
+    },
+  },
+  {
+    name: 'nutrition_targets',
+    description: "Jake's calorie and protein targets: each week's decision (the adaptive check from logged intake and the weight trend: held, up or down, with the numbers and why) and the settings (gain band in lb/week, training-day extra, fat %).",
+    kind: 'list',
+    fields: ['id', 'week_start', 'base_kcal', 'protein_g', 'decision', 'rationale', 'tdee_kcal', 'rate_lb_wk'],
+    async load({ pool, now }) {
+      const S = nutritionStore(pool);
+      await S.targetsFor(new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10));
+      return (await S.targetHistory()).map((h) => ({ id: h.week_start, ...h }));
+    },
+  },
+  {
+    name: 'recipes',
+    description: "Jake's recipes and saved meals (all dairy-free): slot (breakfast, main, snack), servings, per-serving calories and protein, ingredients, whether it packs for the truck, how to make it.",
+    kind: 'list',
+    search: ['name', 'slot', 'ingredients'],
+    custom: { slot: enumFilter('slot', ['breakfast', 'main', 'snack']) },
+    fields: ['id', 'name', 'kind', 'slot', 'servings', 'kcal_per_serving', 'protein_g_per_serving', 'portable', 'ingredients', 'instructions'],
+    async load({ pool }) {
+      return (await nutritionStore(pool).recipes()).map((r) => ({ id: r.id, name: r.name, kind: r.kind, slot: r.slot, servings: r.servings, kcal_per_serving: r.per_serving.kcal,
+        protein_g_per_serving: r.per_serving.protein_g, portable: r.portable, ingredients: r.ingredients.map((i) => `${i.label || i.food} ${Math.round(i.grams)} g`).join('; '), instructions: r.instructions }));
+    },
+  },
+  {
+    name: 'meal_plan',
+    description: "This week's meal plan (or ?from= a date in another week): each day's meals by slot with servings, calories and protein, against the day's targets, and whether each was eaten.",
+    kind: 'list',
+    dated: true,
+    rangeInLoad: true,
+    fields: ['id', 'date', 'day_type', 'target_kcal', 'planned_kcal', 'planned_protein_g', 'meals'],
+    async load({ pool, now, from }) {
+      const v = await nutritionStore(pool).planView(N.mondayOf(from || new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10)));
+      return v.days.map((d) => ({ id: d.date, date: d.date, day_type: d.day_type, target_kcal: d.kcal, planned_kcal: d.planned_kcal, planned_protein_g: d.planned_protein_g,
+        meals: d.meals.map((m) => `${m.slot}: ${m.recipe.name} x${m.servings}${m.eaten ? ' (eaten)' : ''}`) }));
+    },
+  },
+  {
+    name: 'pantry',
+    description: "What food is in the house (Self Hub's pantry), by food and amount. Logged meals take from it; groceries bought add to it.",
+    kind: 'list',
+    search: ['name', 'aisle'],
+    fields: ['id', 'name', 'amount', 'grams', 'aisle'],
+    async load({ pool }) {
+      return (await nutritionStore(pool).pantry()).map((p) => ({ id: p.id, name: p.name, amount: p.amount, grams: p.grams, aisle: p.aisle }));
+    },
+  },
+  {
+    name: 'groceries',
+    description: "Self Hub's grocery list (from the meal plan, minus the pantry, plus anything added): open items and those bought in the last two weeks. Sentinel's shopping list shows the same items.",
+    kind: 'list',
+    search: ['name', 'aisle'],
+    custom: { status: enumFilter('status', ['open', 'bought']) },
+    fields: ['id', 'name', 'quantity', 'aisle', 'status', 'source', 'bought_at'],
+    async load({ pool }) {
+      const g = await nutritionStore(pool).groceries();
+      return [...g.open, ...g.bought].map((x) => ({ id: x.id, name: x.name, quantity: x.quantity, aisle: x.aisle, status: x.status, source: x.source, bought_at: x.bought_at }));
     },
   },
 ];
