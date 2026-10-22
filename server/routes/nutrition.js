@@ -1,6 +1,10 @@
 // Nutrition (Jake, 2026-10-20), mounted under /api/fitness:
 //
-//   GET    /nutrition/foods/search?q=            his foods + USDA SR Legacy, per 100 g, with portions
+//   GET    /nutrition/foods/search?q=&online=1   his foods + USDA SR Legacy, per 100 g, with portions; online: + FoodData Central
+//                                                 (branded, as eaten) and Open Food Facts
+//   GET    /nutrition/foods/:key                  one food, its servings (a built-in food's are fetched from USDA once)
+//   POST   /nutrition/foods/import {key}          save an online result (fdc:<id> | off:<barcode>) as his food
+//   POST   /nutrition/foods/lookup {query}        Sentinel finds a restaurant's own numbers (Double Big Mac); saved
 //   POST   /nutrition/foods                       his own food {name, brand?, kcal, protein_g, carbs_g, fat_g, … per 100 g | per_grams}
 //   DELETE /nutrition/foods/:id
 //   POST   /nutrition/portions {food_key, name, grams}   DELETE /nutrition/portions/:id
@@ -26,6 +30,7 @@
 const express = require('express');
 const N = require('../lib/nutrition');
 const coach = require('../lib/coach');
+const foodSources = require('../lib/foodSources');
 const { ymd } = require('../lib/workoutGen');
 
 const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
@@ -527,22 +532,101 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
   const today = () => N.reginaToday();
 
   // ---- foods ----
+  const foodOpts = { env, ...(fetchImpl ? { fetchImpl } : {}) };
+  const per100 = (f) => ({ kcal: f.kcal, protein_g: f.protein_g, carbs_g: f.carbs_g, fat_g: f.fat_g, fiber_g: f.fiber_g, sugar_g: f.sugar_g, sat_fat_g: f.sat_fat_g, sodium_mg: f.sodium_mg });
+  const SOURCE_LABEL = { usda: 'USDA', fdc: 'USDA', off: 'Open Food Facts', sentinel: 'Looked up by Sentinel', jake: 'Yours' };
+  // A food as the page uses it; the first portion is its usual serving (what a tap logs).
+  const foodView = (f, own) => {
+    const portions = N.portionsFor(f, own.get(f.key) || []);
+    return { key: f.key, name: f.name, display: f.display, source: f.source, brand: f.brand || null, origin: f.origin || f.source,
+      source_label: SOURCE_LABEL[f.origin || f.source] || null, source_url: f.source_url || null, per_100g: per100(f), portions, serving: portions[0] || null };
+  };
+  // Portion weights for a built-in food from FoodData Central, looked up once (found or not).
+  async function ensurePortions(f) {
+    if (f.source !== 'usda') return;
+    const own = (await S.ownPortions()).get(f.key) || [];
+    if (N.portionsFor(f, own).length) return;
+    if ((await S.q('SELECT 1 FROM nutrition_portion_checks WHERE food_key = $1', [f.key])).length) return;
+    let found = [];
+    try { found = await foodSources.fdcPortionsFor(f, foodOpts); } catch (e) { return; } // offline or rate-limited: try again next time
+    for (const p of found) await S.q('INSERT INTO nutrition_portions (food_key, name, grams) VALUES ($1, $2, $3)', [f.key, p.name, p.grams]);
+    await S.q('INSERT INTO nutrition_portion_checks (food_key) VALUES ($1) ON CONFLICT (food_key) DO NOTHING', [f.key]);
+  }
+  async function saveFood(c, origin) {
+    if (c.external_id) {
+      const have = (await S.q('SELECT id FROM nutrition_foods WHERE source = $1 AND external_id = $2', [origin, c.external_id]))[0];
+      if (have) return `custom:${have.id}`;
+    }
+    const v = c.per_100g;
+    const rows = await S.q(
+      'INSERT INTO nutrition_foods (name, brand, kcal, protein_g, carbs_g, fat_g, fiber_g, sugar_g, sat_fat_g, sodium_mg, source, external_id, source_url) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id',
+      [String(c.name).slice(0, 120), c.brand ? String(c.brand).slice(0, 80) : null, v.kcal, v.protein_g, v.carbs_g, v.fat_g, v.fiber_g ?? null, v.sugar_g ?? null, v.sat_fat_g ?? null, v.sodium_mg ?? null,
+        origin, c.external_id || null, c.source_url || null]
+    );
+    const key = `custom:${rows[0].id}`;
+    for (const p of (c.portions || []).slice(0, 6)) if (p.grams > 0 && p.name) await S.q('INSERT INTO nutrition_portions (food_key, name, grams) VALUES ($1, $2, $3)', [key, String(p.name).slice(0, 40), p.grams]);
+    return key;
+  }
+  const sane = (v) => v && v.kcal >= 0 && v.kcal <= 900 && [v.protein_g, v.carbs_g, v.fat_g].every((x) => x >= 0 && x <= 100);
+
+  // ?online=1 also asks FoodData Central and Open Food Facts (a second or two).
   router.get('/nutrition/foods/search', wrap(async (req, res) => {
     const query = String(req.query.q || '').slice(0, 80);
     const [cust, own, list, pan] = await Promise.all([S.customs(), S.ownPortions(), S.recipes(), S.pantryMap()]);
     const recent = await S.q('SELECT DISTINCT food_key FROM nutrition_diary WHERE food_key IS NOT NULL AND entry_date > $1', [N.addDays(today(), -60)]);
     const boost = new Set([...list.flatMap((r) => r.ingredients.map((i) => i.food_key)), ...pan.keys(), ...recent.map((r) => r.food_key)]);
     const foods = N.searchFoods(query, { customs: cust, boost, limit: Math.min(40, Number(req.query.limit) || 25) });
-    res.json({ query, attribution: N.ATTRIBUTION, foods: foods.map((f) => ({ key: f.key, name: f.name, display: f.display, source: f.source, brand: f.brand || null,
-      per_100g: { kcal: f.kcal, protein_g: f.protein_g, carbs_g: f.carbs_g, fat_g: f.fat_g, fiber_g: f.fiber_g, sugar_g: f.sugar_g, sat_fat_g: f.sat_fat_g, sodium_mg: f.sodium_mg },
-      portions: N.portionsFor(f, own.get(f.key) || []) })) });
+    const out = { query, attribution: N.ATTRIBUTION, foods: foods.map((f) => foodView(f, own)) };
+    if (req.query.online === '1' && query.trim().length >= 3) {
+      const r = await foodSources.searchOnline(query, foodOpts);
+      const saved = new Set([...cust.values()].filter((f) => f.external_id).map((f) => `${f.origin === 'off' ? 'off' : 'fdc'}:${f.external_id}`));
+      out.online = r.foods.filter((c) => !saved.has(c.key) && sane(c.per_100g)).map((c) => ({ ...c, serving: c.portions[0] || null }));
+      out.online_problems = r.problems;
+    }
+    res.json(out);
   }));
   router.get('/nutrition/foods/:key', wrap(async (req, res) => {
-    const [cust, own] = await Promise.all([S.customs(), S.ownPortions()]);
+    const cust = await S.customs();
     const f = N.foodByKey(req.params.key, cust);
     if (!f) return res.status(404).json({ error: 'not found' });
-    const { words, ...food } = f; void words;
-    res.json({ ...food, portions: N.portionsFor(f, own.get(f.key) || []), attribution: f.source === 'usda' ? N.ATTRIBUTION : null });
+    await ensurePortions(f);
+    res.json({ ...foodView(f, await S.ownPortions()), attribution: f.source === 'usda' ? N.ATTRIBUTION : null });
+  }));
+  // Picking a USDA or Open Food Facts result saves it as one of his foods (fresh from the source, with its servings).
+  router.post('/nutrition/foods/import', wrap(async (req, res) => {
+    const key = String((req.body || {}).key || '');
+    let c;
+    try { c = await foodSources.fetchCandidate(key, foodOpts); } catch (e) {
+      throw new Bad(e.status === 429 ? 'USDA\'s hourly limit is used up (set FDC_API_KEY); try again later' : `Couldn't reach ${key.startsWith('off:') ? 'Open Food Facts' : 'USDA'}: try again`, 502);
+    }
+    if (!c || !sane(c.per_100g)) throw new Bad('That food has no usable nutrition numbers', 404);
+    const fk = await saveFood(c, c.source);
+    res.status(201).json(foodView(N.foodByKey(fk, await S.customs()), await S.ownPortions()));
+  }));
+  // Not in any database: Sentinel finds the restaurant's or maker's own numbers on the web (a few cents, once).
+  router.post('/nutrition/foods/lookup', wrap(async (req, res) => {
+    const query = str((req.body || {}).query, 120);
+    if (!query) throw new Bad('What food?');
+    const cust = await S.customs();
+    const prev = [...cust.values()].find((f) => f.origin === 'sentinel' && f.external_id === query.toLowerCase());
+    if (prev) return res.json(foodView(prev, await S.ownPortions()));
+    if (!coach.trainerReady(env)) throw new Bad("Sentinel isn't connected, so it can't look foods up", 503);
+    let answer;
+    try { answer = await coach.callNutritionist('food', { context: { query, country: 'Canada' } }, foodOpts); }
+    catch (e) { throw new Bad(e.message, e.status === 429 ? 429 : 502); }
+    const r = answer.result || {};
+    if (r.found === false) throw new Bad(r.note || `Sentinel couldn't find reliable numbers for "${query}"`, 404);
+    const g = Number(r.serving_g);
+    const ps = r.per_serving || {};
+    if (!(g > 0 && g <= 3000) || !(Number(ps.kcal) >= 0)) throw new Bad("Sentinel's answer didn't have a serving size and calories", 502);
+    const k = 100 / g;
+    const v = (x) => (x == null || x === '' || !Number.isFinite(Number(x)) ? null : N.round(Number(x) * k, 1));
+    const c = { name: str(r.name, 120) || query, brand: str(r.brand, 80), external_id: query.toLowerCase(), source_url: str(r.source_url, 500),
+      per_100g: { kcal: v(ps.kcal), protein_g: v(ps.protein_g) ?? 0, carbs_g: v(ps.carbs_g) ?? 0, fat_g: v(ps.fat_g) ?? 0, fiber_g: v(ps.fiber_g), sugar_g: v(ps.sugar_g), sat_fat_g: v(ps.sat_fat_g), sodium_mg: v(ps.sodium_mg) },
+      portions: [{ name: str(r.serving_name, 40) || '1 serving', grams: N.round(g, 1) }] };
+    if (!sane(c.per_100g)) throw new Bad("Sentinel's numbers don't add up for that serving size", 502);
+    const fk = await saveFood(c, 'sentinel');
+    res.status(201).json({ ...foodView(N.foodByKey(fk, await S.customs()), await S.ownPortions()), note: str(r.note, 300) });
   }));
   router.post('/nutrition/foods', wrap(async (req, res) => {
     const b = req.body || {};

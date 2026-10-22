@@ -30,7 +30,8 @@ function customFood(row) {
   const n = (v) => (v == null ? null : Number(v));
   return { key: `custom:${row.id}`, id: row.id, name: row.name, display: row.brand ? `${row.name} (${row.brand})` : row.name, brand: row.brand || null,
     kcal: n(row.kcal), protein_g: n(row.protein_g), carbs_g: n(row.carbs_g), fat_g: n(row.fat_g), fiber_g: n(row.fiber_g),
-    sugar_g: n(row.sugar_g), sat_fat_g: n(row.sat_fat_g), sodium_mg: n(row.sodium_mg), source: 'custom', words: words(`${row.name} ${row.brand || ''}`) };
+    sugar_g: n(row.sugar_g), sat_fat_g: n(row.sat_fat_g), sodium_mg: n(row.sodium_mg), source: 'custom', words: words(`${row.name} ${row.brand || ''}`),
+    origin: row.source || 'jake', external_id: row.external_id || null, source_url: row.source_url || null };
 }
 
 // customs: Map key → food (from nutrition_foods)
@@ -47,7 +48,8 @@ function words(s) {
   return String(s).toLowerCase().replace(/%/g, ' pct ').replace(/[^a-z0-9.]+/g, ' ').split(' ').filter(Boolean).map(stem);
 }
 const SYNONYMS = { hamburger: ['ground'], mince: ['ground'], yoghurt: ['yogurt'], prawn: ['shrimp'], porridge: ['oat'], oatmeal: ['oat'], spud: ['potato'], pb: ['peanut'] };
-const NOISE = /^(fast foods?|restaurant|babyfood|infant formula|school lunch|.*\b[A-Z]{3,}\b)|breaded|nuggets|\bleaves\b|\boil, (sardine|salmon|cod)/i;
+const NOISE = /^(fast foods?|restaurant|babyfood|infant formula|school lunch)|breaded|nuggets|\bleaves\b|\boil, (sardine|salmon|cod)/i;
+const BRANDED = /\b[A-Z]{3,}\b/; // SR Legacy's brand names are in capitals (McDONALD'S, QUAKER)
 const DAIRY = /\b(cheese|milk|yogh?urt|cream|butter(?!nut|bur| oil)|whey|ghee)\b/i;
 // The everyday version of common foods, first in a search: his staples and the basics.
 const COMMON = new Set(['usda:14951', 'usda:18588', 'usda:18555', 'usda:13231', 'usda:18583', 'usda:17108', 'usda:13485', 'usda:12310', 'usda:18122', 'usda:17458',
@@ -72,7 +74,9 @@ function searchFoods(query, { customs = new Map(), boost = new Set(), limit = 25
     if (f.source === 'custom') score += 25;
     if (boost.has(f.key)) score += 15;
     if (COMMON.has(f.key)) score += 10;
-    if (NOISE.test(f.name)) score -= 9;
+    // A one-word search ("eggs") wants the plain food; "big mac" or "quaker oats" means the branded one.
+    if (q.length < 2 && (NOISE.test(f.name) || BRANDED.test(f.name))) score -= 9;
+    else if (NOISE.test(f.name) && !q.some((t) => /fast|restaurant|bread|nugget/.test(t))) score -= 4;
     if (DAIRY.test(f.name) && !DAIRY.test(query)) score -= 6; // he has no dairy: dairy foods only when he asks for them
     if (/\braw\b/i.test(f.name)) score += 1.5; // weigh it as bought
     score -= f.words.length * 0.35; // shorter, more generic names first

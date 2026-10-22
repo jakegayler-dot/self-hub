@@ -51,34 +51,84 @@
     return state.recipes;
   }
 
-  // ---- a food picker: search, pick, amount → calls done({food, qty, unit, grams}) ----
+  // ---- a food picker ----
+  // Type a food: his foods and the built-in list at once, then USDA (branded, as eaten) and Open Food Facts; anything
+  // still missing, Sentinel looks up. Every food comes with its usual serving: + logs one serving in a tap; tapping
+  // the name opens the amount (already set to one serving) to change it. Calls done({food, qty, unit, grams}).
+  function servingText(f) {
+    var s = f.serving;
+    if (!s) return n0(f.per_100g.kcal) + ' kcal /100 g';
+    return esc(s.name) + ' (' + Math.round(s.grams) + ' g) · ' + n0(f.per_100g.kcal * s.grams / 100) + ' kcal · ' + Math.round(f.per_100g.protein_g * s.grams / 100) + ' g P';
+  }
   function foodPicker(el, opts) {
     opts = opts || {};
-    el.innerHTML = '<div class="trk-row"><div class="trk-field" style="flex:2"><label>' + (opts.label || 'Food') + '</label><input type="search" class="nu-q" placeholder="eggs, beef liver, sardines…" autocomplete="off"></div></div>' +
-      '<div class="nu-results"></div><div class="nu-amount" style="display:none"></div>';
-    var q = el.querySelector('.nu-q'), out = el.querySelector('.nu-results'), amt = el.querySelector('.nu-amount'), timer = null, picked = null;
+    el.innerHTML = '<div class="trk-row"><div class="trk-field" style="flex:2"><label>' + (opts.label || 'Food') + '</label><input type="search" class="nu-q" placeholder="eggs, double big mac, sardines…" autocomplete="off" enterkeyhint="search"></div></div>' +
+      '<div class="nu-results"></div><div class="nu-online"></div><div class="nu-amount" style="display:none"></div>';
+    var q = el.querySelector('.nu-q'), out = el.querySelector('.nu-results'), more = el.querySelector('.nu-online'), amt = el.querySelector('.nu-amount'), timer = null, seq = 0;
+    function row(f, i, group) {
+      return '<div class="nu-food" data-g="' + group + '" data-i="' + i + '"><button class="nu-pick"><span>' + esc(f.brand && f.display.indexOf(f.brand) < 0 ? f.brand + ' · ' + (f.display || f.name) : (f.display || f.name)) +
+        (f.origin && f.origin !== 'usda' && f.source_label ? ' <em>' + esc(f.source_label) + '</em>' : '') + (group === 'o' ? ' <em>' + esc(f.source_label) + '</em>' : '') + '</span><small>' + servingText(f) + '</small></button>' +
+        (f.serving ? '<button class="nu-plus" title="' + (opts.button || 'Add') + ' one serving">+</button>' : '') + '</div>';
+    }
+    function wire(list, group, box) {
+      box.querySelectorAll('.nu-food[data-g="' + group + '"]').forEach(function (d) {
+        var f = list[Number(d.dataset.i)];
+        d.querySelector('.nu-pick').onclick = function () { open(f, group, false); };
+        var plus = d.querySelector('.nu-plus'); if (plus) plus.onclick = function () { open(f, group, true); };
+      });
+    }
+    function sentinelButton(text) {
+      return '<button class="trk-btn nu-ask" style="margin-top:6px">Not here? Look up “' + esc(text) + '” with Sentinel</button>';
+    }
+    function wireAsk(text) {
+      var b = more.querySelector('.nu-ask'); if (!b) return;
+      b.onclick = async function () {
+        b.disabled = true; b.textContent = 'Sentinel is finding the official numbers (10–30 s)…';
+        try { var f = await api('POST', '/foods/lookup', { query: text }); toast('Found: ' + f.display + (f.note ? ' — ' + f.note : '')); show1(f); }
+        catch (e) { b.disabled = false; b.textContent = 'Look it up with Sentinel'; fail(e); }
+      };
+    }
+    function show1(f) { out.innerHTML = row(f, 0, 'l'); more.innerHTML = ''; wire([f], 'l', out); open(f, 'l', false); }
+    async function search(text, my) {
+      try {
+        var r = await api('GET', '/foods/search?q=' + encodeURIComponent(text));
+        if (my !== seq) return;
+        out.innerHTML = r.foods.slice(0, 10).map(function (f, i) { return row(f, i, 'l'); }).join('');
+        wire(r.foods, 'l', out);
+        more.innerHTML = text.length >= 3 ? '<p class="trk-note">Checking USDA and Open Food Facts…</p>' : '';
+        if (text.length < 3) return;
+        var o = await api('GET', '/foods/search?online=1&limit=1&q=' + encodeURIComponent(text));
+        if (my !== seq) return;
+        var list = o.online || [];
+        more.innerHTML = (list.length ? '<div class="nu-more">More foods</div>' + list.slice(0, 10).map(function (f, i) { return row(f, i, 'o'); }).join('') : '') +
+          ((o.online_problems || []).length ? '<p class="trk-note">' + esc(o.online_problems.join('; ')) + '</p>' : '') + sentinelButton(text);
+        wire(list, 'o', more); wireAsk(text);
+      } catch (e) { fail(e); }
+    }
     q.addEventListener('input', function () {
-      clearTimeout(timer);
-      timer = setTimeout(async function () {
-        if (q.value.trim().length < 2) { out.innerHTML = ''; return; }
-        try {
-          var r = await api('GET', '/foods/search?q=' + encodeURIComponent(q.value.trim()));
-          out.innerHTML = r.foods.slice(0, 12).map(function (f, i) {
-            var p = f.per_100g;
-            return '<button class="nu-food" data-i="' + i + '"><span>' + esc(f.display) + (f.source === 'custom' ? ' <em>(yours)</em>' : '') + '</span><small>' + n0(p.kcal) + ' kcal · ' + p.protein_g + ' P · ' + p.carbs_g + ' C · ' + p.fat_g + ' F /100 g</small></button>';
-          }).join('') || '<p class="trk-note">Nothing found. Add it as your own food on the Recipes page.</p>';
-          out.querySelectorAll('.nu-food').forEach(function (b) { b.addEventListener('click', function () { pick(r.foods[Number(b.dataset.i)]); }); });
-        } catch (e) { fail(e); }
-      }, 250);
+      clearTimeout(timer); amt.style.display = 'none';
+      var text = q.value.trim();
+      if (text.length < 2) { out.innerHTML = ''; more.innerHTML = ''; return; }
+      var my = ++seq;
+      timer = setTimeout(function () { search(text, my); }, 300);
     });
-    function pick(f) {
-      picked = f; out.innerHTML = ''; q.value = f.display;
-      var units = ['g', 'oz', 'lb'].concat(f.portions.map(function (p) { return p.name; }));
-      var defUnit = f.portions.length ? f.portions[0].name : 'g';
+    // Online picks are saved as his foods first; built-in ones fetch their serving weights.
+    async function open(f, group, quick) {
+      try {
+        var food = group === 'o' ? await api('POST', '/foods/import', { key: f.key }) : (!f.serving && f.source === 'usda' ? await api('GET', '/foods/' + encodeURIComponent(f.key)) : f);
+        if (quick && food.serving) { out.innerHTML = ''; more.innerHTML = ''; q.value = ''; return opts.done({ food: food, qty: 1, unit: food.serving.name, grams: food.serving.grams, el: amt, quick: true }); }
+        amount(food);
+      } catch (e) { fail(e); }
+    }
+    function amount(f) {
+      out.innerHTML = ''; more.innerHTML = ''; q.value = f.display;
+      var units = f.portions.map(function (p) { return p.name; }).concat(['g', 'oz', 'lb']);
+      var defUnit = f.serving ? f.serving.name : 'g';
       amt.style.display = 'block';
-      amt.innerHTML = '<div class="trk-row"><div class="trk-field"><label>Amount</label><input type="number" class="nu-qty" step="any" min="0" value="' + (defUnit === 'g' ? 100 : 1) + '"></div>' +
-        '<div class="trk-field"><label>Unit</label><select class="nu-unit">' + units.map(function (u) { return '<option' + (u === defUnit ? ' selected' : '') + '>' + esc(u) + '</option>'; }).join('') + '</select></div>' +
-        (opts.extra || '') + '</div><div class="trk-note nu-prev"></div><button class="trk-btn primary nu-go">' + (opts.button || 'Add') + '</button>';
+      amt.innerHTML = '<div class="trk-row"><div class="trk-field"><label>Amount</label><input type="number" class="nu-qty" step="any" min="0" value="' + (f.serving ? 1 : 100) + '"></div>' +
+        '<div class="trk-field" style="flex:2"><label>Unit</label><select class="nu-unit">' + units.map(function (u) { return '<option' + (u === defUnit ? ' selected' : '') + '>' + esc(u) + '</option>'; }).join('') + '</select></div>' +
+        (opts.extra || '') + '</div><div class="trk-note nu-prev"></div>' + (f.source_url ? '<p class="trk-note">Source: <a href="' + esc(f.source_url) + '" target="_blank" rel="noopener" style="color:var(--ink2)">' + esc(f.source_label || 'link') + '</a></p>' : '') +
+        '<button class="trk-btn primary nu-go">' + (opts.button || 'Add') + '</button>';
       var qty = amt.querySelector('.nu-qty'), unit = amt.querySelector('.nu-unit'), prev = amt.querySelector('.nu-prev');
       function grams() {
         var n = Number(qty.value), u = unit.value;
@@ -93,7 +143,7 @@
       qty.addEventListener('input', preview); unit.addEventListener('change', preview); preview();
       amt.querySelector('.nu-go').addEventListener('click', function () {
         if (!(grams() > 0)) return toast('Give an amount');
-        opts.done({ food: picked, qty: Number(qty.value), unit: unit.value, grams: Math.round(grams() * 10) / 10, el: amt });
+        opts.done({ food: f, qty: Number(qty.value), unit: unit.value, grams: Math.round(grams() * 10) / 10, el: amt });
       });
     }
   }

@@ -27,7 +27,39 @@ const monday = N.mondayOf(today);
 
 // A stand-in Sentinel nutritionist: records what it was asked; answers from a queue.
 const asked = []; const replies = [];
+// Stand-ins for USDA FoodData Central and Open Food Facts (shapes as their APIs return them).
+const web = []; let fdcDown = false;
+const json = (status, data) => new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } });
+const nut = (num, id, unit, value) => ({ nutrientId: id, nutrientNumber: num, nutrientName: 'x', unitName: unit, value });
+const FDC_FOODS = {
+  2705964: { fdcId: 2705964, dataType: 'Survey (FNDDS)', description: 'Double cheeseburger, from fast food, two patties',
+    foodNutrients: [nut('208', 1008, 'KCAL', 262), nut('203', 1003, 'G', 15.1), nut('204', 1004, 'G', 13.9), nut('205', 1005, 'G', 18.6), nut('307', 1093, 'MG', 540)],
+    foodMeasures: [{ disseminationText: '1 sandwich', gramWeight: 165 }, { disseminationText: 'Quantity not specified', gramWeight: 165 }] },
+  555001: { fdcId: 555001, dataType: 'Branded', description: 'DOUBLE BIG MAC STYLE BURGER', brandName: 'GREAT VALUE', servingSize: 230, servingSizeUnit: 'g', householdServingFullText: '1 burger',
+    foodNutrients: [nut('208', 1008, 'KCAL', 270), nut('203', 1003, 'G', 14), nut('204', 1004, 'G', 16), nut('205', 1005, 'G', 18)] },
+};
+const SR_BIGMAC = { fdcId: 170720, dataType: 'SR Legacy', description: "McDONALD'S, BIG MAC", foodNutrients: [nut('208', 1008, 'KCAL', 257)] };
 const fetchImpl = async (url, init) => {
+  if (url.startsWith('https://api.nal.usda.gov/fdc/v1/')) {
+    web.push({ url, body: init.body ? JSON.parse(init.body) : null });
+    if (fdcDown) return json(429, { error: { code: 'OVER_RATE_LIMIT' } });
+    const b = init.body ? JSON.parse(init.body) : {};
+    if (url.includes('/foods/search')) {
+      if (b.dataType && b.dataType[0] === 'SR Legacy') return json(200, { foods: /big mac/i.test(b.query) ? [SR_BIGMAC] : [] });
+      return json(200, { foods: /double/i.test(b.query) ? Object.values(FDC_FOODS) : [] });
+    }
+    const id = url.match(/\/food\/(\d+)/)[1];
+    if (id === '170720') return json(200, { ...SR_BIGMAC, foodPortions: [{ amount: 1, modifier: 'item', gramWeight: 219, measureUnit: { name: 'undetermined' } }] });
+    const f = FDC_FOODS[id];
+    return f ? json(200, { ...f, foodMeasures: undefined, foodPortions: (f.foodMeasures || []).map((m) => ({ amount: 1, portionDescription: m.disseminationText, gramWeight: m.gramWeight })) }) : json(404, {});
+  }
+  if (url.startsWith('https://world.openfoodfacts.org/')) {
+    web.push({ url, ua: init.headers['User-Agent'] });
+    const p = { code: '0062300000000', product_name: 'Double Big Mac', brands: "McDonald's", serving_size: '1 burger (269 g)', serving_quantity: 269,
+      nutriments: { 'energy-kcal_100g': 260, proteins_100g: 14.5, carbohydrates_100g: 16.7, fat_100g: 15.2, sodium_100g: 0.48 } };
+    if (url.includes('/api/v2/product/')) return json(200, { product: p });
+    return json(200, { products: /double/i.test(decodeURIComponent(url)) ? [p, { code: '1', product_name: 'No numbers' }] : [] });
+  }
   const body = JSON.parse(init.body);
   asked.push({ url, auth: init.headers.Authorization, body });
   const r = replies.shift();
@@ -353,6 +385,77 @@ test('review fixes: delete after the pantry row is gone, other weeks\' groceries
   // A bad quick add and a label that can't be right are refused, not a 500.
   assert.equal((await call('POST', '/fitness/nutrition/diary', { date: today, slot: 'snack', name: 'x', kcal: 100, protein_g: 999999 })).status, 400);
   assert.equal((await call('POST', '/fitness/nutrition/foods', { name: 'x', per_grams: 1, kcal: 10000, protein_g: 0, carbs_g: 0, fat_g: 0 })).status, 400);
+});
+
+test('foods beyond the list: USDA branded and as-eaten, Open Food Facts, then Sentinel; each saved the first time with its serving, logged in one tap', async () => {
+  let r = await call('GET', '/fitness/nutrition/foods/search?q=double%20big%20mac');
+  assert.equal(r.body.foods.length, 0);
+  assert.equal(r.body.online, undefined);
+  r = await call('GET', '/fitness/nutrition/foods/search?online=1&q=double%20big%20mac');
+  const keys = r.body.online.map((c) => c.key);
+  assert.ok(keys.includes('off:0062300000000') && keys.includes('fdc:555001') && keys.includes('fdc:2705964'), keys.join());
+  assert.ok(!keys.includes('off:1'), 'no numbers, not shown');
+  const off = r.body.online.find((c) => c.key === 'off:0062300000000');
+  assert.deepEqual(off.serving, { name: '1 burger (269 g)', grams: 269 });
+  assert.equal(off.per_100g.sodium_mg, 480);
+  assert.equal(r.body.online.find((c) => c.key === 'fdc:555001').brand, 'Great Value');
+  assert.ok(web.some((w) => w.url.includes('api_key=DEMO_KEY')), 'no key set: the demo key');
+  assert.match(web.find((w) => w.ua).ua, /^SelfHub\//);
+
+  // Picked: saved as his food with its serving; picked again, the same food.
+  const imp = await call('POST', '/fitness/nutrition/foods/import', { key: 'fdc:2705964' });
+  assert.equal(imp.status, 201, JSON.stringify(imp.body));
+  assert.deepEqual(imp.body.serving, { id: imp.body.serving.id, name: '1 sandwich', grams: 165 });
+  assert.equal(imp.body.source_label, 'USDA');
+  assert.equal((await call('POST', '/fitness/nutrition/foods/import', { key: 'fdc:2705964' })).body.key, imp.body.key);
+  // Now it's found without going online, and not offered twice.
+  r = await call('GET', '/fitness/nutrition/foods/search?online=1&q=double%20cheeseburger');
+  assert.equal(r.body.foods[0].key, imp.body.key);
+  assert.ok(!r.body.online.some((c) => c.key === 'fdc:2705964'));
+  // One tap: one serving.
+  const e = await call('POST', '/fitness/nutrition/diary', { date: today, slot: 'lunch', food_key: imp.body.key, qty: 1, unit: '1 sandwich' });
+  assert.equal(e.body.grams, 165);
+  assert.equal(e.body.kcal, 432);
+  await call('DELETE', `/fitness/nutrition/diary/${e.body.id}`);
+
+  // A built-in food with no serving weight (McDonald's Big Mac): USDA's portion, fetched once.
+  const bm = (await call('GET', '/fitness/nutrition/foods/search?q=big%20mac')).body.foods[0];
+  assert.equal(bm.name, "McDONALD'S, BIG MAC");
+  assert.equal(bm.serving, null);
+  const n0 = web.length;
+  const got = await call('GET', `/fitness/nutrition/foods/${encodeURIComponent(bm.key)}`);
+  assert.deepEqual(got.body.serving, { id: got.body.serving.id, name: '1 item', grams: 219 });
+  await call('GET', `/fitness/nutrition/foods/${encodeURIComponent(bm.key)}`);
+  assert.equal(web.length - n0, 2, 'search + details, once');
+
+  // USDA over its limit: the rest still answers, and it says why.
+  fdcDown = true;
+  r = await call('GET', '/fitness/nutrition/foods/search?online=1&q=double%20big%20mac');
+  fdcDown = false;
+  assert.ok(r.body.online.some((c) => c.source === 'off'));
+  assert.match(r.body.online_problems[0], /hourly limit/);
+
+  // Sentinel finds the restaurant's own numbers; saved per 100 g with the serving; asked once.
+  replies.push({ found: true, name: 'Double Big Mac', brand: "McDonald's", serving_name: '1 sandwich', serving_g: 269, per_serving: { kcal: 700, protein_g: 39, carbs_g: 45, fat_g: 41, sodium_mg: 1290 },
+    source_url: 'https://www.mcdonalds.com/ca/en-ca/product/double-big-mac.html', note: 'Canadian menu' });
+  const asks = asked.length;
+  const lk = await call('POST', '/fitness/nutrition/foods/lookup', { query: 'Double Big Mac' });
+  assert.equal(lk.status, 201, JSON.stringify(lk.body));
+  assert.equal(asked[asks].body.task, 'food');
+  assert.equal(asked[asks].body.context.query, 'Double Big Mac');
+  assert.equal(lk.body.per_100g.kcal, 260.2);
+  assert.equal(lk.body.serving.grams, 269);
+  assert.equal(lk.body.source_label, 'Looked up by Sentinel');
+  assert.match(lk.body.source_url, /mcdonalds\.com\/ca/);
+  assert.equal((await call('POST', '/fitness/nutrition/foods/lookup', { query: 'double big mac' })).body.key, lk.body.key);
+  assert.equal(asked.length, asks + 1);
+  const logged = await call('POST', '/fitness/nutrition/diary', { date: today, slot: 'lunch', food_key: lk.body.key, qty: 1, unit: '1 sandwich' });
+  assert.equal(logged.body.kcal, 700);
+  await call('DELETE', `/fitness/nutrition/diary/${logged.body.id}`);
+  replies.push({ found: false, note: 'No such item on the Canadian or US menu' });
+  const nf = await call('POST', '/fitness/nutrition/foods/lookup', { query: 'triple mega mac' });
+  assert.equal(nf.status, 404);
+  assert.match(nf.body.error, /No such item/);
 });
 
 test('Sentinel reads nutrition: today, the log, targets, recipes, the plan, pantry and groceries', async () => {
