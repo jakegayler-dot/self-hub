@@ -389,7 +389,7 @@ test('review fixes: delete after the pantry row is gone, other weeks\' groceries
 
 test('foods beyond the list: USDA branded and as-eaten, Open Food Facts, then Sentinel; each saved the first time with its serving, logged in one tap', async () => {
   let r = await call('GET', '/fitness/nutrition/foods/search?q=double%20big%20mac');
-  assert.equal(r.body.foods.length, 0);
+  assert.ok(r.body.foods.every((f) => /BIG MAC/.test(f.name)), 'only the closest built-in (a single Big Mac)');
   assert.equal(r.body.online, undefined);
   r = await call('GET', '/fitness/nutrition/foods/search?online=1&q=double%20big%20mac');
   const keys = r.body.online.map((c) => c.key);
@@ -468,4 +468,14 @@ test('Sentinel reads nutrition: today, the log, targets, recipes, the plan, pant
   assert.equal(t.target.protein_g, 175);
   const s = await buildSummary(pool);
   assert.ok(s.summary.nutrition);
+});
+
+test('a longer description still finds the food: "sausage and egg breakfast sandwich" (Oct 26)', () => {
+  const names = N.searchFoods('sausage and egg breakfast sandwich', { limit: 6 }).map((f) => f.name);
+  assert.ok(names.length >= 4, names.join(' | '));
+  assert.ok(names.some((n) => /McMUFFIN with Egg/.test(n)), names.join(' | '));
+  assert.ok(names.slice(0, 5).every((n) => /sausage/i.test(n) && /egg/i.test(n)), names.join(' | '));
+  // Short searches still need every word.
+  assert.equal(N.searchFoods('egg zzqx').length, 0);
+  assert.equal(N.searchFoods('eggs')[0].name, 'Egg, whole, raw, fresh');
 });

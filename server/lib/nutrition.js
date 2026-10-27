@@ -47,7 +47,11 @@ const stem = (w) => (w.length > 4 && w.endsWith('ies') ? `${w.slice(0, -3)}y` : 
 function words(s) {
   return String(s).toLowerCase().replace(/%/g, ' pct ').replace(/[^a-z0-9.]+/g, ' ').split(' ').filter(Boolean).map(stem);
 }
-const SYNONYMS = { hamburger: ['ground'], mince: ['ground'], yoghurt: ['yogurt'], prawn: ['shrimp'], porridge: ['oat'], oatmeal: ['oat'], spud: ['potato'], pb: ['peanut'] };
+const SYNONYMS = { hamburger: ['ground', 'hamburger'], mince: ['ground'], yoghurt: ['yogurt'], prawn: ['shrimp'], porridge: ['oat'], oatmeal: ['oat'], spud: ['potato'], pb: ['peanut'],
+  // A breakfast sandwich is a McMuffin, a biscuit, a croissant… (Oct 26: "sausage and egg breakfast sandwich" found nothing).
+  sandwich: ['sandwich', 'muffin', 'mcmuffin', 'biscuit', 'croissant', 'bagel', 'griddle', 'mcgriddle', 'wich', 'sub', 'wrap', 'burger'],
+  burger: ['burger', 'hamburger', 'cheeseburger', 'whopper', 'mac'], fries: ['fries', 'french'], pop: ['carbonated', 'cola'], soda: ['carbonated', 'cola'] };
+const STOP = new Set(['and', 'with', 'a', 'an', 'the', 'of', 'in', 'on', 'or', 'some', 'my']);
 const NOISE = /^(fast foods?|restaurant|babyfood|infant formula|school lunch)|breaded|nuggets|\bleaves\b|\boil, (sardine|salmon|cod)/i;
 const BRANDED = /\b[A-Z]{3,}\b/; // SR Legacy's brand names are in capitals (McDONALD'S, QUAKER)
 const DAIRY = /\b(cheese|milk|yogh?urt|cream|butter(?!nut|bur| oil)|whey|ghee)\b/i;
@@ -56,21 +60,25 @@ const COMMON = new Set(['usda:14951', 'usda:18588', 'usda:18555', 'usda:13231', 
   'usda:14741', 'usda:12705', 'usda:13484', 'usda:17366', 'usda:11674', 'usda:13753', 'usda:16205', 'usda:17716', 'usda:15011', 'usda:14106', 'usda:12290', 'usda:13727', 'usda:14120', 'usda:15309', 'usda:14294']);
 // boost: Set of food keys he already uses (recipes, pantry, recent diary)
 function searchFoods(query, { customs = new Map(), boost = new Set(), limit = 25 } = {}) {
-  const q = words(query).filter((w) => w !== 'and' && w !== 'with');
+  const q = words(query).filter((w) => !STOP.has(w));
   if (!q.length) return [];
+  // Every word should match; a longer description may miss some (a "breakfast sandwich" is a "biscuit, with egg and
+  // sausage"), ranked below the full matches. At least half the words, and always the first one or two.
+  const need = q.length <= 2 ? q.length : Math.ceil(q.length / 2);
   const pool = [...customs.values(), ...loadUsda().list];
   const out = [];
   for (const f of pool) {
-    let score = 0; let ok = true;
+    let score = 0; let matched = 0;
     for (const [i, t] of q.entries()) {
       const alts = SYNONYMS[t] || [t];
       const hit = f.words.findIndex((w) => alts.some((a) => w === a || w.startsWith(a) || (a.length > 3 && a.startsWith(w) && w.length > 3)));
-      if (hit < 0) { ok = false; break; }
+      if (hit < 0) { score -= 14; continue; }
+      matched += 1;
       score += f.words[hit] === t ? 6 : 3;
       if (hit === 0 && i === 0) score += 8; // "Eggs" → "Egg, whole…" before "Noodles, egg…"
       score -= hit * 0.4;
     }
-    if (!ok) continue;
+    if (matched < need) continue;
     if (f.source === 'custom') score += 25;
     if (boost.has(f.key)) score += 15;
     if (COMMON.has(f.key)) score += 10;

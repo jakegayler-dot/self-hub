@@ -10,7 +10,7 @@
 
 const FDC = 'https://api.nal.usda.gov/fdc/v1';
 const OFF = 'https://world.openfoodfacts.org';
-const TIMEOUT_MS = 8000;
+const TIMEOUT_MS = 12000; // Open Food Facts' search is often slow
 const UA = 'SelfHub/1.0 (personal nutrition log; jake.gayler@gmail.com)';
 
 const fdcKey = (env = process.env) => (env.FDC_API_KEY || '').trim() || 'DEMO_KEY';
