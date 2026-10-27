@@ -7,9 +7,9 @@
 - Backend: Node.js / Express 5
 - Frontend: single static page, vanilla JS + Chart.js (no build step)
 - Database: PostgreSQL
-- Auth: HTTP Basic Auth via environment variables (same as Cattle Manager —
-  your browser will prompt for the username/password itself, no login page
-  to build)
+- Auth: a login page (`/login`) with `SELF_HUB_USER`/`SELF_HUB_PASS`; signing in sets a signed
+  400-day cookie so the device stays signed in (renewed as it's used; changing the password signs every
+  device out). Basic Auth still works for Sentinel (`SENTINEL_USER`/`SENTINEL_PASS`) and scripts.
 - Deploy: Railway, auto-deploy from GitHub on push
 
 ## Local development

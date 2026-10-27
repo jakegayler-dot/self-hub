@@ -273,6 +273,7 @@ function createWorkoutsRouter({ pool }) {
   }
   const todayStr = () => gen.ymd(new Date(Date.now() - 6 * 3600e3));
   router.ledgerFor = ledgerFor; // for the read API (Sentinel)
+  router.athleteContext = (date) => athleteContext(date); // for the coach chat
   router.get('/ledger', async (req, res) => {
     try { res.json(await ledgerFor(isDate(req.query.date) ? req.query.date : todayStr())); } catch (err) { fail(res, err); }
   });
@@ -556,6 +557,35 @@ function createWorkoutsRouter({ pool }) {
       res.json({ pending: out.length, requests: out });
     } catch (err) { fail(res, err); }
   });
+
+  // A session written whole (the coach chat, 2026-10-26): { date, body (REFINE_SCHEMA.body), objective?, why? }.
+  router.post('/workouts/custom', async (req, res) => {
+    try {
+      const b = req.body || {};
+      if (!isDate(b.date)) return res.status(400).json({ error: 'date (YYYY-MM-DD) is required' });
+      const raw = b.body || {};
+      const focus = gen.FOCI.includes(raw.focus) ? raw.focus : gen.FOCI[0];
+      const { body, errors } = gen.sanitizeBody(raw, { date: b.date, title: raw.title || 'Workout', focus, minutes: Math.max(10, Math.min(240, Math.round(Number(raw.minutes)) || 60)), equipment: Array.isArray(raw.equipment) ? raw.equipment : [] });
+      if (errors.length) return res.status(422).json({ error: 'body does not match the schema', errors: errors.slice(0, 30), schema: gen.REFINE_SCHEMA });
+      const w = await insertWorkout(body, { date: b.date, focus: body.focus, minutes: body.minutes, equipment: body.equipment || [] }, 0);
+      const meta = {};
+      for (const k of ['objective', 'why', 'intensity']) if (typeof b[k] === 'string' && b[k].trim()) meta[k] = b[k].trim().slice(0, 1500);
+      await pool.query(`UPDATE fitness_workouts SET source = 'coach'${Object.keys(meta).length ? ', meta = $2::jsonb' : ''} WHERE id = $1`, Object.keys(meta).length ? [w.id, JSON.stringify(meta)] : [w.id]);
+      res.status(201).json(shape(await getRow(w.id)));
+    } catch (err) { fail(res, err); }
+  });
+  // Move a session to another day: { date }.
+  router.put('/workouts/:id/date', locked(async (req, res) => {
+    try {
+      const date = req.body && req.body.date;
+      if (!isDate(date)) return res.status(400).json({ error: 'date (YYYY-MM-DD) is required' });
+      const r = await getRow(req.params.id);
+      if (!r) return res.status(404).json({ error: 'not found' });
+      const w = shape(r);
+      await pool.query('UPDATE fitness_workouts SET workout_date = $1, body = $2::jsonb, updated_at = now() WHERE id = $3', [date, JSON.stringify({ ...w.body, date }), w.id]);
+      res.json(shape(await getRow(w.id)));
+    } catch (err) { fail(res, err); }
+  }));
 
   router.get('/workouts/:id', async (req, res) => {
     const r = await getRow(req.params.id);

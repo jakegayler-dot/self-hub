@@ -19,7 +19,7 @@ function target(env = process.env) {
 
 // Sentinel restarting (a deploy) answers 502/503 for a few seconds, or drops the connection: wait and try once more.
 const RETRY_MS = 20000;
-async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) => fetch(...a), retryMs = RETRY_MS, path = '/v1/selfhub/trainer', who = 'the trainer' } = {}) {
+async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) => fetch(...a), retryMs = RETRY_MS, path = '/v1/selfhub/trainer', who = 'the trainer', raw = false } = {}) {
   const t = target(env);
   if (!t) throw new CoachError(503, `Sentinel isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so ${who} is off`);
   let res;
@@ -44,10 +44,13 @@ async function callTrainer(task, body, { env = process.env, fetchImpl = (...a) =
   const msg = data && data.error && (data.error.message || data.error);
   if (res.status === 429) throw new CoachError(429, typeof msg === 'string' ? msg : "Sentinel's AI budget is used up for now");
   if (!res.ok) throw new CoachError(502, typeof msg === 'string' ? msg : `Sentinel couldn't do it (${res.status})`);
-  if (!data || typeof data.result !== 'object') throw new CoachError(502, "Sentinel's answer wasn't readable — try again");
+  if (!data || (raw ? !Array.isArray(data.messages) : typeof data.result !== 'object')) throw new CoachError(502, "Sentinel's answer wasn't readable — try again");
   return data;
 }
 
 const callNutritionist = (task, body, opts = {}) => callTrainer(task, body, { ...opts, path: '/v1/selfhub/nutritionist', who: 'the nutritionist' });
 
-module.exports = { callTrainer, callNutritionist, CoachError, trainerReady: (env) => !!target(env) };
+// The coach chat (2026-10-26): one stretch of the coach's thinking; see routes/coachChat.js.
+const callCoachChat = (body, opts = {}) => callTrainer(undefined, body, { ...opts, path: '/v1/selfhub/coach-chat', who: 'the coach chat', raw: true });
+
+module.exports = { callTrainer, callNutritionist, callCoachChat, CoachError, trainerReady: (env) => !!target(env) };

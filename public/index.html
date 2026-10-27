@@ -111,6 +111,17 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .wk-item{margin:0 0 10px}
 .wk-item .mv{font-size:13px;color:var(--ink)}
 .wk-item .rx{font-family:var(--mono);font-size:12px;color:var(--ink2);margin-left:6px}
+.wk-rest{font-family:var(--mono);font-size:11px;color:var(--green);margin-left:8px;white-space:nowrap}
+.rest-bar{position:fixed;left:50%;bottom:14px;transform:translate(-50%,140%);width:min(440px,calc(100% - 24px));background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;z-index:40;transition:transform .25s;box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.rest-bar.on{transform:translate(-50%,0)}
+body.resting .wrap{padding-bottom:110px}
+.rest-bar.go{border-color:var(--green)}
+.rest-bar .rb-h{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink3)}
+.rest-bar .rb-t{font-family:var(--mono);font-size:30px;color:var(--amber);line-height:1.1}
+.rest-bar.go .rb-t{color:var(--green)}
+.rest-bar .rb-l{font-size:12px;color:var(--ink2)}
+.rest-bar .rb-b{display:flex;gap:6px}
+.rest-bar .rb-b button{background:var(--panel);border:1px solid var(--line2);color:var(--ink);border-radius:8px;padding:9px 10px;font-size:13px;cursor:pointer}
 .wk-item .src{font-size:11px;color:var(--ink3);margin-top:2px;line-height:1.4}
 .wk-sets{display:flex;flex-direction:column;gap:5px;margin-top:6px}
 .wk-set{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
@@ -232,6 +243,29 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 .nu-ings{margin:6px 0;padding-left:18px;font-size:13px;color:var(--ink2)}
 .nu-ings li{margin:3px 0}
 .wk-card select{background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:6px 8px;font-size:13px}
+/* ---- Coach chat ---- */
+.cc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.cc-top .nu-views{margin:0}
+.cc-tools{display:flex;gap:6px}
+.cc-log{height:min(58vh,560px);overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+.cc-msg{max-width:86%;padding:9px 12px;border-radius:12px;font-size:14px;line-height:1.45;word-wrap:break-word}
+.cc-me{align-self:flex-end;background:var(--amber-bg);border:1px solid var(--amber-dim);color:var(--ink);border-bottom-right-radius:4px}
+.cc-them{align-self:flex-start;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);border-bottom-left-radius:4px}
+.cc-li{display:block;padding-left:12px;position:relative}.cc-li:before{content:'•';position:absolute;left:0;color:var(--amber)}
+.cc-act{align-self:flex-start;font-size:11.5px;font-family:var(--mono);color:var(--green);padding:0 4px}
+.cc-act.bad{color:var(--red)}
+.cc-empty{margin:auto;text-align:center;max-width:420px}
+.cc-typing i{display:inline-block;width:6px;height:6px;margin:0 2px;border-radius:50%;background:var(--ink3);animation:ccb 1s infinite}
+.cc-typing i:nth-child(2){animation-delay:.15s}.cc-typing i:nth-child(3){animation-delay:.3s}
+@keyframes ccb{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.cc-input{display:flex;gap:8px;margin-top:8px;align-items:flex-end}
+.cc-input textarea{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;color:var(--ink);padding:10px 12px;font-size:16px;font-family:var(--sans);resize:none;max-height:160px}
+.cc-hint{margin-top:6px}
+.cc-mem{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:13px}
+.cc-mem-h{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);margin-bottom:6px}
+.cc-mem-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)}
+.cc-mem-add{display:flex;gap:6px;margin-top:8px}
+.cc-mem-add input{flex:1;background:var(--panel);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:7px 9px;font-size:14px}
 @media (max-width:480px){
   /* Phones: the app is the screen, no frame around it. */
   .wrap{padding:0}
@@ -262,7 +296,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     <button class="trk-tab" data-tab="history">History</button>
     <button class="trk-tab" data-tab="health">Health</button>
     <button class="trk-tab" data-tab="nutrition">Nutrition</button>
-    <button class="trk-tab" data-tab="coach">Coach</button>
+    <button class="trk-tab" data-tab="coach">Coaches</button>
   </div>
   <div class="trk-body">
 
@@ -348,6 +382,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
 
 
     <div class="trk-pane" data-pane="train">
+      <button class="trk-btn" style="width:100%;margin-bottom:14px" onclick="openCoach('trainer')">Talk to your trainer</button>
       <div class="trk-sec">
         <div class="tr-head">
           <h2>This week</h2>
@@ -666,7 +701,9 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     <div class="trk-pane" data-pane="nutrition" id="nutritionPane"></div>
 
     <div class="trk-pane" data-pane="coach">
-      <div class="trk-sec">
+      <div id="coachChat"></div>
+      <details class="ldg" style="margin-top:16px"><summary>Copy-paste coaching prompt and notes (old)</summary>
+      <div class="trk-sec" style="margin-top:10px">
         <h2>Weekly coach review</h2>
         <p class="trk-note" style="margin-bottom:10px">Assembled server-side from your logged data. Copy into any AI assistant.</p>
         <div class="trk-prompt" id="coachPrompt">Loading…</div>
@@ -683,6 +720,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         <div class="trk-err" id="cnErr">Enter a date and a note.</div>
         <div class="trk-log"><table id="cnTable"><thead><tr><th>Date</th><th>Source</th><th>Note</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
+      </details>
     </div>
 
   </div>
@@ -697,6 +735,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   <div class="ctl"><button class="trk-btn" id="tmPause">Pause</button><button class="trk-btn" id="tmSkip">Skip</button><button class="trk-btn" id="tmClose">Close</button></div>
 </div>
 <div class="trk-toast" id="toast"></div>
+<div class="rest-bar" id="restBar"><div><div class="rb-h">Rest</div><div class="rb-t">0:00</div><div class="rb-l"></div></div><div class="rb-b"><button data-rb="-15">&minus;15</button><button data-rb="15">+15</button><button data-rb="skip">Skip</button></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script>
@@ -717,7 +756,7 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       headers: {'Content-Type':'application/json'},
       body: body? JSON.stringify(body): undefined
     });
-    if(res.status===401){ toast('Sign in required — reload and enter your credentials'); throw new Error('401'); }
+    if(res.status===401){ location.href='/login?next='+encodeURIComponent(location.pathname+location.search); throw new Error('Signed out'); }
     if(res.status===204) return null;
     var data = await res.json().catch(function(){ return null; });
     if(!res.ok){ throw new Error((data&&data.error)||('HTTP '+res.status)); }
@@ -2481,7 +2520,8 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
       // Metcon pieces already name the movement in the prescription ("15 cal Row").
       h += '<div class="wk-item" data-iid="'+esc(it.id)+'">'+(it.test?'<span class="wk-chip amber" style="margin-right:6px">Test</span>':'')+(b.kind==='metcon' && it.prescription
         ? '<span class="mv">'+esc(it.prescription)+'</span>'
-        : '<span class="mv">'+esc(it.movement)+'</span>'+(it.prescription?'<span class="rx">'+esc(it.prescription)+'</span>':''));
+        : '<span class="mv">'+esc(it.movement)+'</span>'+(it.prescription?'<span class="rx">'+esc(it.prescription)+'</span>':'')+
+          (b.kind!=='metcon' && restOf(it)?'<span class="wk-rest" title="Rest between sets">rest '+mmss(restOf(it))+'</span>':''));
       if(it.load_source) h += '<div class="src">'+esc(it.load_source)+'</div>';
       else if(it.notes) h += '<div class="src">'+esc(it.notes)+'</div>';
       if(b.kind!=='metcon' && it.log_as!=='none' && it.sets.length){
@@ -2496,6 +2536,40 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
     }
     return h+'</div>';
   }
+
+  // Rest between sets (Oct 26): the session's own, else by the reps (heavy 3:00, 6-8 reps 2:30, 8-12 1:30, more 1:00).
+  function restOf(it, s){
+    if(s && s.rest_s) return s.rest_s;
+    if(it.rest_s) return it.rest_s;
+    if(it.log_as!=='lift' && it.log_as!=='gymnastics') return 0;
+    var reps = Number(it.sets && it.sets[0] && it.sets[0].reps) || 0;
+    if(it.log_as==='gymnastics') return reps && reps<=5 ? 120 : 90;
+    if(!reps) return 120;
+    return reps<=5 ? 180 : reps<=8 ? 150 : reps<=12 ? 90 : 60;
+  }
+  // The rest timer: starts when a set is ticked off, counts down at the bottom of the screen, buzzes at zero.
+  var rest = { end:0, iv:null, label:'' };
+  function beep(){
+    try{ var C=window.AudioContext||window.webkitAudioContext; var a=new C(), o=a.createOscillator(), g=a.createGain(); o.frequency.value=880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(.2,a.currentTime); o.start(); o.stop(a.currentTime+.35); }catch(e){}
+    try{ navigator.vibrate && navigator.vibrate([200,100,200]); }catch(e){}
+  }
+  function restTick(){
+    var bar=document.getElementById('restBar'), left=Math.round((rest.end-Date.now())/1000);
+    if(left<=0){ clearInterval(rest.iv); rest.iv=null; bar.querySelector('.rb-t').textContent='Go'; bar.classList.add('go'); beep(); setTimeout(function(){ if(!rest.iv){ bar.classList.remove('on','go'); document.body.classList.remove('resting'); } }, 6000); return; }
+    bar.querySelector('.rb-t').textContent=mmss(left);
+  }
+  function startRest(secs, label){
+    if(!secs) return;
+    var bar=document.getElementById('restBar');
+    rest.end=Date.now()+secs*1000; bar.querySelector('.rb-l').textContent=label||'';
+    bar.classList.remove('go'); bar.classList.add('on'); document.body.classList.add('resting');
+    clearInterval(rest.iv); rest.iv=setInterval(restTick, 250); restTick();
+  }
+  document.getElementById('restBar').addEventListener('click', function(e){
+    var a=e.target.dataset.rb; if(!a) return;
+    if(a==='skip'){ clearInterval(rest.iv); rest.iv=null; this.classList.remove('on','go'); document.body.classList.remove('resting'); return; }
+    rest.end += Number(a)*1000; if(!rest.iv){ this.classList.remove('go'); rest.iv=setInterval(restTick,250); } restTick();
+  });
 
   function setHtml(it,s,i){
     var n='<span class="n">'+(it.sets.length>1?'#'+(i+1):'')+'</span>';
@@ -2565,6 +2639,15 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
         if(tm && tm.value.trim()){ var mt=/^(\d+):(\d{1,2})$/.exec(tm.value.trim()); payload.duration_s = mt ? Number(mt[1])*60+Number(mt[2]) : Number(tm.value)*60; }
         t.disabled=true;
         out=await api('POST','/workouts/'+id+'/log', payload); touchesLogs=true;
+        // Rest before the next set: this item's next open set, else the next item in the block.
+        (function(){
+          var blk=w.body.blocks.find(function(b){ return b.id===bid; }); if(!blk || blk.kind==='metcon') return;
+          var it=blk.items.find(function(x){ return x.id===iid; }); if(!it) return;
+          var secs=restOf(it, it.sets[Number(si)]);
+          var nextOpen=it.sets.findIndex(function(x,k){ return k>Number(si) && !x.entry; });
+          var label = nextOpen>=0 ? it.movement+' — set '+(nextOpen+1)+' of '+it.sets.length+' next' : (function(){ var k=blk.items.indexOf(it), nx=blk.items[k+1]; return nx ? nx.movement+' next' : 'Last set of '+it.movement; })();
+          startRest(secs, label);
+        })();
       } else if(act==='unlog'){ out=await api('POST','/workouts/'+id+'/unlog', {block_id:bid,item_id:iid,set_index:Number(si)}); touchesLogs=true; }
       else if(act==='addset'){ out=await api('POST','/workouts/'+id+'/sets', {block_id:bid,item_id:iid}); }
       else if(act==='unset'){ out=await api('DELETE','/workouts/'+id+'/sets', {block_id:bid,item_id:iid,set_index:Number(si)}); }
@@ -2707,6 +2790,20 @@ html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans)
   refresh().catch(function(e){ toast('Could not load: '+e.message); });
 })();
 </script>
+<script src="/js/coachChat.js"></script>
 <script src="/js/nutrition.js"></script>
+<script>
+// The Coaches tab: talk to the trainer or the nutritionist (2026-10-26).
+(function () {
+  var mounted = null;
+  function open(coach) {
+    if (!mounted) mounted = window.SelfHubCoach.mount(document.getElementById('coachChat'), coach || 'trainer', { switcher: true });
+    else if (coach) mounted.setCoach(coach); else mounted.refresh();
+  }
+  document.querySelectorAll('.trk-tab[data-tab="coach"]').forEach(function (t) { t.addEventListener('click', function () { open(); }); });
+  // "Talk to your trainer" on the Train page.
+  window.openCoach = function (coach) { var t = document.querySelector('.trk-tab[data-tab="coach"]'); t.click(); open(coach); };
+})();
+</script>
 </body>
 </html>

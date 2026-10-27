@@ -20,6 +20,7 @@
   }
   async function api(method, path, body) {
     var res = await fetch(API + path, { method: method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    if (res.status === 401) { location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search); throw new Error('Signed out'); }
     if (res.status === 204) return null;
     var data = await res.json().catch(function () { return null; });
     if (!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
@@ -34,7 +35,7 @@
   }
 
   // ---- shell ----
-  var VIEWS = [['today', 'Today'], ['plan', 'Plan'], ['recipes', 'Recipes'], ['pantry', 'Pantry'], ['groceries', 'Groceries'], ['targets', 'Targets']];
+  var VIEWS = [['today', 'Today'], ['coach', 'Coach'], ['plan', 'Plan'], ['recipes', 'Recipes'], ['pantry', 'Pantry'], ['groceries', 'Groceries'], ['targets', 'Targets']];
   pane.innerHTML = '<div class="nu-views">' + VIEWS.map(function (v) { return '<button class="wk-chipbtn" data-nv="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div><div id="nuBody"></div>';
   var body = document.getElementById('nuBody');
   pane.querySelectorAll('[data-nv]').forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.nv); }); });
@@ -42,7 +43,7 @@
     state.view = v;
     pane.querySelectorAll('[data-nv]').forEach(function (b) { b.classList.toggle('on', b.dataset.nv === v); });
     body.innerHTML = '<p class="trk-note">Loading…</p>';
-    ({ today: today, plan: plan, recipes: recipes, pantry: pantry, groceries: groceries, targets: targets })[v]().catch(function (e) { body.innerHTML = '<p class="trk-err" style="display:block">' + esc(e.message) + '</p>'; });
+    ({ today: today, coach: coachView, plan: plan, recipes: recipes, pantry: pantry, groceries: groceries, targets: targets })[v]().catch(function (e) { body.innerHTML = '<p class="trk-err" style="display:block">' + esc(e.message) + '</p>'; });
   }
   document.querySelectorAll('.trk-tab[data-tab="nutrition"]').forEach(function (t) { t.addEventListener('click', function () { show(state.view); }); });
 
@@ -146,6 +147,12 @@
         opts.done({ food: f, qty: Number(qty.value), unit: unit.value, grams: Math.round(grams() * 10) / 10, el: amt });
       });
     }
+  }
+
+  // ---- Coach: talk to the nutritionist (2026-10-26) ----
+  async function coachView() {
+    body.innerHTML = '<div id="nuCoach"></div>';
+    if (window.SelfHubCoach) window.SelfHubCoach.mount(document.getElementById('nuCoach'), 'nutritionist');
   }
 
   // ---- Today ----

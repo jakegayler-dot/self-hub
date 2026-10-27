@@ -685,6 +685,17 @@ const COLLECTIONS = [
       return [...g.open, ...g.bought].map((x) => ({ id: x.id, name: x.name, quantity: x.quantity, aisle: x.aisle, status: x.status, source: x.source, bought_at: x.bought_at }));
     },
   },
+  {
+    name: 'coach_memory',
+    description: "What Jake's two Self Hub coaches (the trainer and the nutritionist) remember about him from their chats: injuries, preferences, schedule, decisions. One sentence each, by coach.",
+    kind: 'list',
+    search: ['text', 'coach'],
+    custom: { coach: enumFilter('coach', ['trainer', 'nutritionist']) },
+    fields: ['id', 'coach', 'text', 'updated_on'],
+    async load({ pool }) {
+      return (await rowsOf(pool, 'SELECT id, coach, text, updated_at FROM coach_memory ORDER BY coach, id')).map((m) => ({ id: m.id, coach: m.coach, text: m.text, updated_on: ymd(new Date(m.updated_at)) }));
+    },
+  },
 ];
 const BY_NAME = new Map(COLLECTIONS.map((c) => [c.name, c]));
 

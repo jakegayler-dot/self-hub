@@ -265,6 +265,15 @@ const SCHEMES = {
   oly_support: [{ sets: 4, reps: 3, pct: 0.85 }, { sets: 4, reps: 4, pct: 0.8 }],
 };
 const REST = { main: 150, second: 120, hyp: 90, oly: 120, oly_support: 120, acc: 60, gstr: 90, skill: 60, core: 45 };
+// Rest between sets when a session doesn't say (Jake, 2026-10-26: "the workout generator doesn't show rest time"):
+// by the reps, as strength programming does it: heavy triples and below 3 min, 6-8s 2:30, hypertrophy 1:30, high reps 1 min.
+function defaultRest(logAs, sets) {
+  if (logAs !== 'lift' && logAs !== 'gymnastics') return null;
+  const reps = Number((sets || [])[0] && sets[0].reps) || 0;
+  if (logAs === 'gymnastics') return reps && reps <= 5 ? 120 : 90;
+  if (!reps) return 120;
+  return reps <= 5 ? 180 : reps <= 8 ? 150 : reps <= 12 ? 90 : 60;
+}
 
 function setsThatFit(minutes, restS, wanted, minSets = 2) {
   const fit = Math.floor((minutes * 60) / (restS + 45));
@@ -686,7 +695,7 @@ function sanitizeBody(input, fallback = {}) {
       return {
         id: `b${bi + 1}i${ii + 1}`, movement: movement || '?', log_as: logAs,
         pattern: str(it && it.pattern, 40) || (BY_NAME.get(movement) ? BY_NAME.get(movement).pattern : strength.liftPattern(movement || '')),
-        prescription: str(it && it.prescription, 200), rest_s: numOrNull(it && it.rest_s, 0, 900) ?? null,
+        prescription: str(it && it.prescription, 200), rest_s: numOrNull(it && it.rest_s, 0, 900) ?? (kind === 'metcon' ? null : defaultRest(logAs, sets)),
         load_source: str(it && it.load_source, 300), notes: str(it && it.notes, 300), sets,
         // A test (ledger.TESTS id): logging this item also records the result in fitness_tests.
         ...(it && it.test && TEST_IDS.includes(it.test) ? { test: it.test } : {}),
@@ -738,7 +747,7 @@ const REFINE_SCHEMA = {
         movement: 'string — use an existing name from known_movements when one fits, so it logs into the same history',
         log_as: `${LOG_AS.join(' | ')} — lift (load × reps), gymnastics (reps), conditioning (distance/time), none (warm-up text, metcon pieces)`,
         prescription: 'string — human-readable, e.g. "5 × 3 @ 225 lb"',
-        rest_s: 'number',
+        rest_s: 'number — seconds between sets; set it on every lift and gymnastics item (heavy 1-5 reps 180-240, 6-8 reps 120-150, 8-12 reps 75-90, accessories 60); it is shown and timed between his sets',
         notes: 'string',
         test: `string, only when this item is a test from the data ledger: one of ${TEST_IDS.join(' | ')}. PRT reps are one set of the max (log_as gymnastics); timed tests are one conditioning set with distance_m (the time is what he logs)`,
         sets: [{ reps: 'number', load_lb: 'number|null', pct_1rm: 'number|null', rpe: 'number|null', distance_m: 'number|null', duration_s: 'number|null — engine: interval length', rest_s: 'number|null', target: 'number|null — engine: output to hit this interval', unit: '"cal" | "m" | null' }],

@@ -6,7 +6,8 @@ const { basicAuth } = require('./middleware/basicAuth');
 const fitnessRouter = require('./routes/fitness');
 const { createWorkoutsRouter } = require('./routes/workouts');
 const { createPercentilesRouter } = require('./routes/percentiles');
-const { createNutritionRouter } = require('./routes/nutrition');
+const { createNutritionRouter, createStore: createNutritionStore } = require('./routes/nutrition');
+const { createCoachChatRouter } = require('./routes/coachChat');
 const { createSentinelPusher } = require('./lib/sentinel');
 const { createSentinelReadRouter } = require('./routes/sentinelRead');
 const { createSentinelActionsRouter, trackMountPaths } = require('./routes/sentinelActions');
@@ -31,11 +32,14 @@ app.use('/api', sentinelPusher.middleware);
 
 app.use('/api/fitness', fitnessRouter);
 // Workout generator, one-tap logging, engine tests, Sentinel refine queue.
-app.use('/api/fitness', createWorkoutsRouter({ pool }));
+const workoutsRouter = createWorkoutsRouter({ pool });
+app.use('/api/fitness', workoutsRouter);
 // CrossFit / Concept2 percentiles and Open results.
 app.use('/api/fitness', createPercentilesRouter({ pool }));
 // Nutrition: food log, recipes, adaptive targets, meal plan, pantry, groceries (to Sentinel), the nutritionist.
 app.use('/api/fitness', createNutritionRouter({ pool }));
+// The coaches to talk to (trainer, nutritionist): Sentinel thinks, Self Hub keeps the conversation and the memory.
+app.use('/api/fitness', createCoachChatRouter({ pool, workouts: workoutsRouter, nutrition: createNutritionStore(pool) }));
 // Read-only lookup API for Sentinel's voice agent (same Basic auth).
 app.use('/api/sentinel', createSentinelReadRouter({ pool }));
 // Sentinel API bridge: list every /api route and call any of them as the owner.
