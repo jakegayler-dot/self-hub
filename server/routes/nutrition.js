@@ -577,13 +577,25 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
     const boost = new Set([...list.flatMap((r) => r.ingredients.map((i) => i.food_key)), ...pan.keys(), ...recent.map((r) => r.food_key)]);
     const foods = N.searchFoods(query, { customs: cust, boost, limit: Math.min(40, Number(req.query.limit) || 25) });
     const out = { query, attribution: N.ATTRIBUTION, foods: foods.map((f) => foodView(f, own)) };
-    if (req.query.online === '1' && query.trim().length >= 3) {
-      const r = await foodSources.searchOnline(query, foodOpts);
-      const saved = new Set([...cust.values()].filter((f) => f.external_id).map((f) => `${f.origin === 'off' ? 'off' : 'fdc'}:${f.external_id}`));
-      out.online = r.foods.filter((c) => !saved.has(c.key) && sane(c.per_100g)).map((c) => ({ ...c, serving: c.portions[0] || null }));
-      out.online_problems = r.problems;
-    }
+    if (req.query.online === '1' && query.trim().length >= 3) Object.assign(out, await online(query, cust, null));
     res.json(out);
+  }));
+  async function online(query, cust, fdcFoods) {
+    const r = await foodSources.searchOnline(query, { ...foodOpts, fdcFoods });
+    const saved = new Set([...cust.values()].filter((f) => f.external_id).map((f) => `${f.origin === 'off' ? 'off' : 'fdc'}:${f.external_id}`));
+    return { online: r.foods.filter((c) => !saved.has(c.key) && sane(c.per_100g)).map((c) => ({ ...c, serving: c.portions[0] || null })), online_problems: r.problems };
+  }
+  // The page asks USDA itself, from his own connection (the server's address is shared, and USDA limits each address),
+  // and hands the results here to be read the same way: POST { query, fdc_foods: [USDA search results] | null }.
+  router.get('/nutrition/foods/online-config', wrap(async (req, res) => {
+    res.json({ fdc_search: 'https://api.nal.usda.gov/fdc/v1/foods/search', fdc_key: foodSources.fdcKey(env), data_types: ['Survey (FNDDS)', 'Branded', 'Foundation'] });
+  }));
+  router.post('/nutrition/foods/online', wrap(async (req, res) => {
+    const b = req.body || {};
+    const query = String(b.query || '').slice(0, 80);
+    if (query.trim().length < 2) return res.json({ online: [], online_problems: [] });
+    const fdcFoods = Array.isArray(b.fdc_foods) ? b.fdc_foods.slice(0, 50) : null;
+    res.json(await online(query, await S.customs(), fdcFoods));
   }));
   router.get('/nutrition/foods/:key', wrap(async (req, res) => {
     const cust = await S.customs();
@@ -595,8 +607,14 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
   // Picking a USDA or Open Food Facts result saves it as one of his foods (fresh from the source, with its servings).
   router.post('/nutrition/foods/import', wrap(async (req, res) => {
     const key = String((req.body || {}).key || '');
-    let c;
-    try { c = await foodSources.fetchCandidate(key, foodOpts); } catch (e) {
+    const raw = (req.body || {}).raw;
+    let c = null;
+    // The result as the page already has it (USDA from his browser, or Open Food Facts' search): no second trip.
+    if (raw && typeof raw === 'object') {
+      const fromRaw = key.startsWith('fdc:') ? foodSources.fdcCandidate(raw) : key.startsWith('off:') ? foodSources.offCandidate(raw) : null;
+      if (fromRaw && fromRaw.key === key) c = fromRaw;
+    }
+    if (!c) try { c = await foodSources.fetchCandidate(key, foodOpts); } catch (e) {
       throw new Bad(e.status === 429 ? 'USDA\'s hourly limit is used up (set FDC_API_KEY); try again later' : `Couldn't reach ${key.startsWith('off:') ? 'Open Food Facts' : 'USDA'}: try again`, 502);
     }
     if (!c || !sane(c.per_100g)) throw new Bad('That food has no usable nutrition numbers', 404);

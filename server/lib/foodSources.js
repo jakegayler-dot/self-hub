@@ -10,6 +10,9 @@
 
 const FDC = 'https://api.nal.usda.gov/fdc/v1';
 const OFF = 'https://world.openfoodfacts.org';
+// Open Food Facts' old search (cgi/search.pl) now refuses anonymous callers ("Page temporarily unavailable", Oct 27);
+// its search service is search.openfoodfacts.org. Product reads (api/v2/product) still work.
+const OFF_SEARCH = 'https://search.openfoodfacts.org/search';
 const TIMEOUT_MS = 12000; // Open Food Facts' search is often slow
 const UA = 'SelfHub/1.0 (personal nutrition log; jake.gayler@gmail.com)';
 
@@ -119,12 +122,14 @@ async function fdcPortionsFor(food, { env, fetchImpl } = {}) {
 function offCandidate(p) {
   const n = p.nutriments || {};
   const kcal = n['energy-kcal_100g'] ?? (n['energy_100g'] != null ? Number(n['energy_100g']) / 4.184 : null);
-  const name = String(p.product_name || p.product_name_en || p.generic_name || '').trim();
+  const pick = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v.en || v.main || Object.values(v)[0] : v);
+  const name = String(pick(p.product_name) || pick(p.product_name_en) || pick(p.generic_name) || '').trim();
+  const brands = Array.isArray(p.brands) ? p.brands.join(',') : String(p.brands || '');
   if (!name || kcal == null || n.proteins_100g == null || n.carbohydrates_100g == null || n.fat_100g == null) return null;
   const portions = [];
   if (Number(p.serving_quantity) > 0) portions.push({ name: String(p.serving_size || 'serving').trim().toLowerCase().slice(0, 40), grams: r1(p.serving_quantity) });
   return {
-    key: `off:${p.code}`, source: 'off', external_id: String(p.code), name: name.slice(0, 100), brand: String(p.brands || '').split(',')[0].trim() || null,
+    key: `off:${p.code}`, source: 'off', external_id: String(p.code), name: name.slice(0, 100), brand: brands.split(',')[0].trim() || null,
     per_100g: { kcal: r1(kcal), protein_g: r1(n.proteins_100g), carbs_g: r1(n.carbohydrates_100g), fat_g: r1(n.fat_100g), fiber_g: r1(n.fiber_100g), sugar_g: r1(n.sugars_100g),
       sat_fat_g: r1(n['saturated-fat_100g']), sodium_mg: n.sodium_100g != null ? r1(Number(n.sodium_100g) * 1000) : n.salt_100g != null ? r1((Number(n.salt_100g) * 1000) / 2.5) : null },
     portions, source_label: 'Open Food Facts',
@@ -132,9 +137,9 @@ function offCandidate(p) {
 }
 const OFF_FIELDS = 'code,product_name,product_name_en,generic_name,brands,nutriments,serving_size,serving_quantity';
 async function searchOff(query, { fetchImpl, limit = 10 } = {}) {
-  const url = `${OFF}/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=24&fields=${OFF_FIELDS}`;
+  const url = `${OFF_SEARCH}?q=${encodeURIComponent(query)}&page_size=24&fields=${OFF_FIELDS}`;
   const data = await getJson(url, { fetchImpl });
-  return (data.products || []).map(offCandidate).filter(Boolean).slice(0, limit);
+  return (data.hits || data.products || []).map(offCandidate).filter(Boolean).slice(0, limit);
 }
 async function offProduct(code, { fetchImpl } = {}) {
   const data = await getJson(`${OFF}/api/v2/product/${encodeURIComponent(code)}.json?fields=${OFF_FIELDS}`, { fetchImpl });
@@ -142,11 +147,15 @@ async function offProduct(code, { fetchImpl } = {}) {
 }
 
 // Both at once; whatever answers in time.
+// fdcFoods: USDA's search results as the browser got them (it asks USDA itself, from his own connection, so a
+// busy shared server address can't use up the limit); without them the server asks.
+const why = (e) => (e && e.status === 429 ? 'hourly limit reached (set FDC_API_KEY)' : e && e.status ? `refused (${e.status})` : e && e.name === 'TimeoutError' ? 'too slow to answer' : 'unreachable');
 async function searchOnline(query, opts = {}) {
-  const [fdc, off] = await Promise.allSettled([searchFdc(query, opts), searchOff(query, opts)]);
+  const fdcP = Array.isArray(opts.fdcFoods) ? Promise.resolve(opts.fdcFoods.map(fdcCandidate).filter(Boolean).slice(0, 15)) : searchFdc(query, opts);
+  const [fdc, off] = await Promise.allSettled([fdcP, searchOff(query, opts)]);
   const problems = [];
-  if (fdc.status === 'rejected') problems.push(`USDA: ${fdc.reason && fdc.reason.status === 429 ? 'hourly limit reached (set FDC_API_KEY)' : 'unavailable'}`);
-  if (off.status === 'rejected') problems.push('Open Food Facts: unavailable');
+  if (fdc.status === 'rejected') problems.push(`USDA: ${why(fdc.reason)}`);
+  if (off.status === 'rejected') problems.push(`Open Food Facts: ${why(off.reason)}`);
   // Rank: all of the query's words in the name or brand first.
   const words = String(query).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1);
   const hits = (c) => words.filter((w) => `${c.brand || ''} ${c.name}`.toLowerCase().includes(w)).length;
@@ -160,4 +169,4 @@ async function fetchCandidate(key, opts = {}) {
   return null;
 }
 
-module.exports = { searchOnline, searchFdc, searchOff, fetchCandidate, fdcPortionsFor, fdcNutrients, fdcCandidate, offCandidate, fdcKey };
+module.exports = { why, searchOnline, searchFdc, searchOff, fetchCandidate, fdcPortionsFor, fdcNutrients, fdcCandidate, offCandidate, fdcKey };

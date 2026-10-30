@@ -53,12 +53,16 @@ const fetchImpl = async (url, init) => {
     const f = FDC_FOODS[id];
     return f ? json(200, { ...f, foodMeasures: undefined, foodPortions: (f.foodMeasures || []).map((m) => ({ amount: 1, portionDescription: m.disseminationText, gramWeight: m.gramWeight })) }) : json(404, {});
   }
-  if (url.startsWith('https://world.openfoodfacts.org/')) {
+  if (url.startsWith('https://world.openfoodfacts.org/') || url.startsWith('https://search.openfoodfacts.org/')) {
     web.push({ url, ua: init.headers['User-Agent'] });
     const p = { code: '0062300000000', product_name: 'Double Big Mac', brands: "McDonald's", serving_size: '1 burger (269 g)', serving_quantity: 269,
       nutriments: { 'energy-kcal_100g': 260, proteins_100g: 14.5, carbohydrates_100g: 16.7, fat_100g: 15.2, sodium_100g: 0.48 } };
     if (url.includes('/api/v2/product/')) return json(200, { product: p });
-    return json(200, { products: /double/i.test(decodeURIComponent(url)) ? [p, { code: '1', product_name: 'No numbers' }] : [] });
+    // The old search refuses anonymous callers now; the search service answers with hits (brands as a list).
+    if (url.includes('/cgi/search.pl')) return new Response('<html>Page temporarily unavailable</html>', { status: 503 });
+    const q = decodeURIComponent(url);
+    return json(200, { hits: /double/i.test(q) ? [{ ...p, brands: ["McDonald's"] }, { code: '1', product_name: 'No numbers' }]
+      : /muesli/i.test(q) ? [{ code: '5099856000017', product_name: 'Muesli', brands: ['LifeForce Original Muesli'], nutriments: { 'energy-kcal_100g': 401, proteins_100g: 9.7, carbohydrates_100g: 67, fat_100g: 8.4, sodium_100g: 0 } }] : [] });
   }
   const body = JSON.parse(init.body);
   asked.push({ url, auth: init.headers.Authorization, body });
@@ -478,4 +482,36 @@ test('a longer description still finds the food: "sausage and egg breakfast sand
   // Short searches still need every word.
   assert.equal(N.searchFoods('egg zzqx').length, 0);
   assert.equal(N.searchFoods('eggs')[0].name, 'Egg, whole, raw, fresh');
+});
+
+
+test('muesli (Oct 27): USDA asked from his browser and read here; Open Food Facts from its search service; picked without a second trip', async () => {
+  // USDA's search results exactly as the browser gets them (shape checked against the live API).
+  const raw = [{ fdcId: 474366, description: 'MUESLI', dataType: 'Branded', brandOwner: 'DORSET CEREALS', servingSizeUnit: 'g', servingSize: 100.0, householdServingFullText: '100 GRM', foodMeasures: [],
+    foodNutrients: [{ nutrientId: 1003, nutrientName: 'Protein', nutrientNumber: '203', unitName: 'G', value: 9.6 }, { nutrientId: 1004, nutrientNumber: '204', unitName: 'G', value: 7.9 },
+      { nutrientId: 1005, nutrientNumber: '205', unitName: 'G', value: 62.9 }, { nutrientId: 1008, nutrientNumber: '208', unitName: 'KCAL', value: 392 }, { nutrientId: 1093, nutrientNumber: '307', unitName: 'MG', value: 200 }] }];
+  const cfg = (await call('GET', '/fitness/nutrition/foods/online-config')).body;
+  assert.equal(cfg.fdc_key, 'DEMO_KEY');
+  const n = web.length;
+  const r = await call('POST', '/fitness/nutrition/foods/online', { query: 'muesli', fdc_foods: raw });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.online_problems, []);
+  const usda = r.body.online.find((c) => c.key === 'fdc:474366');
+  assert.equal(usda.name, 'Muesli');
+  assert.equal(usda.brand, 'Dorset Cereals');
+  assert.equal(usda.per_100g.kcal, 392);
+  assert.ok(r.body.online.some((c) => c.key === 'off:5099856000017' && c.brand === 'LifeForce Original Muesli'));
+  assert.ok(!web.slice(n).some((w) => w.url.includes('api.nal.usda.gov')), 'the server did not ask USDA');
+  assert.ok(web.slice(n).some((w) => w.url.startsWith('https://search.openfoodfacts.org/search?q=muesli')));
+  // Picked: saved from the browser's copy.
+  const m = web.length;
+  const imp = await call('POST', '/fitness/nutrition/foods/import', { key: 'fdc:474366', raw: raw[0] });
+  assert.equal(imp.status, 201, JSON.stringify(imp.body));
+  assert.equal(web.length, m);
+  assert.equal(imp.body.per_100g.kcal, 392);
+  // A raw that doesn't match the key is ignored (fetched instead).
+  assert.equal((await call('POST', '/fitness/nutrition/foods/import', { key: 'fdc:2705964', raw: raw[0] })).body.name, 'Double cheeseburger, from fast food, two patties');
+  // No browser results: the server asks USDA itself, as before.
+  const s = await call('POST', '/fitness/nutrition/foods/online', { query: 'double cheese', fdc_foods: null });
+  assert.ok(s.body.online.some((c) => c.key.startsWith('fdc:')));
 });

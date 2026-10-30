@@ -61,6 +61,24 @@
     if (!s) return n0(f.per_100g.kcal) + ' kcal /100 g';
     return esc(s.name) + ' (' + Math.round(s.grams) + ' g) · ' + n0(f.per_100g.kcal * s.grams / 100) + ' kcal · ' + Math.round(f.per_100g.protein_g * s.grams / 100) + ' g P';
   }
+  // USDA is asked from this browser, on his own connection (Oct 27: from the server, the shared address runs out of
+  // USDA's allowance); the server reads the results the same way as its own. If this fails, the server asks instead.
+  var onlineCfg = null, fdcRaw = {}, onlineCache = {};
+  async function onlineSearch(text) {
+    if (onlineCache[text]) return onlineCache[text];
+    var raw = null;
+    try {
+      onlineCfg = onlineCfg || await api('GET', '/foods/online-config');
+      var ctl = new AbortController(); var tm = setTimeout(function () { ctl.abort(); }, 8000);
+      var r = await fetch(onlineCfg.fdc_search + '?api_key=' + encodeURIComponent(onlineCfg.fdc_key), { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: text, dataType: onlineCfg.data_types, pageSize: 40 }), signal: ctl.signal });
+      clearTimeout(tm);
+      if (r.ok) { raw = ((await r.json()).foods || []); raw.forEach(function (f) { fdcRaw['fdc:' + f.fdcId] = f; }); }
+    } catch (e) { raw = null; }
+    var out = await api('POST', '/foods/online', { query: text, fdc_foods: raw });
+    onlineCache[text] = out;
+    return out;
+  }
   function foodPicker(el, opts) {
     opts = opts || {};
     el.innerHTML = '<div class="trk-row"><div class="trk-field" style="flex:2"><label>' + (opts.label || 'Food') + '</label><input type="search" class="nu-q" placeholder="eggs, double big mac, sardines…" autocomplete="off" enterkeyhint="search"></div></div>' +
@@ -98,7 +116,10 @@
         wire(r.foods, 'l', out);
         more.innerHTML = text.length >= 3 ? '<p class="trk-note">Checking USDA and Open Food Facts…</p>' : '';
         if (text.length < 3) return;
-        var o = await api('GET', '/foods/search?online=1&limit=1&q=' + encodeURIComponent(text));
+        // Only once he's stopped typing: every online search counts against USDA's hourly allowance.
+        await new Promise(function (r) { setTimeout(r, 600); });
+        if (my !== seq) return;
+        var o = await onlineSearch(text);
         if (my !== seq) return;
         var list = o.online || [];
         more.innerHTML = (list.length ? '<div class="nu-more">More foods</div>' + list.slice(0, 10).map(function (f, i) { return row(f, i, 'o'); }).join('') : '') +
@@ -116,7 +137,7 @@
     // Online picks are saved as his foods first; built-in ones fetch their serving weights.
     async function open(f, group, quick) {
       try {
-        var food = group === 'o' ? await api('POST', '/foods/import', { key: f.key }) : (!f.serving && f.source === 'usda' ? await api('GET', '/foods/' + encodeURIComponent(f.key)) : f);
+        var food = group === 'o' ? await api('POST', '/foods/import', { key: f.key, raw: fdcRaw[f.key] }) : (!f.serving && f.source === 'usda' ? await api('GET', '/foods/' + encodeURIComponent(f.key)) : f);
         if (quick && food.serving) { out.innerHTML = ''; more.innerHTML = ''; q.value = ''; return opts.done({ food: food, qty: 1, unit: food.serving.name, grams: food.serving.grams, el: amt, quick: true }); }
         amount(food);
       } catch (e) { fail(e); }
