@@ -5,7 +5,7 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "test": "node tests/api.test.js && node tests/full.test.js && node --test tests/strength.test.js tests/sentinel.test.js tests/sentinelRead.test.js tests/sentinelActions.test.js tests/workouts.test.js tests/coach.test.js tests/percentiles.test.js tests/nutrition.test.js tests/login.test.js tests/coachChat.test.js tests/wardrobe.test.js"
+    "test": "node tests/api.test.js && node tests/full.test.js && node --test tests/strength.test.js tests/sentinel.test.js tests/sentinelRead.test.js tests/sentinelActions.test.js tests/workouts.test.js tests/coach.test.js tests/percentiles.test.js tests/nutrition.test.js tests/login.test.js tests/coachChat.test.js tests/wardrobe.test.js tests/figure.test.js"
   },
   "keywords": [],
   "author": "",

@@ -8,11 +8,14 @@
 // and the wardrobe's repairs as tasks (prefix "wardrobe:", 2026-10-31).
 //
 // Triggers: ~60 s after any successful POST/PUT/DELETE under /api
-// (debounced), ~30 s after boot, and every 6 h. Failures retry with backoff
+// (debounced), ~30 s after boot, every 15 min, and at 00:01 America/Regina
+// so the day's values (today's workout, nutrition) roll over. Failures retry with backoff
 // 1 → 2 → 4 … → 60 min. Pushing never blocks a request and never throws out
 // of this module. If SENTINEL_URL or SENTINEL_API_KEY is unset it logs once
 // and does nothing.
 const strength = require('./strength');
+const figure = require('./figure');
+const { loadTodayWorkout } = require('./todayWorkout');
 
 const REGINA_OFFSET_MS = -6 * 3600 * 1000; // America/Regina: UTC−6, no DST
 
@@ -27,6 +30,13 @@ function reginaWeek(now) {
   const monday = new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() - (day === 0 ? 6 : day - 1)));
   const sunday = new Date(monday); sunday.setUTCDate(sunday.getUTCDate() + 6);
   return { start: monday.toISOString().slice(0, 10), end: sunday.toISOString().slice(0, 10) };
+}
+
+// Milliseconds from now until 00:01 next day in Regina.
+function msUntilReginaRollover(now, afterMs = 60 * 1000) {
+  const local = new Date(now.getTime() + REGINA_OFFSET_MS);
+  const nextMidnightLocal = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1);
+  return nextMidnightLocal - REGINA_OFFSET_MS - now.getTime() + afterMs;
 }
 
 function isoDate(d) {
@@ -149,6 +159,17 @@ async function buildSummary(pool, now = new Date()) {
       week: { base_kcal: day.week.base_kcal, decision: day.week.decision, rationale: day.week.rationale },
     };
   } catch (err) { /* no nutrition data: the tile goes without */ }
+  // The 3D figure (body3d.js setBody/setSets inputs) and today's session, for Sentinel's fitness window.
+  try {
+    const [prof, gym] = await Promise.all([
+      pool.query('SELECT height_in FROM fitness_profile WHERE id = 1'),
+      pool.query('SELECT entry_date, movement FROM fitness_gymnastics WHERE entry_date >= $1 AND entry_date <= $2', [wk.start, wk.end]),
+    ]);
+    out.summary.figure = figure.buildFigure({ profile: prof.rows[0], measurements, lifts: data.lifts, gymnastics: gym.rows, week: wk });
+  } catch (err) { /* the window goes without the figure */ }
+  try {
+    out.summary.today_workout = await loadTodayWorkout(pool, reginaDate(now));
+  } catch (err) { /* no workouts table: leave it out */ }
   return out;
 }
 
@@ -164,7 +185,8 @@ function createSentinelPusher({
   debounceMs = 60 * 1000,
   maxWaitMs = 5 * 60 * 1000, // a steady stream of writes still pushes at least every 5 min
   bootDelayMs = 30 * 1000,
-  intervalMs = 6 * 3600 * 1000,
+  intervalMs = 15 * 60 * 1000, // fresh even with no writes (was 6 h; Sentinel's fitness window, 2026-10-31)
+  rolloverAfterMs = 60 * 1000, // push at 00:01 Regina so "today" rolls over
   backoffMinMs = 60 * 1000,
   backoffMaxMs = 60 * 60 * 1000,
   timeoutMs = 15 * 1000,
@@ -172,7 +194,7 @@ function createSentinelPusher({
   const baseUrl = (env.SENTINEL_URL || '').trim().replace(/\/+$/, '');
   const apiKey = (env.SENTINEL_API_KEY || '').trim();
   const enabled = Boolean(baseUrl && apiKey);
-  const state = { timer: null, interval: null, running: false, rerun: false, pendingSince: null, failures: 0, retryAt: 0, lastSuccessAt: null, lastError: null };
+  const state = { timer: null, interval: null, rollover: null, running: false, rerun: false, pendingSince: null, failures: 0, retryAt: 0, lastSuccessAt: null, lastError: null };
   let warned = false;
 
   function warnDisabled() {
@@ -254,12 +276,24 @@ function createSentinelPusher({
       if (!state.timer) arm(Math.max(Date.now(), state.retryAt));
     }, intervalMs);
     if (state.interval.unref) state.interval.unref();
+    armRollover();
+  }
+
+  function armRollover() {
+    if (state.rollover) clearTimeout(state.rollover);
+    state.rollover = setTimeout(() => {
+      state.rollover = null;
+      arm(Math.max(Date.now(), state.retryAt));
+      armRollover();
+    }, msUntilReginaRollover(new Date(), rolloverAfterMs));
+    if (state.rollover.unref) state.rollover.unref();
   }
 
   function stop() {
     if (state.timer) clearTimeout(state.timer);
     if (state.interval) clearInterval(state.interval);
-    state.timer = null; state.interval = null;
+    if (state.rollover) clearTimeout(state.rollover);
+    state.timer = null; state.interval = null; state.rollover = null;
   }
 
   // Express middleware: schedule a push after successful POST/PUT/PATCH/DELETE.
@@ -275,4 +309,4 @@ function createSentinelPusher({
   return { enabled, state, start, stop, notifyWrite, middleware, run };
 }
 
-module.exports = { buildSummary, summarize, createSentinelPusher, reginaDate, reginaWeek, loadStrengthInputs };
+module.exports = { buildSummary, summarize, createSentinelPusher, reginaDate, reginaWeek, loadStrengthInputs, msUntilReginaRollover };
