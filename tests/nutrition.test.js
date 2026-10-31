@@ -281,8 +281,9 @@ test('groceries are two-way with Sentinel: snapshot out, ticked off back in (int
   const p = createSentinelPusher({ pool, env: { SENTINEL_URL: 'https://s.test', SENTINEL_API_KEY: 'k' }, logger: { log() {}, error() {} },
     fetchImpl: async (url, init) => { posts.push({ url, body: JSON.parse(init.body) }); return new Response('{}', { status: 200 }); } });
   await p.run();
-  assert.deepEqual(posts.map((x) => x.url), ['https://s.test/v1/sources/self_hub/summary', 'https://s.test/v1/sources/self_hub/snapshot']);
+  assert.deepEqual(posts.map((x) => x.url), ['https://s.test/v1/sources/self_hub/summary', 'https://s.test/v1/sources/self_hub/snapshot', 'https://s.test/v1/sources/self_hub/snapshot']);
   assert.equal(posts[1].body.prefix, 'grocery:');
+  assert.equal(posts[2].body.prefix, 'wardrobe:');
   // The tile shows today's eating against today's target.
   const n = posts[0].body.summary.nutrition;
   assert.equal(n.target.protein_g, 175);

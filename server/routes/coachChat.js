@@ -15,8 +15,9 @@ const coach = require('../lib/coach');
 const guide = require('../lib/coachGuide');
 const { listRoutes, validate } = require('./sentinelActions');
 
-const COACHES = ['trainer', 'nutritionist'];
-const OTHER = { trainer: 'nutritionist', nutritionist: 'trainer' };
+const COACHES = ['trainer', 'nutritionist', 'stylist'];
+// Each coach reads one other's memory: the stylist the trainer's (his body, his training, his goals).
+const OTHER = { trainer: 'nutritionist', nutritionist: 'trainer', stylist: 'trainer' };
 const MAX_STEPS = 14; // calls to Sentinel in one reply
 const HISTORY_ROWS = 60;
 const RESULT_CHARS = 14000; // one tool result, as the coach sees it
@@ -58,15 +59,20 @@ const TOOLS = {
     description: "Everything the trainer's plans use, for a date (default today): goals, physique evidence, the data ledger (tests due, numbers missing), bodyweight, measurements, strength scores, e1RMs, gymnastics bests, engine baselines, CrossFit percentiles, sets this week, the last 28 days of training, known movements and the session schema.",
     input_schema: { type: 'object', properties: { date: { type: 'string' } } },
   },
+  wardrobe: {
+    name: 'wardrobe',
+    description: "His wardrobe as it is: every item (id, category, type, brand, colour, size, season, condition, style, warmth 1-5, notes, status Wear/Repair/Retired/Wishlist, price), what he wore lately, his saved outfits, the gaps, his sizes and body (measurements, bodyweight, physique goal), and what the rules would put him in today (from the farm's forecast and his day).",
+    input_schema: { type: 'object', properties: { date: { type: 'string' }, occasion: { type: 'string', enum: ['farm', 'town', 'dress', 'gym'] } } },
+  },
   nutrition: {
     name: 'nutrition',
     description: "The nutrition picture for a date (default today): the day's targets and what he's eaten, this week's targets decision and meal plan, his recipes (ids, per serving), the pantry and the open grocery list.",
     input_schema: { type: 'object', properties: { date: { type: 'string' } } },
   },
 };
-const toolsFor = (c) => [TOOLS.self_hub_api, TOOLS.list_routes, c === 'trainer' ? TOOLS.athlete : TOOLS.nutrition, TOOLS.remember, TOOLS.forget];
+const toolsFor = (c) => [TOOLS.self_hub_api, TOOLS.list_routes, c === 'trainer' ? TOOLS.athlete : c === 'stylist' ? TOOLS.wardrobe : TOOLS.nutrition, TOOLS.remember, TOOLS.forget];
 
-function createCoachChatRouter({ pool, workouts = null, nutrition = null, env = process.env, fetchImpl, retryMs } = {}) {
+function createCoachChatRouter({ pool, workouts = null, nutrition = null, wardrobe = null, env = process.env, fetchImpl, retryMs } = {}) {
   const router = express.Router();
   const q = async (sql, params) => (await pool.query(sql, params)).rows;
   const callOpts = { env, ...(fetchImpl ? { fetchImpl } : {}), ...(retryMs != null ? { retryMs } : {}) };
@@ -154,6 +160,7 @@ function createCoachChatRouter({ pool, workouts = null, nutrition = null, env = 
         return listRoutes(appRef).filter((r) => !isChatPath(r.path) && (!word || r.path.toLowerCase().includes(word))).map((r) => `${r.method} ${r.path}`).join('\n') || 'No routes match.';
       }
       if (b.name === 'athlete' && c === 'trainer' && workouts) return JSON.stringify(await workouts.athleteContext(/^\d{4}-\d{2}-\d{2}$/.test(i.date || '') ? i.date : reginaToday()));
+      if (b.name === 'wardrobe' && c === 'stylist' && wardrobe) return JSON.stringify(await wardrobePicture(/^\d{4}-\d{2}-\d{2}$/.test(i.date || '') ? i.date : reginaToday(), i.occasion));
       if (b.name === 'nutrition' && c === 'nutritionist' && nutrition) return JSON.stringify(await nutritionPicture(/^\d{4}-\d{2}-\d{2}$/.test(i.date || '') ? i.date : reginaToday()));
       if (b.name !== 'self_hub_api') return { error: `No tool called ${b.name}` };
       const method = String(i.method || '').toUpperCase();
@@ -188,6 +195,19 @@ function createCoachChatRouter({ pool, workouts = null, nutrition = null, env = 
       groceries_open: groceries.open.map((g) => ({ id: g.id, name: g.name, quantity: g.quantity })),
     };
   }
+  async function wardrobePicture(date, occasion) {
+    const W = require('../lib/wardrobe');
+    const [items, worn, outfits, today] = await Promise.all([wardrobe.items(), wardrobe.lastWorn(), wardrobe.outfits(), wardrobe.today({ date, occasion: occasion || 'farm', weather: null })]);
+    const body = (await q('SELECT entry_date, weight_lb FROM fitness_bodyweight ORDER BY entry_date DESC LIMIT 1').catch(() => []))[0];
+    const m = (await q('SELECT * FROM fitness_measurements ORDER BY entry_date DESC LIMIT 1').catch(() => []))[0];
+    const prof = (await q('SELECT height_in, physique_target, bodyweight_goal_lb, body_fat_target FROM fitness_profile WHERE id = 1').catch(() => []))[0] || {};
+    const keep = (o) => Object.fromEntries(Object.entries(o || {}).filter(([k, v]) => v != null && !['id', 'entry_date', 'created_at'].includes(k)).map(([k, v]) => [k, isNaN(Number(v)) ? v : Number(v)]));
+    return {
+      items: items.map((i) => ({ ...i, last_worn: worn[i.id] || null })), outfits, gaps: W.gaps(items), stats: W.stats(items), today,
+      body: { weight_lb: body ? Number(body.weight_lb) : null, measurements_in: keep(m), height_in: prof.height_in == null ? null : Number(prof.height_in),
+        goal: 'Continuous lean gain: getting bigger through the chest, shoulders and back (V-taper), about 8-10% body fat', physique_target: prof.physique_target || null, bodyweight_goal_lb: prof.bodyweight_goal_lb == null ? null : Number(prof.bodyweight_goal_lb) },
+    };
+  }
   async function snapshot(c) {
     const today = reginaToday();
     try {
@@ -195,6 +215,12 @@ function createCoachChatRouter({ pool, workouts = null, nutrition = null, env = 
         const ws = await q("SELECT id, workout_date, title, status FROM fitness_workouts WHERE workout_date >= $1 AND workout_date <= $2 ORDER BY workout_date, id", [addDays(today, -3), addDays(today, 7)]);
         const ymd = (d) => (d instanceof Date ? (d.getHours() === 0 && d.getMinutes() === 0 ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : d.toISOString().slice(0, 10)) : String(d).slice(0, 10));
         return { workouts_around_today: ws.map((w) => ({ id: w.id, date: ymd(w.workout_date), title: w.title, status: w.status })) };
+      }
+      if (c === 'stylist') {
+        if (!wardrobe) return null;
+        const [items, t] = await Promise.all([wardrobe.items(), wardrobe.today({ date: today, occasion: 'farm', weather: null })]);
+        return { wardrobe_items: items.filter((i) => i.status !== 'Retired').length, wishlist: items.filter((i) => i.status === 'Wishlist').map((i) => `${i.id} ${i.type}`),
+          today: { weather: t.weather, dress_for_c: t.dress_for_c, day: t.day, rules_pick: t.pieces.map((p) => `${p.role}: ${p.id} ${p.type}`), notes: t.notes } };
       }
       if (nutrition) {
         const d = await nutrition.day(today);

@@ -2,10 +2,11 @@
 // ask for, and they remember. window.SelfHubCoach.mount(el, 'trainer' | 'nutritionist', { switcher: true })
 (function () {
   var API = '/api/fitness/coach/';
-  var NAMES = { trainer: 'Trainer', nutritionist: 'Nutritionist' };
+  var NAMES = { trainer: 'Trainer', nutritionist: 'Nutritionist', stylist: 'Stylist' };
   var HINTS = {
     trainer: 'e.g. "Shoulder\'s sore — change tomorrow" · "I\'m harvesting Mon–Wed" · "Why squats today?" · "Log 5×5 back squat at 245"',
     nutritionist: 'e.g. "Had a Double Big Mac for lunch" · "Plan next week, I\'m in the field Tue–Thu" · "I\'m out of oysters" · "Bump my protein to 190"',
+    stylist: 'e.g. "What should I buy for winter?" · "Outfit for a wedding Saturday" · "I bought Blundstones" · "Retire the stained chinos"',
   };
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   // A little formatting for the coach's words: **bold**, "- " bullets, line breaks.
@@ -48,7 +49,7 @@
     function render(d) {
       var items = d.items || [];
       var busy = d.turn && d.turn.status === 'running';
-      var html = items.length ? '' : '<p class="trk-note cc-empty">Talk to your ' + NAMES[state.coach].toLowerCase() + '. Ask for anything — it can change your ' + (state.coach === 'trainer' ? 'sessions, week and logs' : 'log, meal plan, recipes, pantry, groceries and targets') + ' itself, and it remembers what matters.</p>';
+      var html = items.length ? '' : '<p class="trk-note cc-empty">Talk to your ' + NAMES[state.coach].toLowerCase() + '. Ask for anything — it can change your ' + (state.coach === 'trainer' ? 'sessions, week and logs' : state.coach === 'stylist' ? 'wardrobe, outfits and wishlist' : 'log, meal plan, recipes, pantry, groceries and targets') + ' itself, and it remembers what matters.</p>';
       items.forEach(function (m) {
         if (m.role === 'user') html += '<div class="cc-msg cc-me">' + fmt(m.text) + '</div>';
         else if (m.role === 'coach') html += '<div class="cc-msg cc-them">' + fmt(m.text) + '</div>';

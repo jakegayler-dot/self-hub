@@ -696,6 +696,31 @@ const COLLECTIONS = [
       return (await rowsOf(pool, 'SELECT id, coach, text, updated_at FROM coach_memory ORDER BY coach, id')).map((m) => ({ id: m.id, coach: m.coach, text: m.text, updated_on: ymd(new Date(m.updated_at)) }));
     },
   },
+  {
+    name: 'wardrobe',
+    description: "Jake's clothes (his wardrobe in Self Hub): category, type, brand, colour, size, season, condition, style, warmth 1-5, notes, status (Wear, Repair, Retired, Wishlist = to buy) and when he last wore it. Use for \"what should I wear\", \"do I have a…\", what needs repairing or what's on his clothes wishlist.",
+    kind: 'list',
+    search: ['type', 'brand', 'colour', 'notes', 'category', 'style'],
+    custom: { category: enumFilter('category', ['Top', 'Bottom', 'Dress', 'Outerwear', 'Footwear', 'Accessory', 'Sleepwear']), status: enumFilter('status', ['Wear', 'Repair', 'Retired', 'Wishlist']) },
+    fields: ['id', 'category', 'type', 'brand', 'colour', 'size', 'season', 'condition', 'style', 'warmth', 'status', 'notes', 'last_worn', 'price_cad'],
+    async load({ pool }) {
+      const S = require('./wardrobe').createWardrobeStore(pool);
+      const [items, worn] = await Promise.all([S.items(), S.lastWorn()]);
+      return items.map((i) => ({ id: i.id, category: i.category, type: i.type, brand: i.brand, colour: i.colour, size: i.size, season: i.season, condition: i.condition,
+        style: i.style, warmth: i.warmth, status: i.status, notes: i.notes, last_worn: worn[i.id] || null, price_cad: i.price_cad }));
+    },
+  },
+  {
+    name: 'wardrobe_outfits',
+    description: "Outfits saved in Jake's wardrobe (by him or his stylist), with the pieces in each and what they're for (farm, town, dressed up, gym).",
+    kind: 'list',
+    search: ['name', 'occasion', 'pieces'],
+    fields: ['id', 'name', 'occasion', 'pieces', 'notes', 'source'],
+    async load({ pool }) {
+      return (await require('./wardrobe').createWardrobeStore(pool).outfits()).map((o) => ({ id: o.id, name: o.name, occasion: o.occasion, notes: o.notes, source: o.source,
+        pieces: o.items.map((i) => (i.missing ? `${i.id} (gone)` : [i.brand, i.colour, i.type].filter(Boolean).join(' '))).join('; ') }));
+    },
+  },
 ];
 const BY_NAME = new Map(COLLECTIONS.map((c) => [c.name, c]));
 

@@ -77,18 +77,23 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 function loginPage(next, error) {
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Self Hub — sign in</title>
+<meta name="theme-color" content="#15110c">
+<link href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:ital,wght@0,400;0,500;1,400&family=Marcellus&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#14181d;--panel:#1b2129;--panel2:#212832;--line:#2c3540;--line2:#3a4552;--ink:#e7ebef;--ink2:#9aa7b4;--ink3:#5d6a78;--amber:#e0a458;--amber-dim:#8a6c3e;--amber-bg:#2b2013;--red:#c9615a}
-*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-main{max-width:360px;margin:12vh auto 0;padding:0 16px}
-h1{font-size:15px;font-weight:500;letter-spacing:.04em;margin:0 0 4px}
-p{font-size:12px;color:var(--ink3);margin:0 0 20px;font-family:ui-monospace,Menlo,Consolas,monospace}
-label{display:block;font-size:11px;color:var(--ink2);margin:12px 0 5px}
-input{width:100%;background:var(--panel2);border:1px solid var(--line2);border-radius:6px;color:var(--ink);padding:11px 12px;font-size:16px}
-button{width:100%;margin-top:18px;background:var(--amber-bg);border:1px solid var(--amber-dim);color:var(--amber);padding:12px;border-radius:6px;font-size:15px;cursor:pointer}
-.err{color:var(--red);font-size:13px;margin-top:12px}
+:root{--bg:#15110c;--panel:#1f1912;--panel2:#282017;--line:#3a2e21;--line2:#4e3f2c;--ink:#efe4cc;--ink2:#bfae8c;--ink3:#857559;--amber:#e0a84a;--amber-dim:#8f6a2a;--red:#c25a43}
+*{box-sizing:border-box}html,body{margin:0;min-height:100vh;color:var(--ink);font-family:'Alegreya Sans',-apple-system,'Segoe UI',sans-serif;background:radial-gradient(900px 600px at 50% 0%,rgba(224,168,74,.1),transparent 65%),var(--bg)}
+main{max-width:380px;margin:14vh auto 0;padding:0 20px}
+svg{width:46px;height:46px;fill:none;stroke:var(--amber);stroke-width:1.3;display:block;margin-bottom:18px}
+h1{font-family:'Marcellus',Georgia,serif;font-weight:400;font-size:34px;letter-spacing:.01em;margin:0 0 6px}
+p{font-size:15px;color:var(--ink3);margin:0 0 26px;font-style:italic}
+label{display:block;font-size:14px;color:var(--ink2);margin:14px 0 6px}
+input{width:100%;background:var(--panel2);border:1px solid var(--line2);border-radius:4px;color:var(--ink);padding:12px;font-size:16px;font-family:inherit}
+input:focus{outline:2px solid var(--amber);outline-offset:1px}
+button{width:100%;margin-top:22px;background:linear-gradient(180deg,#4a3415,#33240f);border:1px solid #a47a32;color:#f3c873;padding:13px;border-radius:4px;font-size:16px;font-family:inherit;cursor:pointer}
+.err{color:var(--red);font-size:14px;margin-top:14px}
 </style></head><body><main>
-<h1>SELF HUB</h1><p>Sign in once; this device stays signed in.</p>
+<svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="15.5"/><circle cx="17" cy="17" r="11" stroke-opacity=".45"/><path d="M17 3.5 20 17 17 30.5 14 17Z" fill="rgba(224,168,74,.25)"/><path d="M3.5 17h4M26.5 17h4"/></svg>
+<h1>Self Hub</h1><p>Sign in once. This device stays signed in.</p>
 <form method="post" action="/login">
 <input type="hidden" name="next" value="${esc(next)}">
 <label for="u">Username</label><input id="u" name="username" autocomplete="username" autocapitalize="none" required>

@@ -48,4 +48,15 @@ Pantry: GET /nutrition/pantry · POST /nutrition/pantry { food_key, qty, unit, m
 Groceries (also on Sentinel's shopping list): GET /nutrition/groceries · POST /nutrition/groceries { name, quantity?, food_key?, grams? } · PATCH /nutrition/groceries/:id { status: open|bought, name?, quantity? } · DELETE /nutrition/groceries/:id · POST /nutrition/groceries/from-plan
 Training (read only for you): GET /workouts?from=&to=`;
 
-module.exports = { trainer: TRAINER, nutritionist: NUTRITIONIST };
+const STYLIST = `${COMMON}
+His wardrobe (his clothes only):
+  GET /wardrobe  items (id, category Top|Bottom|Dress|Outerwear|Footwear|Accessory|Sleepwear, type, brand, colour, size, season Summer|Fall/Winter|Winter|All-Season|Unknown,
+    condition New|Like New|Excellent|Good|Fair|Used|Well Used, style Casual|Smart Casual|Dress|Athletic|Farm|Loungewear|Formal, warmth 1-5, notes, status Wear|Repair|Retired|Wishlist, price_cad, link), stats, gaps
+  POST /wardrobe/items { category, type, brand?, colour?, size?, season?, condition?, style?, warmth?, notes?, status?, price_cad?, link? }  a new piece; status Wishlist for something to buy (say why in notes, a price, a link if you have one)
+  PUT /wardrobe/items/:id { any of those }  e.g. bought it: { status: "Wear", condition: "New" }; fixed: { status: "Wear" }; done with it: { status: "Retired" }
+  DELETE /wardrobe/items/:id
+  GET /wardrobe/today?date=&occasion=farm|town|dress|gym  the rules' pick for the day (forecast at the farm, his training) · POST /wardrobe/wear { date, item_ids }  what he wore
+  GET /wardrobe/outfits · POST /wardrobe/outfits { name, occasion?, item_ids, notes?, source: "stylist" } · PUT /wardrobe/outfits/:id · DELETE /wardrobe/outfits/:id
+Food and training (read only for you): GET /nutrition/day · GET /workouts?from=&to=`;
+
+module.exports = { trainer: TRAINER, nutritionist: NUTRITIONIST, stylist: STYLIST };

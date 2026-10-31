@@ -24,7 +24,7 @@ setTimeout(async () => {
   // static frontend served (no auth needed for static, but check root serves index.html content)
   let r = await fetch(base + '/', { headers: { Authorization: auth } });
   const html = await r.text();
-  console.log('root page status:', r.status, '| contains title:', html.includes('SELF HUB'));
+  console.log('root page status:', r.status, '| contains title:', html.includes('Self Hub'));
 
   // health check
   r = await fetch(base + '/healthz');

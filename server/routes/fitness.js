@@ -3,7 +3,8 @@ const { pool } = require('../db');
 const { buildSummary: buildSentinelSummary } = require('../lib/sentinel');
 const { computeWeeklyLoad: computeWeeklyLoadFor } = require('../lib/weeklyLoad');
 
-const computeWeeklyLoad = () => computeWeeklyLoadFor(pool);
+// The week turns over at midnight in Regina (UTC-6, no DST), not at midnight UTC (6 pm his Sunday).
+const computeWeeklyLoad = () => computeWeeklyLoadFor(pool, new Date(Date.now() - 6 * 3600e3));
 
 const router = express.Router();
 

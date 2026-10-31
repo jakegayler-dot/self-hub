@@ -5,6 +5,7 @@
 //
 // With it, the grocery list (Nutrition tab) as a snapshot of Self Hub's "grocery:" items for Sentinel's shopping list:
 //   POST {SENTINEL_URL}/v1/sources/self_hub/snapshot  { prefix: "grocery:", generated_at, items }
+// and the wardrobe's repairs as tasks (prefix "wardrobe:", 2026-10-31).
 //
 // Triggers: ~60 s after any successful POST/PUT/DELETE under /api
 // (debounced), ~30 s after boot, and every 6 h. Failures retry with backoff
@@ -159,6 +160,7 @@ function createSentinelPusher({
   build = () => buildSummary(pool),
   // The grocery list for Sentinel's shopping list (only with a real database behind it).
   snapshot = pool ? () => require('../routes/nutrition').createStore(pool).grocerySnapshot() : null,
+  snapshots = pool ? [() => require('../routes/wardrobe').createWardrobeStore(pool).sentinelSnapshot()] : [],
   debounceMs = 60 * 1000,
   maxWaitMs = 5 * 60 * 1000, // a steady stream of writes still pushes at least every 5 min
   bootDelayMs = 30 * 1000,
@@ -200,6 +202,7 @@ function createSentinelPusher({
   async function pushOnce() {
     await post('/v1/sources/self_hub/summary', await build());
     if (snapshot) await post('/v1/sources/self_hub/snapshot', await snapshot());
+    for (const more of snapshots) await post('/v1/sources/self_hub/snapshot', await more());
   }
 
   async function run() {
