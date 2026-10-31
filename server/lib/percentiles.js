@@ -43,11 +43,11 @@ const BENCHMARKS = [
   { id: 'clean_jerk', label: 'Clean & jerk', category: 'Olympic', unit: 'lb', better: 'high', ref: 'CF2019', anchors: quartiles([187.4, 225.1, 255.1], 'high'), source: { lift: 'Clean & Jerk' } },
   { id: 'snatch', label: 'Snatch', category: 'Olympic', unit: 'lb', better: 'high', ref: 'CF2019', anchors: quartiles([143.3, 172.0, 200.6], 'high'), source: { lift: 'Snatch' } },
   // ---- Gymnastics ----
-  { id: 'pullups', label: 'Max pull-ups', category: 'Gymnastics', unit: 'reps', better: 'high', ref: 'CF2019', anchors: quartiles([20, 30, 41], 'high'), source: { gym: ['Strict Pull-Ups', 'Butterfly Pull-Ups', 'Pull-Ups', 'Kipping Pull-Ups'] }, note: 'Profile stat is unbroken max reps, any style — your best single set of pull-ups.' },
+  { id: 'pullups', label: 'Max pull-ups', category: 'Gymnastics', unit: 'reps', better: 'high', ref: 'CF2019', anchors: quartiles([20, 30, 41], 'high'), source: { gym: ['Strict Pull-Ups', 'Butterfly Pull-Ups', 'Pull-Ups', 'Kipping Pull-Ups'], bench: ['Pull-Ups', 'Kipping Pull-Ups', 'Strict Pull-Ups', 'Butterfly Pull-Ups', 'Max Pull-Ups'] }, note: 'Profile stat is unbroken max reps, any style — your best single set of pull-ups.' },
   // ---- Cardio ----
-  { id: 'run_400', label: '400 m run', category: 'Cardio', unit: 's', better: 'low', ref: 'CF2019', anchors: quartiles([62, 70, 81], 'low'), source: { bench: ['400m run', '400 m run'], cond: { movement: 'Run', meters: 400 } } },
-  { id: 'run_5k', label: '5 km run', category: 'Cardio', unit: 's', better: 'low', ref: 'CF2019', anchors: quartiles([1229, 1350, 1502], 'low'), source: { bench: ['5k run', '5 km run'], cond: { movement: 'Run', meters: 5000 } } },
-  { id: 'row_500', label: '500 m row', category: 'Cardio', unit: 's', better: 'low', ref: 'C2_2025', anchors: [[92.0, 90], [97.7, 75], [105.0, 50], [115.5, 25], [127.8, 10]], source: { bench: ['500m row', '500 m row'], cond: { movement: 'Row', meters: 500 } } },
+  { id: 'run_400', label: '400 m run', category: 'Cardio', unit: 's', better: 'low', ref: 'CF2019', anchors: quartiles([62, 70, 81], 'low'), source: { bench: ['400m run', 'Run 400m'], cond: { movement: 'Run', meters: 400 } } },
+  { id: 'run_5k', label: '5 km run', category: 'Cardio', unit: 's', better: 'low', ref: 'CF2019', anchors: quartiles([1229, 1350, 1502], 'low'), source: { bench: ['5k run', '5000m run'], cond: { movement: 'Run', meters: 5000 } } },
+  { id: 'row_500', label: '500 m row', category: 'Cardio', unit: 's', better: 'low', ref: 'C2_2025', anchors: [[92.0, 90], [97.7, 75], [105.0, 50], [115.5, 25], [127.8, 10]], source: { bench: ['500m row'], cond: { movement: 'Row', meters: 500 } } },
   { id: 'row_2k', label: '2k row', category: 'Cardio', unit: 's', better: 'low', ref: 'C2_2025', anchors: [[417.0, 90], [443.7, 75], [475.6, 50], [520.5, 25], [577.2, 10]], source: { bench: ['2k row', '2000m row'], cond: { movement: 'Row', meters: 2000 } } },
   { id: 'row_5k', label: '5k row', category: 'Cardio', unit: 's', better: 'low', ref: 'C2_2025', anchors: [[1138.3, 90], [1192.9, 75], [1272.2, 50], [1376.7, 25], [1495.7, 10]], source: { bench: ['5k row', '5000m row'], cond: { movement: 'Row', meters: 5000 } } },
   // ---- Metcon (Rx only) ----
@@ -121,57 +121,107 @@ function ymd(d) {
   return d.toISOString().slice(0, 10);
 }
 const dayNum = (s) => Math.round(Date.parse(`${s}T00:00:00Z`) / 86400000);
-const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// Movement names as Jake actually logs them: "Pull-ups (Kipping)" is
+// "Kipping Pull-Ups", "Row 5k" is "5k row", "2000 m" is "2k", "Clean and
+// Jerk" is "Clean & Jerk". Lowercase words, hyphens joined, plurals dropped,
+// "and" dropped, distances unified, word order ignored.
+function canon(name) {
+  const words = String(name || '').toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/(?<=\w)-(?=\w)/g, '')
+    .replace(/(\d)\s*km\b/g, '$1k')
+    .replace(/\b(\d+)000\s*m\b/g, '$1k')
+    .replace(/(\d)\s+(m|k)\b/g, '$1$2')
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && w !== 'and')
+    .map((w) => (w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w));
+  return words.sort().join(' ');
+}
+
+// A benchmark-log row as (name, result) pairs. "Other" rows carry the name in
+// the result ("Row 5k: 20:38", "Pull-ups (Kipping): Max Reps: 10"), so those
+// also count as ("Row 5k", "20:38") and ("Pull-ups (Kipping)", "10").
+function benchmarkEntries(b) {
+  const out = [{ name: b.name, result: b.result }];
+  const parts = String(b.result || '').split(/:\s+/);
+  if (parts.length >= 2 && parts[0].trim()) out.push({ name: parts[0].trim(), result: parts[parts.length - 1].trim() });
+  return out;
+}
+
+const LIFT_WINDOW_DAYS = 60; // the strength profile's window
+const YEAR = 365;
 
 // rows: { lifts, gymnastics, conditioning, benchmarks, open, bodyweight }
-// Lifts use the best Epley e1RM in the last 60 days (same window as the
-// strength profile), falling back to the last 12 months (flagged). Everything
-// else uses your best result in the last 12 months.
+// The reference populations are lifetime bests (CrossFit profile stats,
+// Concept2 season bests), so each benchmark uses your BEST logged result,
+// however old: the best single or Epley e1RM for lifts, the most reps, the
+// fastest Rx time. A best older than 12 months is flagged stale, and the best
+// of the last 12 months (60 days for lifts) is given alongside as `recent`.
+// Easy sets (logged RPE 1-6 with more than one rep) aren't max efforts and
+// don't count as e1RM estimates.
 function computePercentiles(rows, today, strength) {
   const t = dayNum(today);
-  const within = (d, days) => { const n = t - dayNum(ymd(d)); return n >= 0 && n <= days; };
+  const ageDays = (d) => t - dayNum(ymd(d));
   const results = [];
 
   for (const bm of BENCHMARKS) {
-    let best = null; // { value, date, detail, stale }
-    const better = (v) => best == null || (bm.better === 'high' ? v > best.value : v < best.value);
     const src = bm.source;
+    const candidates = []; // { value, date, detail }
     if (src.lift) {
-      for (const days of [60, 365]) {
-        for (const l of rows.lifts || []) {
-          if (l.lift !== src.lift || !within(l.entry_date, days)) continue;
-          // A single is a real 1RM — Epley would add 3.3% to it. Reps > 1 are estimated.
-          const e = Number(l.reps) === 1 ? Number(l.load_lb) : Number(l.load_lb) * (1 + Number(l.reps) / 30);
-          if (better(e)) best = { value: e, date: ymd(l.entry_date), detail: Number(l.reps) === 1 ? `${Number(l.load_lb)} lb single` : `e1RM from ${Number(l.load_lb)} × ${l.reps}`, stale: days > 60 };
-        }
-        if (best) break;
+      const want = canon(src.lift);
+      for (const l of rows.lifts || []) {
+        if (canon(l.lift) !== want) continue;
+        const load = Number(l.load_lb); const reps = Number(l.reps); const rpe = Number(l.rpe);
+        if (!(load > 0) || !(reps >= 1)) continue;
+        if (reps > 1 && rpe >= 1 && rpe <= 6) continue;
+        // A single is a real 1RM — Epley would add 3.3% to it. Reps > 1 are estimated.
+        const e = reps === 1 ? load : load * (1 + reps / 30);
+        candidates.push({ value: e, date: ymd(l.entry_date), detail: reps === 1 ? `${load} lb single` : `e1RM from ${load} × ${reps}` });
       }
     }
     if (src.gym) {
+      const names = src.gym.map(canon);
       for (const g of rows.gymnastics || []) {
-        if (!src.gym.includes(g.movement) || !within(g.entry_date, 365)) continue;
+        if (!names.includes(canon(g.movement))) continue;
         const v = Number(g.reps);
-        if (better(v)) best = { value: v, date: ymd(g.entry_date), detail: g.movement };
+        if (v > 0) candidates.push({ value: v, date: ymd(g.entry_date), detail: g.movement });
+      }
+      // Bodyweight sets logged as lifts (load 0, e.g. "Pull-up" 0 × 7).
+      for (const l of rows.lifts || []) {
+        if (!names.includes(canon(l.lift)) || Number(l.load_lb) !== 0) continue;
+        const v = Number(l.reps);
+        if (v > 0) candidates.push({ value: v, date: ymd(l.entry_date), detail: l.lift });
       }
     }
     if (src.bench) {
-      const names = src.bench.map(norm);
+      const names = src.bench.map(canon);
       for (const b of rows.benchmarks || []) {
-        if (!names.includes(norm(b.name)) || !within(b.entry_date, 365)) continue;
         if (b.rx === false) continue; // percentiles are Rx
-        const v = parseResult(b.result);
-        if (v == null || v <= 0) continue;
-        if (better(v)) best = { value: v, date: ymd(b.entry_date), detail: 'benchmark log' };
+        for (const e of benchmarkEntries(b)) {
+          if (!names.includes(canon(e.name))) continue;
+          const v = parseResult(e.result);
+          if (v == null || v <= 0) continue;
+          candidates.push({ value: v, date: ymd(b.entry_date), detail: 'benchmark log' });
+          break;
+        }
       }
     }
     if (src.cond) {
+      const want = canon(src.cond.movement);
       for (const c of rows.conditioning || []) {
-        if (c.movement !== src.cond.movement || c.distance_m == null || c.duration_seconds == null || !within(c.entry_date, 365)) continue;
+        if (canon(c.movement) !== want || c.distance_m == null || c.duration_seconds == null) continue;
         if (Math.abs(Number(c.distance_m) - src.cond.meters) > src.cond.meters * 0.01) continue;
         const v = Number(c.duration_seconds);
-        if (v > 0 && better(v)) best = { value: v, date: ymd(c.entry_date), detail: 'conditioning log' };
+        if (v > 0) candidates.push({ value: v, date: ymd(c.entry_date), detail: 'conditioning log' });
       }
     }
+    const pick = (list) => list.reduce((a, c) => (a == null || (bm.better === 'high' ? c.value > a.value : c.value < a.value) ? c : a), null);
+    const valid = candidates.filter((c) => ageDays(c.date) >= 0); // nothing logged after "today"
+    const best = pick(valid);
+    if (best) best.stale = ageDays(best.date) > YEAR;
+    const recentDays = src.lift ? LIFT_WINDOW_DAYS : YEAR;
+    const recentBest = pick(valid.filter((c) => ageDays(c.date) <= recentDays));
     const pct = best ? percentileOf(bm, best.value) : null;
     const row = {
       id: bm.id, label: bm.label, category: bm.category, unit: bm.unit, better: bm.better,
@@ -179,6 +229,11 @@ function computePercentiles(rows, today, strength) {
       date: best ? best.date : null, detail: best ? best.detail : null, stale: !!(best && best.stale),
       percentile: pct, median: fmt(bm, bm.anchors.find((a) => a[1] === 50)[0]),
       reference: REFS[bm.ref].label, reference_url: REFS[bm.ref].url, note: bm.note || null,
+      // Your best of the last 12 months (60 days for lifts) when it isn't the headline best.
+      recent: recentBest && recentBest !== best ? {
+        value: Math.round(recentBest.value * 10) / 10, display: fmt(bm, recentBest.value), date: recentBest.date,
+        detail: recentBest.detail, percentile: percentileOf(bm, recentBest.value), window_days: recentDays,
+      } : null,
     };
     // Alongside: the bodyweight-ratio level for lifts (same maths as the Health tab).
     if (src.lift && best && strength) {
@@ -219,4 +274,4 @@ function computePercentiles(rows, today, strength) {
   return { as_of: today, categories, benchmarks: results, open, calisthenics_note: 'Only max pull-ups has CrossFit population data — HSPU, toes-to-bar, muscle-ups and handstand walk keep the bodyweight-ratio and best-set tracking.' };
 }
 
-module.exports = { BENCHMARKS, CATEGORIES, REFS, percentileOf, parseResult, computePercentiles, normCdf, normInv };
+module.exports = { BENCHMARKS, CATEGORIES, REFS, percentileOf, parseResult, computePercentiles, normCdf, normInv, canon, benchmarkEntries };

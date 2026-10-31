@@ -67,13 +67,13 @@ test('result parsing', () => {
   assert.equal(P.parseResult('5 rounds + 3'), null);
 });
 
-test('data selection: 60-day lifts, Rx-only WODs, conditioning distances, bodyweight level alongside', () => {
+test('data selection: best ever with the recent best alongside, Rx-only WODs, conditioning distances, bodyweight level', () => {
   const today = '2026-10-18';
   const rows = {
     lifts: [
-      { entry_date: '2026-09-30', lift: 'Deadlift', load_lb: 365, reps: 3 },   // e1RM 401.5
-      { entry_date: '2026-03-01', lift: 'Deadlift', load_lb: 420, reps: 1 },   // older than 60 days — ignored while a recent one exists
-      { entry_date: '2026-02-01', lift: 'Snatch', load_lb: 155, reps: 1 },     // only old → used, flagged stale
+      { entry_date: '2026-09-30', lift: 'Deadlift', load_lb: 365, reps: 3 },   // e1RM 401.5: the 60-day best
+      { entry_date: '2026-03-01', lift: 'Deadlift', load_lb: 420, reps: 1 },   // the best ever: the headline
+      { entry_date: '2025-02-01', lift: 'Snatch', load_lb: 155, reps: 1 },     // over a year old → used, flagged stale
     ],
     gymnastics: [{ entry_date: '2026-10-01', movement: 'Strict Pull-Ups', reps: 22 }],
     conditioning: [{ entry_date: '2026-10-05', movement: 'Row', distance_m: 2000, duration_seconds: 450 }],
@@ -87,10 +87,12 @@ test('data selection: 60-day lifts, Rx-only WODs, conditioning distances, bodywe
   };
   const r = P.computePercentiles(rows, today, strength);
   const b = Object.fromEntries(r.benchmarks.map((x) => [x.id, x]));
-  assert.equal(b.deadlift.value, 401.5);
-  assert.equal(b.deadlift.stale, false);
-  assert.ok(b.deadlift.bodyweight_level && b.deadlift.bodyweight_level.ratio === 2.59);
+  assert.equal(b.deadlift.value, 420);
+  assert.equal(b.deadlift.stale, false, 'under a year old');
+  assert.equal(b.deadlift.recent.value, 401.5, 'the 60-day best rides alongside');
+  assert.ok(b.deadlift.bodyweight_level && b.deadlift.bodyweight_level.ratio === 2.71);
   assert.equal(b.snatch.stale, true);
+  assert.equal(b.snatch.recent, null);
   assert.equal(b.snatch.value, 155, 'a single counts at face value, not Epley-inflated');
   assert.equal(b.fran.display, '3:40', 'the scaled 2:58 is ignored');
   assert.equal(b.fgb.value, 301, 'name matching is case-insensitive; null rx counts as Rx');
@@ -99,6 +101,78 @@ test('data selection: 60-day lifts, Rx-only WODs, conditioning distances, bodywe
   assert.equal(b.helen.percentile, null);
   assert.equal(r.categories.find((c) => c.category === 'Open').percentile, 75);
   assert.equal(r.categories.find((c) => c.category === 'Gymnastics').percentile, b.pullups.percentile);
+});
+
+// Shaped like Jake's real log (Oct 31, 2026): PRs from 2023-24, light recent
+// sets, "Other" benchmark rows carrying the name in the result, and pull-ups
+// logged as "Pull-ups (Kipping)". The old 60-day / 12-month windows showed a
+// 100 lb back squat (75 x 10 at RPE 3), a 237 lb deadlift and nothing else.
+test("Jake's log: names as he logs them, best ever, warm-ups aren't maxes", () => {
+  const rows = {
+    lifts: [
+      { entry_date: '2026-09-17', lift: 'Back Squat', load_lb: 75, reps: 10, rpe: 3 },
+      { entry_date: '2024-08-02', lift: 'Back Squat', load_lb: 300, reps: 1, rpe: 0 },
+      { entry_date: '2023-09-17', lift: 'Back Squat', load_lb: 328, reps: 1, rpe: 0 },
+      { entry_date: '2023-07-17', lift: 'Front Squat + Back Squat', load_lb: 400, reps: 1, rpe: 0 },
+      { entry_date: '2026-10-26', lift: 'Deadlift', load_lb: 215, reps: 3, rpe: 8.5 },
+      { entry_date: '2026-10-26', lift: 'Deadlift', load_lb: 95, reps: 5, rpe: 3 },
+      { entry_date: '2024-08-02', lift: 'Deadlift', load_lb: 335, reps: 1, rpe: 0 },
+      { entry_date: '2023-09-15', lift: 'Clean and Jerk', load_lb: 190, reps: 1, rpe: 0 },
+      { entry_date: '2024-07-31', lift: 'Snatch', load_lb: 140, reps: 1, rpe: 0 },
+      { entry_date: '2026-10-16', lift: 'Pull-up', load_lb: 0, reps: 7, rpe: 0 },
+    ],
+    gymnastics: [{ entry_date: '2024-07-31', movement: 'Pull-ups (Kipping)', reps: 20 }],
+    conditioning: [{ entry_date: '2026-09-12', movement: 'Weighted Vest (25lb) Run', distance_m: 1609.3, duration_seconds: 665 }],
+    benchmarks: [
+      { entry_date: '2023-07-29', name: 'Fran', result: '7:32', rx: true },
+      { entry_date: '2024-11-12', name: 'Fran', result: '10:00', rx: true },
+      { entry_date: '2024-08-01', name: 'Grace', result: '5:44', rx: true },
+      { entry_date: '2024-07-31', name: 'Helen', result: '8:46', rx: true },
+      { entry_date: '2023-09-17', name: '5k run', result: '22:23', rx: true },
+      { entry_date: '2024-08-01', name: 'Other', result: 'Row 5k: 20:38', rx: true },
+      { entry_date: '2023-11-13', name: 'Other', result: 'Pull-ups (Kipping): Max Reps: 10', rx: true },
+      { entry_date: '2025-02-24', name: 'Other', result: 'Run 1 mile: 7:00', rx: true },
+      { entry_date: '2025-03-04', name: 'Other', result: 'Amrap 12:: 4+8', rx: true },
+      { entry_date: '2026-10-29', name: 'Metcon: 8-minute AMRAP couplet', result: '6 rounds + 8', rx: true },
+    ],
+    bodyweight: [{ entry_date: '2026-10-20', weight_lb: 147 }],
+    open: [],
+  };
+  const r = P.computePercentiles(rows, '2026-10-31', strength);
+  const b = Object.fromEntries(r.benchmarks.map((x) => [x.id, x]));
+  assert.equal(b.back_squat.display, '328 lb');
+  assert.equal(b.back_squat.date, '2023-09-17');
+  assert.equal(b.back_squat.stale, true);
+  assert.equal(b.back_squat.recent, null, 'a 75 lb x 10 warm-up at RPE 3 is no estimate of a max');
+  assert.equal(b.back_squat.percentile, P.percentileOf(BY.back_squat, 328));
+  assert.ok(b.back_squat.percentile > 50);
+  assert.equal(b.deadlift.value, 335);
+  assert.equal(b.deadlift.recent.value, 236.5, 'e1RM from 215 x 3, the easy sets skipped');
+  assert.equal(b.clean_jerk.value, 190, '"Clean and Jerk" is "Clean & Jerk"');
+  assert.equal(b.snatch.value, 140);
+  assert.equal(b.pullups.value, 20, '"Pull-ups (Kipping)" counts');
+  assert.equal(b.pullups.recent.value, 7, 'a bodyweight "Pull-up" set logged as a lift counts');
+  assert.equal(b.row_5k.display, '20:38', 'an "Other" row carries the name in its result');
+  assert.equal(b.run_5k.display, '22:23');
+  assert.equal(b.run_400.percentile, null, 'a weighted-vest mile is not a 400 m run');
+  assert.equal(b.fran.display, '7:32', 'fastest, not the latest 10:00');
+  assert.ok(b.fran.percentile < 25, 'a slow time sits low');
+  assert.equal(b.grace.display, '5:44');
+  assert.equal(b.helen.display, '8:46');
+  assert.equal(b.row_2k.percentile, null);
+  for (const cat of ['Strength', 'Olympic', 'Gymnastics', 'Cardio', 'Metcon']) assert.ok(r.categories.find((c) => c.category === cat).percentile != null, cat);
+  // Nothing logged after "today" counts.
+  const early = P.computePercentiles(rows, '2023-08-01', strength);
+  assert.equal(early.benchmarks.find((x) => x.id === 'back_squat').display, null);
+});
+
+test('movement names match however they are written', () => {
+  const same = [['Pull-ups (Kipping)', 'Kipping Pull-Ups'], ['Pull-up', 'Pull-Ups'], ['Row 5k', '5k row'], ['5000m row', '5k row'],
+    ['2000 m row', '2k row'], ['5 km run', '5k run'], ['Run 400m', '400 m run'], ['Clean and Jerk', 'Clean & Jerk'], ['back squat', 'Back Squat']];
+  for (const [a, x] of same) assert.equal(P.canon(a), P.canon(x), `${a} = ${x}`);
+  assert.notEqual(P.canon('Front Squat + Back Squat'), P.canon('Back Squat'));
+  assert.notEqual(P.canon('Strict Press'), P.canon('Push Press'));
+  assert.deepEqual(P.benchmarkEntries({ name: 'Other', result: 'Pull-ups (Kipping): Max Reps: 10' })[1], { name: 'Pull-ups (Kipping)', result: '10' });
 });
 
 test('API: benchmarks carry Rx, Open results validate, /percentiles and Sentinel read agree', async () => {
