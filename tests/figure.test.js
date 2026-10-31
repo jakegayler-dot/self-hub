@@ -155,9 +155,36 @@ test('buildSummary carries figure and today_workout', async () => {
     sets: { quads: 2, glutes: 1, adductors: 1, lats: 1, biceps: 0.5, midback: 0.5 },
     week_of: '2026-10-26',
     defaults_used: [],
+    // Thursday 10-29: the deadlift 4 days ago, squats 2 days and 1 day ago, pull-ups today.
+    load: { hamstrings: 0.43, glutes: 1.21, lowerback: 0.21, traps: 0.21, forearms: 0.21, quads: 1.57, adductors: 0.79, lats: 1, biceps: 0.5, midback: 0.5 },
   });
   assert.equal(summary.today_workout.title, 'Squat + AMRAP');
   assert.equal(summary.today_workout.date, '2026-10-29');
   assert.equal(summary.today_workout.status, 'started');
   assert.ok(summary.strength && summary.training_week && summary.body, 'existing fields still there');
+});
+
+test('muscleLoad: a set counts in full today and fades evenly to nothing over 7 days', () => {
+  const lifts = [0, 1, 3, 6, 7, 9].map((a) => ({ lift: 'Leg Extension', entry_date: new Date(Date.UTC(2026, 9, 31 - a)) }));
+  // ages 0, 1, 3, 6 count 1, 6/7, 4/7, 1/7; 7 and 9 days ago are fully recovered.
+  assert.deepEqual(figure.muscleLoad(lifts, [], '2026-10-31'), { quads: 2.57 });
+  assert.deepEqual(figure.muscleLoad([{ lift: 'Leg Extension', entry_date: '2026-11-01' }], [], '2026-10-31'), {}, 'nothing from the future');
+  assert.deepEqual(figure.muscleLoad([], [{ movement: 'Strict Pull-Ups', entry_date: '2026-10-30' }], '2026-10-31'), { lats: 0.86, biceps: 0.43, midback: 0.43 });
+});
+
+test("the page's recovery load matches the server's", () => {
+  const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
+  const start = html.indexOf('  var RECOVERY_DAYS = 7;');
+  const end = html.indexOf('  var physiqueSelectedKey', start);
+  assert.ok(start > 0 && end > start, 'muscleWeek found in index.html');
+  const pageMusclesFor = (() => {
+    const s = html.indexOf('function musclesFor(name){'), e = html.indexOf('  // This week', s);
+    return html.slice(s, e);
+  })();
+  const lifts = [{ lift: 'Back Squat', entry_date: '2026-10-31' }, { lift: 'Deadlift', entry_date: '2026-10-28' }, { lift: 'Bench Press', entry_date: '2026-10-24' }];
+  const gymnastics = [{ movement: 'Strict Pull-Ups', entry_date: '2026-10-30' }];
+  const ctx = { liftPattern: strength.liftPattern, cache: { lifts, gymnastics }, localISO: () => '2026-10-31', weekIndexOf: () => 0 };
+  vm.runInNewContext(pageMusclesFor + html.slice(start, end) + '\n;this.out = muscleWeek();', ctx);
+  const page = Object.fromEntries(Object.entries(ctx.out.load).map(([k, v]) => [k, Math.round(v * 100) / 100]));
+  assert.deepEqual(page, figure.muscleLoad(lifts, gymnastics, '2026-10-31'));
 });

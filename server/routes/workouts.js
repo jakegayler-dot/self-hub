@@ -978,7 +978,7 @@ function createWorkoutsRouter({ pool }) {
       const { computePercentiles } = require('../lib/percentiles');
       const p = computePercentiles(await loadPercentileRows(pool), date, strength);
       return {
-        note: 'Percent of male CrossFitters each best beats (2019 Open athlete profiles; rows vs Concept2 2025 lightweight men; Open from his leaderboard rank). Self-reported, so optimistic; not bodyweight-adjusted.',
+        note: 'Percent of male CrossFitters each best beats (2019 Open athlete profiles; rows vs Concept2 2025 lightweight men; Open from his leaderboard rank). Self-reported, so optimistic; not bodyweight-adjusted. Strict pull-ups are the exception: against StrengthLevel lifters at his bodyweight.',
         by_area: p.categories.filter((c) => c.percentile != null).map((c) => ({ area: c.category, percentile: c.percentile, basis: c.basis })),
         benchmarks: p.benchmarks.filter((b) => b.percentile != null).map((b) => ({ name: b.label, best: b.display, date: b.date, percentile: b.percentile, field_median: b.median, recent: b.recent ? { best: b.recent.display, date: b.recent.date, percentile: b.recent.percentile } : null })),
         open: p.open.map((o) => ({ year: o.year, workout: o.workout, percentile: o.percentile })),

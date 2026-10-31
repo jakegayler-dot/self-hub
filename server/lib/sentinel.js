@@ -159,13 +159,15 @@ async function buildSummary(pool, now = new Date()) {
       week: { base_kcal: day.week.base_kcal, decision: day.week.decision, rationale: day.week.rationale },
     };
   } catch (err) { /* no nutrition data: the tile goes without */ }
-  // The 3D figure (body3d.js setBody/setSets inputs) and today's session, for Sentinel's fitness window.
+  // The 3D figure (body3d.js setBody/setLoad inputs) and today's session, for Sentinel's fitness window.
+  const today = new Date(now.getTime() + REGINA_OFFSET_MS).toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 6 * 86400000).toISOString().slice(0, 10);
   try {
     const [prof, gym] = await Promise.all([
       pool.query('SELECT height_in FROM fitness_profile WHERE id = 1'),
-      pool.query('SELECT entry_date, movement FROM fitness_gymnastics WHERE entry_date >= $1 AND entry_date <= $2', [wk.start, wk.end]),
+      pool.query('SELECT entry_date, movement FROM fitness_gymnastics WHERE entry_date >= $1 AND entry_date <= $2', [wk.start < weekAgo ? wk.start : weekAgo, wk.end > today ? wk.end : today]),
     ]);
-    out.summary.figure = figure.buildFigure({ profile: prof.rows[0], measurements, lifts: data.lifts, gymnastics: gym.rows, week: wk });
+    out.summary.figure = figure.buildFigure({ profile: prof.rows[0], measurements, lifts: data.lifts, gymnastics: gym.rows, week: wk, today });
   } catch (err) { /* the window goes without the figure */ }
   try {
     out.summary.today_workout = await loadTodayWorkout(pool, reginaDate(now));

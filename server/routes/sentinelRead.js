@@ -213,7 +213,7 @@ const COLLECTIONS = [
   },
   {
     name: 'crossfit_percentiles',
-    description: "Where Jake ranks against real populations: % of male CrossFitters he beats on back squat, deadlift, clean & jerk, snatch, max pull-ups, 400 m / 5 km run, Fran, Grace, Helen, Filthy 50 and Fight Gone Bad (2019 Open athlete profiles), rowing 500 m / 2k / 5k vs Concept2 2025 lightweight men, and CrossFit Open rank → percentile. Each benchmark uses his best result ever logged (date given); recent is his best in the last 12 months (60 days for lifts) when that's lower. Category rows average their benchmarks. Use for \"how do I compare\" or \"what's my weakest area\".",
+    description: "Where Jake ranks against real populations: % of male CrossFitters he beats on back squat, deadlift, clean & jerk, snatch, max pull-ups (any style), 400 m / 5 km run, Fran, Grace, Helen, Filthy 50 and Fight Gone Bad (2019 Open athlete profiles), rowing 500 m / 2k / 5k vs Concept2 2025 lightweight men, strict pull-ups vs StrengthLevel lifters at his bodyweight, and CrossFit Open rank → percentile. Each benchmark uses his best result ever logged (date given); recent is his best in the last 12 months (60 days for lifts) when that's lower. Category rows average their benchmarks. Use for \"how do I compare\" or \"what's my weakest area\".",
     kind: 'summary',
     search: ['category', 'label'],
     custom: { category: enumFilter('category', ['Strength', 'Olympic', 'Gymnastics', 'Cardio', 'Metcon', 'Open']) },
@@ -225,7 +225,7 @@ const COLLECTIONS = [
       const p = computePercentiles(await loadPercentileRows(pool), today, strength);
       return [
         ...p.categories.map((c) => ({ id: `category-${slug(c.category)}`, kind: 'category', category: c.category, label: c.category, your_best: c.basis, date: null, percentile: c.percentile, recent: null, population_median: null, reference: null, bodyweight_level: null })),
-        ...p.benchmarks.map((b) => ({ id: b.id, kind: 'benchmark', category: b.category, label: b.label, your_best: b.display, date: b.date, percentile: b.percentile, recent: b.recent ? `${b.recent.display} on ${b.recent.date} (beats ${b.recent.percentile}%)` : null, population_median: b.median, reference: b.reference, bodyweight_level: b.bodyweight_level ? `${b.bodyweight_level.level} (${b.bodyweight_level.ratio}× bodyweight)` : null })),
+        ...p.benchmarks.map((b) => ({ id: b.id, kind: 'benchmark', category: b.category, label: b.label, your_best: b.display, date: b.date, percentile: b.percentile, recent: b.recent ? `${b.recent.display} on ${b.recent.date} (beats ${b.recent.percentile}%)` : null, population_median: b.median, reference: b.reference, bodyweight_level: b.level ? `${b.level.level} (${b.level.basis})` : null })),
         ...p.open.map((o) => ({ id: `open-${o.year}-${slug(o.workout)}`, kind: 'open', category: 'Open', label: `${o.year} Open ${o.workout}`, your_best: `rank ${o.rank} of ${o.total}${o.score ? ` (${o.score})` : ''}`, date: null, percentile: o.percentile, recent: null, population_median: null, reference: o.division, bodyweight_level: null })),
       ];
     },

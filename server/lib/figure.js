@@ -91,15 +91,37 @@ function bodyFor(profile, measurements) {
   return { body: { height, shoulder, bust, waist, hips, neck, sleeve, inseam }, defaults };
 }
 
-function buildFigure({ profile, measurements, lifts, gymnastics, week }) {
+// Recovery (Jake, Oct 31): what colours the figure. Each set counts in full the day it's done and fades evenly to
+// nothing over 7 days. 0 = fresh (pale yellow); 6 or more (body3d.js FULL_LOAD) = worked hard just now (deep red). Same rule as the page's
+// muscleWeek(). today = YYYY-MM-DD in Regina. Rounded to 0.01.
+const RECOVERY_DAYS = 7;
+function muscleLoad(lifts, gymnastics, today) {
+  const load = {};
+  const t = Date.parse(`${today}T00:00:00Z`);
+  const count = (name, date) => {
+    const age = Math.round((t - Date.parse(`${ymd(date)}T00:00:00Z`)) / 86400000);
+    if (!(age >= 0 && age < RECOVERY_DAYS)) return;
+    const m = musclesFor(name);
+    for (const g of Object.keys(m)) if (m[g]) load[g] = (load[g] || 0) + m[g] * (1 - age / RECOVERY_DAYS);
+  };
+  for (const l of lifts || []) count(l.lift, l.entry_date);
+  for (const g of gymnastics || []) count(g.movement, g.entry_date);
+  for (const g of Object.keys(load)) load[g] = Math.round(load[g] * 100) / 100;
+  return load;
+}
+
+function buildFigure({ profile, measurements, lifts, gymnastics, week, today }) {
   const { body, defaults } = bodyFor(profile, measurements);
-  return {
+  const out = {
     height_in: profile && profile.height_in != null ? Number(profile.height_in) : null,
     body,
     sets: muscleWeekSets(lifts, gymnastics, week),
     week_of: week.start,
     defaults_used: defaults,
   };
+  // body3d.js setLoad(load): the colours. sets stays for the 10-a-week count.
+  if (today) out.load = muscleLoad(lifts, gymnastics, today);
+  return out;
 }
 
-module.exports = { GROUPS, BODY_DEFAULTS, musclesFor, muscleWeekSets, bodyFor, buildFigure };
+module.exports = { GROUPS, BODY_DEFAULTS, RECOVERY_DAYS, musclesFor, muscleWeekSets, muscleLoad, bodyFor, buildFigure };

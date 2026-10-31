@@ -100,7 +100,28 @@ test('data selection: best ever with the recent best alongside, Rx-only WODs, co
   assert.equal(b.pullups.value, 22);
   assert.equal(b.helen.percentile, null);
   assert.equal(r.categories.find((c) => c.category === 'Open').percentile, 75);
-  assert.equal(r.categories.find((c) => c.category === 'Gymnastics').percentile, b.pullups.percentile);
+  // Strict reps also go against lifters at his bodyweight (Oct 31): 22 strict at 155 lb is Advanced, beats 80%.
+  assert.equal(b.pullups_strict.value, 22);
+  assert.equal(b.pullups_strict.percentile, 80);
+  assert.equal(b.pullups_strict.level.level, 'Advanced');
+  assert.equal(r.categories.find((c) => c.category === 'Gymnastics').percentile, Math.round((b.pullups.percentile + b.pullups_strict.percentile) / 2));
+  // A level only where a real standard exists.
+  assert.equal(b.deadlift.level.basis, '2.71× bodyweight');
+  assert.equal(b.row_2k.level.basis, 'lightweight men (75 kg and under)');
+  assert.equal(b.fran.level, undefined, 'self-reported CrossFit profiles get a percentile, not a level');
+  assert.equal(b.pullups.level, undefined);
+});
+
+test('strict pull-up standards move with bodyweight; kipping maxes stay out of the strict row', () => {
+  assert.deepEqual(P.pullupTiers(160), [0.5, 7, 14, 22, 30]);
+  assert.deepEqual(P.pullupTiers(175), [0.8, 7, 13, 21, 28.5]);
+  assert.deepEqual(P.pullupTiers(120), P.pullupTiers(150));
+  const r = P.computePercentiles({ gymnastics: [{ entry_date: '2026-10-30', movement: 'Strict Pull-Ups', reps: 20 }, { entry_date: '2026-10-29', movement: 'Pull-ups (Kipping)', reps: 25 }], bodyweight: [{ entry_date: '2026-10-30', weight_lb: 162 }] }, '2026-10-31', strength);
+  const s = r.benchmarks.find((x) => x.id === 'pullups_strict'), k = r.benchmarks.find((x) => x.id === 'pullups');
+  assert.equal(s.value, 20);
+  assert.ok(s.percentile >= 70 && s.percentile < 80, String(s.percentile));
+  assert.deepEqual(s.level, { level: 'Intermediate', basis: 'standard at 162 lb' });
+  assert.equal(k.value, 25, 'any style: the kipping set is the max');
 });
 
 // Shaped like Jake's real log (Oct 31, 2026): PRs from 2023-24, light recent

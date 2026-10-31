@@ -26,7 +26,11 @@
   };
 
   var hex = function (h) { return new THREE.Color(h).convertSRGBToLinear(); };
-  var RAMP = ['#5b2d23', '#9a5634', '#dcae5a']; // none, 5 sets, 10+ sets (sRGB)
+  // Recovery (Jake, Oct 31): pale yellow when a muscle is fresh, richer red the more it has been worked lately, back to
+  // yellow as it recovers. The value is a recovery-weighted load: 0 fresh, FULL_LOAD (a hard session's sets, done today) or
+  // more fully red (see muscleWeek on the page).
+  var RAMP = ['#f2e2a0', '#de7a3a', '#9b1418']; // fresh, half, heavily worked (sRGB)
+  var FULL_LOAD = 6;
   function rampColor(t) {
     var a = new THREE.Color(t < 0.5 ? RAMP[0] : RAMP[1]), b = new THREE.Color(t < 0.5 ? RAMP[1] : RAMP[2]);
     return a.lerp(b, t < 0.5 ? t * 2 : (t - 0.5) * 2).convertSRGBToLinear();
@@ -234,7 +238,7 @@
     catch (e) { el.innerHTML = '<p class="trk-note b3d-msg">This browser has 3D graphics (WebGL) turned off, so the figure can\'t show.</p>'; return null; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+    renderer.toneMapping = THREE.NoToneMapping; // true colours: the recovery scale has to read as yellow-to-red
     el.insertBefore(renderer.domElement, el.firstChild);
     var cv = renderer.domElement; cv.className = 'b3d-canvas';
 
@@ -269,12 +273,12 @@
     }
     function paint() {
       Object.keys(GROUPS).forEach(function (g) {
-        var m = mats.group[g], tt = Math.min(1, (sets[g] || 0) / 10);
+        var m = mats.group[g], tt = Math.min(1, (sets[g] || 0) / FULL_LOAD);
         m.color.copy(rampColor(tt));
-        // Selection and hover glow verdigris, so they never read as more sets on the brass scale.
-        if (g === selected) m.emissive.copy(hex('#8fd0b0')).multiplyScalar(0.55);
-        else if (g === hover) m.emissive.copy(hex('#8fd0b0')).multiplyScalar(0.25);
-        else m.emissive.copy(hex('#e0a84a')).multiplyScalar(0.1 * tt);
+        // Selection and hover glow verdigris, so they never read as more load on the yellow-to-red scale.
+        if (g === selected) m.emissive.copy(hex('#5fb894')).multiplyScalar(0.5);
+        else if (g === hover) m.emissive.copy(hex('#5fb894')).multiplyScalar(0.22);
+        else m.emissive.setRGB(0, 0, 0);
       });
       draw();
     }
@@ -327,11 +331,13 @@
         if (fig) { scene.remove(fig.group); fig.group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
         fig = buildFigure(body, mats, fibre); H = fig.height; scene.add(fig.group); size(); paint();
       },
+      // Colour values per group, 0 (fresh, yellow) to FULL_LOAD+ (just worked hard, red). setLoad is the same call by its new name.
       setSets: function (s) { sets = s || {}; paint(); },
+      setLoad: function (s) { sets = s || {}; paint(); },
       select: function (g) { selected = g; paint(); },
       view: function (name) { turnTo({ front: 0, side: -Math.PI / 2, back: Math.PI, three: -0.42 }[name] || 0); }
     };
   }
 
-  window.SelfHubBody3D = { GROUPS: GROUPS, mount: mount };
+  window.SelfHubBody3D = { GROUPS: GROUPS, FULL_LOAD: FULL_LOAD, mount: mount };
 })();

@@ -23,6 +23,7 @@
 const REFS = {
   CF2019: { label: 'Male CrossFitters (2019 Open athlete profiles, self-reported)', url: 'https://leblancfg.com/crossfit_open_2019_analysis_exercise_statistics.html' },
   CF2019_WOD: { label: 'Male CrossFitters (2019 Open athlete profiles, self-reported)', url: 'https://leblancfg.com/crossfit_open_2019_analysis_benchmark_workouts.html' },
+  SL_PULLUP: { label: 'StrengthLevel strict pull-up standards, men, by bodyweight', url: 'https://strengthlevel.com/strength-standards/pull-ups/lb' },
   C2_2025: { label: 'Concept2 rankings 2025, men lightweight, all ages', url: 'https://log.concept2.com/rankings/2025/rower/2000?gender=M&weight=L' },
 };
 
@@ -43,7 +44,10 @@ const BENCHMARKS = [
   { id: 'clean_jerk', label: 'Clean & jerk', category: 'Olympic', unit: 'lb', better: 'high', ref: 'CF2019', anchors: quartiles([187.4, 225.1, 255.1], 'high'), source: { lift: 'Clean & Jerk' } },
   { id: 'snatch', label: 'Snatch', category: 'Olympic', unit: 'lb', better: 'high', ref: 'CF2019', anchors: quartiles([143.3, 172.0, 200.6], 'high'), source: { lift: 'Snatch' } },
   // ---- Gymnastics ----
-  { id: 'pullups', label: 'Max pull-ups', category: 'Gymnastics', unit: 'reps', better: 'high', ref: 'CF2019', anchors: quartiles([20, 30, 41], 'high'), source: { gym: ['Strict Pull-Ups', 'Butterfly Pull-Ups', 'Pull-Ups', 'Kipping Pull-Ups'], bench: ['Pull-Ups', 'Kipping Pull-Ups', 'Strict Pull-Ups', 'Butterfly Pull-Ups', 'Max Pull-Ups'] }, note: 'Profile stat is unbroken max reps, any style — your best single set of pull-ups.' },
+  // Strict reps against lifters at his bodyweight (Oct 31). Only sets logged as strict count: the CrossFit row below is
+  // any style, and his max there is kipping.
+  { id: 'pullups_strict', label: 'Strict pull-ups', category: 'Gymnastics', unit: 'reps', better: 'high', ref: 'SL_PULLUP', anchors: [[0.5, 5], [7, 20], [14, 50], [22, 80], [30, 95]], source: { gym: ['Strict Pull-Ups'], bench: ['Strict Pull-Ups'] }, note: 'Unbroken strict reps; the standard moves with your bodyweight.' },
+  { id: 'pullups', label: 'Max pull-ups (any style)', category: 'Gymnastics', unit: 'reps', better: 'high', ref: 'CF2019', anchors: quartiles([20, 30, 41], 'high'), source: { gym: ['Strict Pull-Ups', 'Butterfly Pull-Ups', 'Pull-Ups', 'Kipping Pull-Ups'], bench: ['Pull-Ups', 'Kipping Pull-Ups', 'Strict Pull-Ups', 'Butterfly Pull-Ups', 'Max Pull-Ups'] }, note: 'Profile stat is unbroken max reps, any style — your best single set of pull-ups.' },
   // ---- Cardio ----
   { id: 'run_400', label: '400 m run', category: 'Cardio', unit: 's', better: 'low', ref: 'CF2019', anchors: quartiles([62, 70, 81], 'low'), source: { bench: ['400m run', 'Run 400m'], cond: { movement: 'Run', meters: 400 } } },
   { id: 'run_5k', label: '5 km run', category: 'Cardio', unit: 's', better: 'low', ref: 'CF2019', anchors: quartiles([1229, 1350, 1502], 'low'), source: { bench: ['5k run', '5000m run'], cond: { movement: 'Run', meters: 5000 } } },
@@ -57,6 +61,21 @@ const BENCHMARKS = [
   { id: 'filthy50', label: 'Filthy 50', category: 'Metcon', unit: 's', better: 'low', ref: 'CF2019_WOD', anchors: quartiles([1307, 1531, 1785], 'low'), source: { bench: ['Filthy 50'] } },
   { id: 'fgb', label: 'Fight Gone Bad', category: 'Metcon', unit: 'reps', better: 'high', ref: 'CF2019_WOD', anchors: quartiles([269, 308, 349], 'high'), source: { bench: ['Fight Gone Bad', 'FGB'] } },
 ];
+// StrengthLevel strict pull-ups, men: reps at Beginner, Novice, Intermediate, Advanced, Elite for a bodyweight, which
+// beat 5, 20, 50, 80 and 95% of lifters ("<1" read as 0.5). Bodyweights outside 150-180 lb use the nearest row.
+const SL_PULLUP_TABLE = [[150, [0.5, 7, 14, 22, 31]], [160, [0.5, 7, 14, 22, 30]], [170, [0.5, 7, 13, 21, 29]], [180, [1, 7, 13, 21, 28]]];
+function pullupTiers(bw) {
+  const T = SL_PULLUP_TABLE, b = Math.max(T[0][0], Math.min(T[T.length - 1][0], bw || 160));
+  let i = 0; while (i < T.length - 2 && b > T[i + 1][0]) i++;
+  const f = (b - T[i][0]) / (T[i + 1][0] - T[i][0]);
+  return T[i][1].map((v, j) => Math.round((v + f * (T[i + 1][1][j] - v)) * 10) / 10);
+}
+// Concept2's rankings are split by weight class, so a level read off the lightweight percentile is weight-adjusted.
+// The CrossFit profiles aren't (and are self-reported), so they get a percentile but no level.
+function levelFromPercentile(p) {
+  if (p == null) return null;
+  return p < 5 ? 'Below beginner' : p < 20 ? 'Beginner' : p < 50 ? 'Novice' : p < 80 ? 'Intermediate' : p < 95 ? 'Advanced' : 'Elite';
+}
 const CATEGORIES = ['Strength', 'Olympic', 'Gymnastics', 'Cardio', 'Metcon', 'Open'];
 
 // ---- maths ----
@@ -164,8 +183,14 @@ function computePercentiles(rows, today, strength) {
   const t = dayNum(today);
   const ageDays = (d) => t - dayNum(ymd(d));
   const results = [];
+  const bwRows = (rows.bodyweight || []);
+  const bwEnd = new Date(`${today}T23:59:59Z`);
+  let bw = strength ? strength.windowedAvgBodyweight(bwRows, new Date(bwEnd.getTime() - 60 * 86400e3), bwEnd) : null;
+  if (bw == null && bwRows.length) bw = Number(bwRows[bwRows.length - 1].weight_lb);
 
-  for (const bm of BENCHMARKS) {
+  for (const BM of BENCHMARKS) {
+    // Strict pull-ups: the standard for his bodyweight (it moves a rep or so between 150 and 180 lb).
+    const bm = BM.id === 'pullups_strict' ? (() => { const tiers = pullupTiers(bw); return { ...BM, tiers, anchors: tiers.map((v, i) => [v, [5, 20, 50, 80, 95][i]]) }; })() : BM;
     const src = bm.source;
     const candidates = []; // { value, date, detail }
     if (src.lift) {
@@ -238,14 +263,20 @@ function computePercentiles(rows, today, strength) {
     // Alongside: the bodyweight-ratio level for lifts (same maths as the Health tab).
     if (src.lift && best && strength) {
       const tiers = strength.standardsFor(src.lift);
-      const bwRows = (rows.bodyweight || []);
-      const end = new Date(`${today}T23:59:59Z`);
-      let bw = strength.windowedAvgBodyweight(bwRows, new Date(end.getTime() - 60 * 86400e3), end);
-      if (bw == null && bwRows.length) bw = Number(bwRows[bwRows.length - 1].weight_lb);
       if (tiers && bw) {
         const score = strength.levelScore(best.value / bw, tiers);
         row.bodyweight_level = { ratio: Math.round((best.value / bw) * 100) / 100, score, level: strength.levelLabel(score) };
       }
+    }
+    // A level only where a real standard exists: lifts by bodyweight ratio, strict pull-ups by the reps standard at his
+    // bodyweight, rows by Concept2's lightweight class. Runs, WODs and any-style pull-ups are against self-reported
+    // CrossFit profiles that aren't weight-adjusted, so they get the percentile and no level.
+    if (best) {
+      if (row.bodyweight_level) row.level = { level: row.bodyweight_level.level, basis: `${row.bodyweight_level.ratio}× bodyweight` };
+      else if (bm.tiers) {
+        const score = strength ? strength.levelScore(best.value, bm.tiers) : null;
+        row.level = { level: score != null ? strength.levelLabel(score) : levelFromPercentile(row.percentile), basis: `standard at ${Math.round(bw || 160)} lb` };
+      } else if (bm.ref === 'C2_2025' && row.percentile != null) row.level = { level: levelFromPercentile(row.percentile), basis: 'lightweight men (75 kg and under)' };
     }
     results.push(row);
   }
@@ -271,7 +302,7 @@ function computePercentiles(rows, today, strength) {
     };
   });
 
-  return { as_of: today, categories, benchmarks: results, open, calisthenics_note: 'Only max pull-ups has CrossFit population data — HSPU, toes-to-bar, muscle-ups and handstand walk keep the bodyweight-ratio and best-set tracking.' };
+  return { as_of: today, categories, benchmarks: results, open, calisthenics_note: 'Strict pull-ups are judged against lifters at your bodyweight; any-style pull-ups against self-reported CrossFit profiles, a pool that skews well above a typical box. HSPU, toes-to-bar, muscle-ups and handstand walk have no population data yet.' };
 }
 
-module.exports = { BENCHMARKS, CATEGORIES, REFS, percentileOf, parseResult, computePercentiles, normCdf, normInv, canon, benchmarkEntries };
+module.exports = { pullupTiers, levelFromPercentile, BENCHMARKS, CATEGORIES, REFS, percentileOf, parseResult, computePercentiles, normCdf, normInv, canon, benchmarkEntries };
