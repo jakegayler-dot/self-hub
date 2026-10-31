@@ -38,7 +38,32 @@ const FDC_FOODS = {
   555001: { fdcId: 555001, dataType: 'Branded', description: 'DOUBLE BIG MAC STYLE BURGER', brandName: 'GREAT VALUE', servingSize: 230, servingSizeUnit: 'g', householdServingFullText: '1 burger',
     foodNutrients: [nut('208', 1008, 'KCAL', 270), nut('203', 1003, 'G', 14), nut('204', 1004, 'G', 16), nut('205', 1005, 'G', 18)] },
 };
-const SR_BIGMAC = { fdcId: 170720, dataType: 'SR Legacy', description: "McDONALD'S, BIG MAC", foodNutrients: [nut('208', 1008, 'KCAL', 257)] };
+// "mini wheats" (Oct 31), shapes and numbers from the live APIs. USDA's search results are bulky: Survey foods carry
+// their ingredients (finalFoodInputFoods) and dozens of nutrients, ~13 KB each.
+const bulk = (i) => ({ commonNames: '', foodCode: String(i), allHighlightFields: '', score: 500 - i,
+  finalFoodInputFoods: Array.from({ length: 30 }, (_, j) => ({ foodDescription: `Ingredient ${j} of food ${i}, with a long name`, gramWeight: 10, ingredientCode: 10000 + j, ingredientWeight: 10, portionCode: '0', portionDescription: 'NONE', rank: j, srCode: 20000 + j, value: 1 })),
+  microbes: [], foodAttributes: Array.from({ length: 5 }, (_, j) => ({ id: j, name: 'Attribute', value: 'some value' })) });
+const extraNutrients = Array.from({ length: 55 }, (_, j) => nut(String(400 + j), 1100 + j, 'MG', j));
+const fdcFood = (fdcId, description, extra, [kcal, p, f, c]) => ({ fdcId, description, ...extra, ...bulk(fdcId),
+  foodNutrients: [nut('208', 1008, 'KCAL', kcal), nut('203', 1003, 'G', p), nut('204', 1004, 'G', f), nut('205', 1005, 'G', c), ...extraNutrients] });
+const WHEAT_BREADS = Array.from({ length: 40 }, (_, i) => fdcFood(900000 + i, `Bread, wheat or cracked wheat, style ${i}`, { dataType: 'Survey (FNDDS)', foodMeasures: [{ disseminationText: '1 slice', gramWeight: 26 }] }, [266, 11, 3.5, 48]));
+// Every word required: 14 things that merely have the words (shredded wheat, mini wheat crackers), then the cereal.
+const MINI_WHEATS_FDC = [
+  fdcFood(1100001, 'Cereal, shredded wheat, plain', { dataType: 'Survey (FNDDS)', foodMeasures: [{ disseminationText: '1 cup', gramWeight: 49 }] }, [336, 11, 1.9, 80]),
+  fdcFood(1100002, 'Cereal, shredded wheat, flavored', { dataType: 'Survey (FNDDS)', foodMeasures: [{ disseminationText: '1 cup', gramWeight: 55 }] }, [361, 8, 1.7, 82]),
+  ...Array.from({ length: 10 }, (_, i) => fdcFood(1100100 + i, `MINI CRACKED WHEAT BREAD ${i}`, { dataType: 'Branded', brandName: 'CUB', servingSize: 28, servingSizeUnit: 'g' }, [250, 9, 3, 47])),
+  fdcFood(1100003, 'MINI WHEAT FLOUR WAFERS', { dataType: 'Branded', brandName: 'OBLEAS', servingSize: 60, servingSizeUnit: 'GRM', householdServingFullText: '2.1 onz' }, [347, 7, 0, 80]),
+  fdcFood(1100004, 'WHEAT MINI BAGUETTES', { dataType: 'Branded', brandName: 'THE CHEESECAKE FACTORY', servingSize: 71, servingSizeUnit: 'g' }, [282, 10, 1.4, 56]),
+  fdcFood(2662564, "Kellogg's Mini-Wheats Cereal Frosted", { dataType: 'Branded', brandName: "Kellogg's", brandOwner: 'WK KELLOGG CO', servingSize: 59, servingSizeUnit: 'GRM', householdServingFullText: '1 Container' }, [353, 8, 2.2, 84.4]),
+  ...Array.from({ length: 3 }, (_, i) => fdcFood(1100200 + i, `SHREDDED WHEAT MINI ${i}`, { dataType: 'Branded', brandName: 'GREAT VALUE', servingSize: 55, servingSizeUnit: 'g' }, [340, 10, 2, 80])),
+  fdcFood(2088395, "KELLOGG'S, FROSTED MINI WHEATS, ORIGINAL", { dataType: 'Branded', brandName: "KELLOGG'S", servingSize: 56, servingSizeUnit: 'g', householdServingFullText: '1 cup' }, [357, 8.93, 1.79, 83.9]),
+  ...Array.from({ length: 21 }, (_, i) => fdcFood(1100300 + i, `WHOLE WHEAT MINI PITAS ${i}`, { dataType: 'Branded', brandName: 'SOMEBRAND', servingSize: 30, servingSizeUnit: 'g' }, [260, 9, 2, 50])),
+];
+// Open Food Facts' search service: brands as a list, the same product twice under two barcodes, no serving.
+const offMw = (code, product_name, brands, kcal) => ({ code, product_name, brands, nutriments: { 'energy-kcal_100g': kcal, proteins_100g: 9.09, carbohydrates_100g: 81.8, fat_100g: 1.8 } });
+const MINI_WHEATS_OFF = [offMw('0038000710735', 'Frosted Mini Wheats, Orginal', ['Mini-Wheats'], 363.6), offMw('38000710735', 'Frosted Mini Wheats, Orginal', ['Mini-Wheats'], 363.6),
+  offMw('0064100589988', 'Mini Wheats', ["Kellogg's"], 345), offMw('0064100590076', 'Mini-wheats', ["Kellogg's"], 380)];
+const SR_BIGMAC ={ fdcId: 170720, dataType: 'SR Legacy', description: "McDONALD'S, BIG MAC", foodNutrients: [nut('208', 1008, 'KCAL', 257)] };
 const fetchImpl = async (url, init) => {
   if (url.startsWith('https://api.nal.usda.gov/fdc/v1/')) {
     web.push({ url, body: init.body ? JSON.parse(init.body) : null });
@@ -46,6 +71,8 @@ const fetchImpl = async (url, init) => {
     const b = init.body ? JSON.parse(init.body) : {};
     if (url.includes('/foods/search')) {
       if (b.dataType && b.dataType[0] === 'SR Legacy') return json(200, { foods: /big mac/i.test(b.query) ? [SR_BIGMAC] : [] });
+      if (/mini.?wheats/i.test(b.query)) return json(200, { foods: b.requireAllWords ? MINI_WHEATS_FDC : WHEAT_BREADS });
+      if (/zzpartial/i.test(b.query)) return json(200, { foods: b.requireAllWords ? [] : Object.values(FDC_FOODS) });
       return json(200, { foods: /double/i.test(b.query) ? Object.values(FDC_FOODS) : [] });
     }
     const id = url.match(/\/food\/(\d+)/)[1];
@@ -62,6 +89,7 @@ const fetchImpl = async (url, init) => {
     if (url.includes('/cgi/search.pl')) return new Response('<html>Page temporarily unavailable</html>', { status: 503 });
     const q = decodeURIComponent(url);
     return json(200, { hits: /double/i.test(q) ? [{ ...p, brands: ["McDonald's"] }, { code: '1', product_name: 'No numbers' }]
+      : /mini.?wheats/i.test(q) ? MINI_WHEATS_OFF
       : /muesli/i.test(q) ? [{ code: '5099856000017', product_name: 'Muesli', brands: ['LifeForce Original Muesli'], nutriments: { 'energy-kcal_100g': 401, proteins_100g: 9.7, carbohydrates_100g: 67, fat_100g: 8.4, sodium_100g: 0 } }] : [] });
   }
   const body = JSON.parse(init.body);
@@ -515,4 +543,56 @@ test('muesli (Oct 27): USDA asked from his browser and read here; Open Food Fact
   // No browser results: the server asks USDA itself, as before.
   const s = await call('POST', '/fitness/nutrition/foods/online', { query: 'double cheese', fdc_foods: null });
   assert.ok(s.body.online.some((c) => c.key.startsWith('fdc:')));
+});
+
+test('mini wheats (Oct 31): the browser\'s USDA results fit the request, every word asked for, ranked before cutting', async () => {
+  const foodSources = require('../server/lib/foodSources');
+  const cfg = (await call('GET', '/fitness/nutrition/foods/online-config')).body;
+  assert.equal(cfg.require_all_words, true);
+  assert.ok(cfg.nutrient_numbers.includes('208') && cfg.nutrient_ids.includes(1008));
+  // The page's own slimming (public/js/nutrition.js), run here as the browser runs it.
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../public/js/nutrition.js'), 'utf8');
+  const fdcSlim = new Function(`${src.match(/  function fdcSlim\(f, cfg\) \{[\s\S]*?\n  \}\n/)[0]}; return fdcSlim;`)();
+  const full = JSON.stringify({ query: 'mini wheats', fdc_foods: MINI_WHEATS_FDC });
+  assert.ok(full.length > 100 * 1024, `the raw results are over express.json()'s 100 KB default (${full.length})`);
+  const raw = JSON.parse(JSON.stringify(MINI_WHEATS_FDC)).map((f) => fdcSlim(f, cfg));
+  assert.ok(JSON.stringify({ query: 'mini wheats', fdc_foods: raw }).length < 60 * 1024, 'slimmed, they fit with room to spare');
+  // Slimmed or not, the server reads the same food.
+  assert.deepEqual(foodSources.fdcCandidate(raw[14]), foodSources.fdcCandidate(MINI_WHEATS_FDC[14]));
+
+  // Through the real parser (100 KB default in this app): accepted, and the cereal comes first, with its serving.
+  for (const q of ['mini wheats', 'mini-wheats', 'Kelloggs MINI WHEATS', 'miniwheats']) {
+    const r = await call('POST', '/fitness/nutrition/foods/online', { query: q, fdc_foods: raw });
+    assert.equal(r.status, 200, `${q}: ${r.status}`);
+    const top = r.body.online.slice(0, 4);
+    assert.ok(top.every((c) => /mini.?wheats/i.test(`${c.brand} ${c.name}`)), `${q}: ${top.map((c) => c.name).join(' | ')}`);
+    const mw = r.body.online.find((c) => c.key === 'fdc:2662564');
+    assert.ok(mw, `${q}: Kellogg's Mini-Wheats (USDA's 15th result) kept`);
+    assert.equal(mw.brand, "Kellogg's");
+    assert.equal(mw.name, "Kellogg's Mini-Wheats Cereal Frosted");
+    assert.deepEqual(mw.serving, { name: '1 container', grams: 59 });
+    assert.equal(Math.round(mw.per_100g.kcal * mw.serving.grams / 100), 208);
+    assert.ok(r.body.online.some((c) => c.key === 'fdc:2088395'));
+    // Open Food Facts' Canadian boxes too; the same product under two barcodes shown once.
+    assert.ok(r.body.online.some((c) => c.key === 'off:0064100589988'));
+    assert.equal(r.body.online.filter((c) => c.name === "Frosted Mini Wheats, Orginal").length, 1, `${q}: ${r.body.online.map((c) => c.key + " " + c.name).join(" | ")}`);
+    assert.ok(!r.body.online.some((c) => /shredded wheat|baguette|pita/i.test(c.name) && r.body.online.indexOf(c) < r.body.online.indexOf(mw)), `${q}: nothing that merely has the words above it`);
+  }
+
+  // Without the browser's results, the server asks USDA for every word itself.
+  const n = web.length;
+  let r = await call('POST', '/fitness/nutrition/foods/online', { query: 'mini wheats', fdc_foods: null });
+  const asks = web.slice(n).filter((w) => w.url.includes('/fdc/v1/foods/search'));
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].body.requireAllWords, true);
+  assert.equal(r.body.online[0].key, 'fdc:2662564', r.body.online.map((c) => c.name).join(' | '));
+  // Nothing has every word: any word, as before.
+  const m = web.length;
+  r = await call('POST', '/fitness/nutrition/foods/online', { query: 'double zzpartial', fdc_foods: null });
+  assert.deepEqual(web.slice(m).filter((w) => w.url.includes('/fdc/v1/foods/search')).map((w) => w.body.requireAllWords), [true, false]);
+  assert.ok(r.body.online.some((c) => c.key === 'fdc:555001'));
+
+  // Matching: hyphens, apostrophes and plurals are the same words.
+  assert.deepEqual(foodSources.wordsOf("Kellogg's Mini-Wheats"), foodSources.wordsOf('kelloggs mini wheat'));
+  assert.deepEqual(foodSources.wordsOf('peaches boxes eggs glass'), ['peach', 'box', 'egg', 'glass']);
 });

@@ -60,7 +60,8 @@ function fdcNutrients(list) {
   delete out.kcal_atwater;
   return out;
 }
-const titleCase = (s) => String(s || '').toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase());
+// "KELLOGG'S" → "Kellogg's", not "Kellogg'S".
+const titleCase = (s) => String(s || '').toLowerCase().replace(/(^|[^a-z0-9'’])([a-z])/g, (m, a, b) => a + b.toUpperCase());
 // A serving from what FDC gives: a branded label's serving size, or a food's measures/portions.
 function fdcServings(f) {
   const out = [];
@@ -95,11 +96,21 @@ function fdcCandidate(f) {
     source_label: branded ? 'USDA branded (label)' : f.dataType === 'Survey (FNDDS)' ? 'USDA foods as eaten' : 'USDA',
   };
 }
-async function searchFdc(query, { env, fetchImpl, limit = 15 } = {}) {
-  const body = { query, dataType: ['Survey (FNDDS)', 'Branded', 'Foundation'], pageSize: 40 };
-  const data = await getJson(`${FDC}/foods/search?api_key=${encodeURIComponent(fdcKey(env))}`, { fetchImpl, method: 'POST', body });
+// Every word required (Oct 31: USDA's default is any word, so "mini wheats" gave 40 wheat breads and no Mini-Wheats);
+// if nothing has them all (a "double big mac"), any word, as before.
+const FDC_TYPES = ['Survey (FNDDS)', 'Branded', 'Foundation'];
+async function searchFdc(query, { env, fetchImpl, limit = 40 } = {}) {
+  const ask = (requireAllWords) => getJson(`${FDC}/foods/search?api_key=${encodeURIComponent(fdcKey(env))}`,
+    { fetchImpl, method: 'POST', body: { query, dataType: FDC_TYPES, pageSize: 40, requireAllWords } });
+  let data = await ask(true);
+  if (!(data.foods || []).length && /\s/.test(String(query).trim())) data = await ask(false);
   return (data.foods || []).map(fdcCandidate).filter(Boolean).slice(0, limit);
 }
+// What the browser keeps of each USDA result before handing it here (public/js/nutrition.js fdcSlim): the nutrients
+// fdcCandidate reads. A full result is ~13 KB (Survey foods carry their ingredients); 40 of them were over the
+// request size limit and every search came back 413 (Oct 31).
+const FDC_NUTRIENT_NUMBERS = Object.values(FDC_NUTRIENTS).flatMap((d) => d.numbers);
+const FDC_NUTRIENT_IDS = Object.values(FDC_NUTRIENTS).flatMap((d) => d.ids);
 async function fdcFood(fdcId, { env, fetchImpl } = {}) {
   const f = await getJson(`${FDC}/food/${encodeURIComponent(fdcId)}?api_key=${encodeURIComponent(fdcKey(env))}`, { fetchImpl });
   return fdcCandidate(f);
@@ -150,17 +161,46 @@ async function offProduct(code, { fetchImpl } = {}) {
 // fdcFoods: USDA's search results as the browser got them (it asks USDA itself, from his own connection, so a
 // busy shared server address can't use up the limit); without them the server asks.
 const why = (e) => (e && e.status === 429 ? 'hourly limit reached (set FDC_API_KEY)' : e && e.status ? `refused (${e.status})` : e && e.name === 'TimeoutError' ? 'too slow to answer' : 'unreachable');
+// Words for matching: "Kellogg's Mini-Wheats" and "kelloggs mini wheats" are the same words (apostrophes dropped,
+// hyphens split, a plural's s taken off).
+const stem = (w) => (w.length > 3 && /(ch|sh|x)es$/.test(w) ? w.slice(0, -2) : w.length > 3 && /[^s]s$/.test(w) ? w.slice(0, -1) : w);
+const wordsOf = (s) => String(s || '').toLowerCase().replace(/['’`]/g, '').split(/[^a-z0-9]+/).filter(Boolean).map(stem);
+const flat = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+function rankOnline(query, list) {
+  const words = [...new Set(wordsOf(query).filter((w) => w.length > 1))];
+  const qw = wordsOf(query);
+  const pairs = qw.slice(1).map((w, k) => qw[k] + w);
+  const exact = flat(query);
+  const scored = list.map((c, i) => {
+    const brand = wordsOf(c.brand);
+    const own = [...brand, ...wordsOf(c.name)];
+    const joined = own.join(''); // "miniwheats" finds "Mini-Wheats"
+    const hits = words.filter((w) => own.includes(w) || (w.length >= 4 && joined.includes(w))).length;
+    // Words side by side, in order ("Mini-Wheats"), before the same words apart ("Wheat Mini Baguettes"); the whole
+    // thing as typed ("mini wheats") before only as stems ("Mini Wheat Flour Wafers").
+    const together = pairs.filter((p) => joined.includes(p)).length * 2 + (exact && flat(`${c.brand || ''} ${c.name}`).includes(exact) ? 1 : 0);
+    // The plainest name first: "Mini Wheats" before "… Pumpkin Spice 15.5oz" (the brand isn't counted against it).
+    const extra = wordsOf(c.name).filter((w) => !words.includes(w) && !brand.includes(w)).length;
+    // One with a serving (logged in a tap) before one with only per-100 g numbers (OFF's search carries no serving).
+    const serving = (c.portions || []).length ? 1 : 0;
+    return { c, i, hits, together, serving, extra };
+  });
+  const seen = new Set();
+  return scored
+    .filter((s) => s.hits > 0 || !words.length)
+    .sort((a, b) => b.hits - a.hits || b.together - a.together || b.serving - a.serving || a.extra - b.extra || a.i - b.i)
+    .map((s) => s.c)
+    .filter((c) => { const k = `${wordsOf(c.brand).join(' ')}|${wordsOf(c.name).join(' ')}|${c.per_100g.kcal}`; if (seen.has(k)) return false; seen.add(k); return true; });
+}
 async function searchOnline(query, opts = {}) {
-  const fdcP = Array.isArray(opts.fdcFoods) ? Promise.resolve(opts.fdcFoods.map(fdcCandidate).filter(Boolean).slice(0, 15)) : searchFdc(query, opts);
+  const fdcP = Array.isArray(opts.fdcFoods) ? Promise.resolve(opts.fdcFoods.map(fdcCandidate).filter(Boolean)) : searchFdc(query, opts);
   const [fdc, off] = await Promise.allSettled([fdcP, searchOff(query, opts)]);
   const problems = [];
   if (fdc.status === 'rejected') problems.push(`USDA: ${why(fdc.reason)}`);
   if (off.status === 'rejected') problems.push(`Open Food Facts: ${why(off.reason)}`);
-  // Rank: all of the query's words in the name or brand first.
-  const words = String(query).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1);
-  const hits = (c) => words.filter((w) => `${c.brand || ''} ${c.name}`.toLowerCase().includes(w)).length;
-  const all = [...(fdc.value || []), ...(off.value || [])].sort((a, b) => hits(b) - hits(a));
-  return { foods: all.filter((c) => hits(c) > 0 || !words.length).slice(0, 20), problems };
+  // Ranked before anything is cut (USDA's 15th result and on used to be dropped unranked): every word first, then
+  // the plainest names; the same product listed twice shown once.
+  return { foods: rankOnline(query, [...(fdc.value || []), ...(off.value || [])]).slice(0, 20), problems };
 }
 async function fetchCandidate(key, opts = {}) {
   const [source, id] = String(key).split(/:(.+)/);
@@ -169,4 +209,4 @@ async function fetchCandidate(key, opts = {}) {
   return null;
 }
 
-module.exports = { why, searchOnline, searchFdc, searchOff, fetchCandidate, fdcPortionsFor, fdcNutrients, fdcCandidate, offCandidate, fdcKey };
+module.exports = { why, searchOnline, rankOnline, wordsOf, FDC_TYPES, FDC_NUTRIENT_NUMBERS, FDC_NUTRIENT_IDS, searchFdc, searchOff, fetchCandidate, fdcPortionsFor, fdcNutrients, fdcCandidate, offCandidate, fdcKey };

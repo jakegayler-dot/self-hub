@@ -63,19 +63,44 @@
   }
   // USDA is asked from this browser, on his own connection (Oct 27: from the server, the shared address runs out of
   // USDA's allowance); the server reads the results the same way as its own. If this fails, the server asks instead.
+  // Only what the server reads of each USDA result (Oct 31: a full result is ~13 KB, so 40 of them were over the
+  // server's request limit and every search came back empty).
+  function fdcSlim(f, cfg) {
+    var keepN = function (n) {
+      var num = String(n.nutrientNumber != null ? n.nutrientNumber : n.number != null ? n.number : (n.nutrient && n.nutrient.number) || '');
+      var id = Number(n.nutrientId != null ? n.nutrientId : n.nutrient && n.nutrient.id);
+      return cfg.nutrient_numbers.indexOf(num) >= 0 || cfg.nutrient_ids.indexOf(id) >= 0;
+    };
+    return { fdcId: f.fdcId, dataType: f.dataType, description: f.description, brandName: f.brandName, brandOwner: f.brandOwner,
+      servingSize: f.servingSize, servingSizeUnit: f.servingSizeUnit, householdServingFullText: f.householdServingFullText,
+      foodNutrients: (f.foodNutrients || []).filter(keepN).map(function (n) {
+        return { nutrientId: n.nutrientId, nutrientNumber: n.nutrientNumber, unitName: n.unitName, value: n.value, amount: n.amount, number: n.number, nutrient: n.nutrient };
+      }),
+      foodMeasures: (f.foodMeasures || []).slice(0, 10).map(function (m) { return { disseminationText: m.disseminationText, gramWeight: m.gramWeight }; }),
+      foodPortions: f.foodPortions };
+  }
   var onlineCfg = null, fdcRaw = {}, onlineCache = {};
+  async function askUsda(text, allWords) {
+    var ctl = new AbortController(); var tm = setTimeout(function () { ctl.abort(); }, 8000);
+    try {
+      var r = await fetch(onlineCfg.fdc_search + '?api_key=' + encodeURIComponent(onlineCfg.fdc_key), { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: text, dataType: onlineCfg.data_types, pageSize: 40, requireAllWords: allWords }), signal: ctl.signal });
+      return r.ok ? ((await r.json()).foods || []) : null;
+    } finally { clearTimeout(tm); }
+  }
   async function onlineSearch(text) {
     if (onlineCache[text]) return onlineCache[text];
     var raw = null;
     try {
       onlineCfg = onlineCfg || await api('GET', '/foods/online-config');
-      var ctl = new AbortController(); var tm = setTimeout(function () { ctl.abort(); }, 8000);
-      var r = await fetch(onlineCfg.fdc_search + '?api_key=' + encodeURIComponent(onlineCfg.fdc_key), { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: text, dataType: onlineCfg.data_types, pageSize: 40 }), signal: ctl.signal });
-      clearTimeout(tm);
-      if (r.ok) { raw = ((await r.json()).foods || []); raw.forEach(function (f) { fdcRaw['fdc:' + f.fdcId] = f; }); }
+      // Every word first ("mini wheats": Mini-Wheats, not 40 wheat breads); nothing with them all, any word.
+      raw = await askUsda(text, !!onlineCfg.require_all_words);
+      if (raw && !raw.length && onlineCfg.require_all_words && /\s/.test(text)) raw = await askUsda(text, false);
+      if (raw) { raw = raw.map(function (f) { return fdcSlim(f, onlineCfg); }); raw.forEach(function (f) { fdcRaw['fdc:' + f.fdcId] = f; }); }
     } catch (e) { raw = null; }
-    var out = await api('POST', '/foods/online', { query: text, fdc_foods: raw });
+    var out;
+    try { out = await api('POST', '/foods/online', { query: text, fdc_foods: raw }); }
+    catch (e) { if (!raw) throw e; out = await api('POST', '/foods/online', { query: text, fdc_foods: null }); } // the server asks USDA instead
     onlineCache[text] = out;
     return out;
   }

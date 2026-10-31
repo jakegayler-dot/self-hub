@@ -586,9 +586,10 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
     return { online: r.foods.filter((c) => !saved.has(c.key) && sane(c.per_100g)).map((c) => ({ ...c, serving: c.portions[0] || null })), online_problems: r.problems };
   }
   // The page asks USDA itself, from his own connection (the server's address is shared, and USDA limits each address),
-  // and hands the results here to be read the same way: POST { query, fdc_foods: [USDA search results] | null }.
+  // and hands the results here to be read the same way: POST { query, fdc_foods: [USDA search results, slimmed] | null }.
   router.get('/nutrition/foods/online-config', wrap(async (req, res) => {
-    res.json({ fdc_search: 'https://api.nal.usda.gov/fdc/v1/foods/search', fdc_key: foodSources.fdcKey(env), data_types: ['Survey (FNDDS)', 'Branded', 'Foundation'] });
+    res.json({ fdc_search: 'https://api.nal.usda.gov/fdc/v1/foods/search', fdc_key: foodSources.fdcKey(env), data_types: foodSources.FDC_TYPES,
+      require_all_words: true, nutrient_numbers: foodSources.FDC_NUTRIENT_NUMBERS, nutrient_ids: foodSources.FDC_NUTRIENT_IDS });
   }));
   router.post('/nutrition/foods/online', wrap(async (req, res) => {
     const b = req.body || {};

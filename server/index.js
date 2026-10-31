@@ -20,7 +20,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const sentinelPusher = createSentinelPusher({ pool });
 
-app.use(express.json());
+// 1 MB, not the 100 KB default: the food search posts USDA's results from the browser (Oct 31: they were refused 413).
+app.use(express.json({ limit: '1mb' }));
 
 // Health check stays unauthenticated so Railway's health probe can hit it.
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
