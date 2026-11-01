@@ -654,14 +654,50 @@ const LOG_AS = ['lift', 'gymnastics', 'conditioning', 'engine', 'test', 'none'];
 const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : null);
 const numOrNull = (v, lo, hi) => (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) && Number(v) >= lo && Number(v) <= hi ? Number(v) : undefined));
 
+// Machine intervals as the trainer sometimes writes them (Nov 1: a whole week refused over one block): no
+// block.engine, or sets without duration_s/unit, or no targets (he has no engine baseline yet, so there is nothing
+// to set a target from). Filled in from what the block says rather than refused: the machine and the kind of
+// session from its words, the unit from the machine; a set with no interval length logs as plain conditioning; a
+// missing target shows as "max". Returns a repaired copy of the block (the input is left alone).
+const MODALITY_WORDS = [['ski', /\bski/], ['row', /\brow|rower|\berg\b|concept ?2/], ['bike', /bike|assault|echo|airdyne|cycle/], ['run', /\brun|sprint|\bjog/]];
+const TYPE_WORDS = [['repeat', /repeat/], ['speed', /sprint|speed|all.?out|max effort|tabata|anaerobic/], ['vo2', /vo2|vo₂|vo 2|max aerobic|hard intervals?/], ['threshold', /threshold|tempo|lactate|sweet spot/], ['aerobic', /aerobic|zone ?2|easy|steady|flush|base|recovery/]];
+function repairEngineBlock(b) {
+  if (!b || typeof b !== 'object' || !Array.isArray(b.items)) return b;
+  const isEng = (it) => it && (it.log_as === 'engine' || it.log_as === 'test');
+  if (!b.items.some(isEng)) return b;
+  const text = [b.title, b.notes, b.format, ...b.items.map((it) => it && [it.movement, it.prescription, it.notes].join(' '))].join(' ').toLowerCase();
+  const e = b.engine && typeof b.engine === 'object' ? { ...b.engine } : {};
+  if (!engine.MODALITIES[e.modality]) { const m = MODALITY_WORDS.find(([, re]) => re.test(text)); e.modality = m ? m[0] : undefined; }
+  if (!(engine.SESSION_TYPES[e.type] || (e.type === 'test' && engine.TESTS[e.test]))) {
+    const testItem = b.items.find((it) => it && it.log_as === 'test' && engine.TESTS[it.test]);
+    if (testItem) { e.type = 'test'; e.test = testItem.test; }
+    else { const t = TYPE_WORDS.find(([, re]) => re.test(text)); e.type = t ? t[0] : 'aerobic'; }
+  }
+  const unit = engine.MODALITIES[e.modality] ? engine.MODALITIES[e.modality].unit : null;
+  const items = b.items.map((it) => {
+    if (!isEng(it)) return it;
+    const sets = (Array.isArray(it.sets) ? it.sets : []).map((s) => ({ ...(s || {}), unit: s && ['cal', 'm'].includes(s.unit) ? s.unit : unit }));
+    // No machine, or an interval with no length: it is still work done; log it as conditioning (distance or time).
+    if (!unit || sets.some((s) => s.duration_s == null || s.duration_s === '')) {
+      const ok = sets.length && sets.every((s) => s.duration_s != null || s.distance_m != null);
+      return { ...it, log_as: ok ? 'conditioning' : 'none', sets: sets.map(({ unit: _u, target: _t, ...s }) => s) };
+    }
+    return { ...it, sets };
+  });
+  const out = { ...b, items };
+  if (items.some(isEng)) out.engine = e; else if (!engine.MODALITIES[(b.engine || {}).modality]) delete out.engine;
+  return out;
+}
+
 // Rebuilds a workout body from only the fields the app understands. Returns
 // { body, errors }. Logging state is never accepted from outside.
 function sanitizeBody(input, fallback = {}) {
   const errors = [];
   if (!input || typeof input !== 'object') return { body: null, errors: ['body must be an object'] };
   if (!Array.isArray(input.blocks) || !input.blocks.length || input.blocks.length > 12) return { body: null, errors: ['body.blocks must be an array of 1–12 blocks'] };
-  const blocks = input.blocks.map((b, bi) => {
+  const blocks = input.blocks.map((b0, bi) => {
     const where = `blocks[${bi}]`;
+    const b = repairEngineBlock(b0);
     if (!b || typeof b !== 'object') { errors.push(`${where} must be an object`); return null; }
     const kind = BLOCK_KINDS.includes(b.kind) ? b.kind : (errors.push(`${where}.kind must be one of ${BLOCK_KINDS.join(', ')}`), 'strength');
     if (!Array.isArray(b.items) || b.items.length > 15) errors.push(`${where}.items must be an array of up to 15 items`);
@@ -689,7 +725,7 @@ function sanitizeBody(input, fallback = {}) {
         if (logAs === 'gymnastics' && (o.reps == null)) errors.push(`${ws}.reps is required for gymnastics`);
         if (logAs === 'conditioning' && o.distance_m == null && o.duration_s == null) errors.push(`${ws} needs distance_m or duration_s for conditioning`);
         if ((logAs === 'engine' || logAs === 'test') && (o.duration_s == null || !o.unit)) errors.push(`${ws} needs duration_s and unit ("cal" or "m") for engine intervals`);
-        if (logAs === 'engine' && o.target == null) errors.push(`${ws}.target is required for engine intervals`);
+        // No target (no engine baseline yet to set one from) shows as "max".
         return o;
       });
       return {
@@ -759,6 +795,7 @@ const REFINE_SCHEMA = {
 };
 
 module.exports = {
+  repairEngineBlock,
   generateSession, generateWeek, sanitizeBody, normalizeInputs, makeContext,
   REFINE_SCHEMA, FOCI, FOCUS_LABEL, MINUTES, MAJOR, WEEKLY_SET_TARGET,
   ymd, mondayOfStr, addDaysStr,

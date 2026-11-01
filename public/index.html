@@ -366,6 +366,91 @@ a.trk-btn{text-decoration:none;display:inline-block}
   .ex-trip .ex-map{height:360px}
 }
 @media (max-width:899.98px){ .ex-map{height:300px} }
+/* ---- Train, levelled up (Nov 1): cleaner cards, coaching on each movement, a side panel ---- */
+.tr-layout{display:block}
+.tr-panel{display:none}
+@media (min-width:1100px){
+  .tr-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:24px;align-items:start}
+  .tr-panel{display:block;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto;background:linear-gradient(180deg,#221a12,#1b150f);border:1px solid var(--line2);border-radius:8px;padding:18px 18px 20px}
+}
+.wk-card{border-radius:8px;background:linear-gradient(180deg,#211910,#1c160f);border-color:var(--line)}
+.wk-card.today{border-color:#8f6a2a;box-shadow:0 0 0 1px rgba(224,168,74,.15),0 10px 30px rgba(0,0,0,.25)}
+.wk-head{padding:14px 16px}
+.wk-head .d{font-family:var(--sans);font-style:italic;color:var(--amber);font-size:13px}
+.wk-head .t{font-family:var(--display);font-weight:400;font-size:21px;letter-spacing:.01em;margin-top:2px}
+.wk-body{padding:0 16px 16px}
+.wk-block{border-top:0;margin-top:10px;padding:12px 14px 8px;background:rgba(255,236,200,.025);border-radius:6px;border-left:3px solid var(--line2)}
+.wk-block.wk-warmup{border-left-color:#6f9a80}.wk-block.wk-strength,.wk-block.wk-olympic{border-left-color:#a8231c}
+.wk-block.wk-accessory,.wk-block.wk-gymnastics,.wk-block.wk-skill{border-left-color:#c58a34}.wk-block.wk-metcon,.wk-block.wk-conditioning{border-left-color:#5e8fa0}
+.wk-block.wk-core{border-left-color:#c58a34}.wk-block.wk-cooldown{border-left-color:#6f9a80}
+.wk-block h4{font-family:var(--display);font-weight:400;font-size:17px;color:var(--ink);letter-spacing:.01em;margin-bottom:6px}
+.wk-block h4 span{font-family:var(--sans);font-size:13px}
+.wk-item{margin:0 0 14px;padding-bottom:12px;border-bottom:1px solid rgba(78,63,44,.5)}
+.wk-item:last-child{border-bottom:0;padding-bottom:0}
+.wk-item.tc-sel{box-shadow:-14px 0 0 -11px var(--amber)}
+.wk-item .tc-mv{background:none;border:0;padding:0;font:500 16px var(--sans);color:var(--ink);cursor:pointer;text-align:left;text-decoration:underline dotted rgba(224,168,74,.5);text-underline-offset:4px}
+.wk-item .tc-mv:hover{color:var(--amber)}
+.wk-item .rx{font-size:14px;color:var(--ink2);margin-left:8px}
+.wk-item .src{font-size:12.5px}
+.tc-line{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:5px}
+.tc-tempo{font-size:12px;color:var(--amber);border:1px solid var(--amber-dim);border-radius:3px;padding:1px 6px;white-space:nowrap;cursor:help}
+.tc-cue{font-size:13.5px;color:var(--ink2);font-style:italic}
+.tc-links{display:flex;gap:14px;margin:4px 0 2px}
+.tc-more,.tc-video{background:none;border:0;padding:0;font:13px var(--sans);color:var(--ink3);cursor:pointer;text-decoration:none}
+.tc-more:hover,.tc-video:hover{color:var(--amber)}
+.tc-video:before{content:'\25B6';font-size:9px;margin-right:5px;vertical-align:1px}
+.tc-energy{font-size:13.5px;color:#8fb7c4;margin:0 0 10px}.tc-energy b{font-weight:500}.tc-energy span{display:block;color:var(--ink3);font-size:12.5px}
+.tc-warm .tc-wh{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;font-size:13.5px;color:var(--ink3)}
+.tc-steps{margin:0 0 8px;padding-left:22px;font-size:14px;color:var(--ink2)}
+.tc-steps li{margin:6px 0;padding-left:2px}.tc-steps li::marker{color:#6f9a80;font-weight:600}
+.tc-steps b{color:var(--ink);font-weight:500}.tc-steps i{color:var(--ink3)}
+.tc-dose{font-size:12.5px;color:var(--amber);margin-left:4px}
+.tc-sub{font-family:var(--display);font-size:14.5px;color:var(--ink);margin:0 0 4px}
+.tc-ramp{margin:10px 0 6px}.tc-rampsets{display:flex;gap:6px;flex-wrap:wrap;margin:4px 0}
+.tc-rampsets span{font-size:13px;color:var(--ink2);border:1px solid var(--line2);border-radius:3px;padding:3px 8px}.tc-rampsets b{color:var(--ink);font-weight:500}
+.tc-note{font-size:12.5px;color:var(--ink3);margin:6px 0 0;line-height:1.5}
+.tc-orig{font-size:13px;color:var(--ink3);margin-top:6px}.tc-orig summary{cursor:pointer}
+.tc-kicker{font-size:13px;font-style:italic;color:var(--amber)}
+.tc-name{font-family:var(--display);font-weight:400;font-size:24px;line-height:1.15;margin:2px 0 6px;color:var(--ink)}
+.tc-rx{font-size:14px;color:var(--ink2)}.tc-src{font-size:12.5px;color:var(--ink3);margin-top:2px}
+.tc-sec{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.tc-sec p{font-size:14px;line-height:1.55;color:var(--ink2);margin:4px 0 0}
+.tc-muss{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 2px}
+.tc-mus{font-size:12.5px;padding:2px 9px;border-radius:12px;border:1px solid}
+.tc-mus.p{color:#f2c9b8;border-color:#a8231c;background:rgba(168,35,28,.22)}
+.tc-mus.s{color:#f0d79c;border-color:#8f6a2a;background:rgba(224,168,74,.1)}
+.tc-cues{margin:4px 0 0;padding-left:18px;font-size:14px;color:var(--ink2);line-height:1.5}.tc-cues li{margin:3px 0}
+.tc-ten{background:rgba(168,35,28,.08);border:1px solid rgba(168,35,28,.35);border-radius:6px;padding:10px 12px;margin-top:14px}
+.tc-ten p{color:var(--ink)}
+.tc-code{font-family:var(--sans);font-weight:600;color:var(--amber);margin-left:6px}
+.tc-en .tc-sub{color:#8fb7c4}
+.tc-feel{font-style:italic}
+.tc-vbtn{display:inline-block;margin-top:14px;text-decoration:none}
+.tc-sheet{position:fixed;inset:0;z-index:55;background:rgba(10,8,6,.55);display:none}
+.tc-sheet.on{display:block}
+.tc-sheetin{position:absolute;left:0;right:0;bottom:0;max-height:82vh;overflow:auto;background:#1f1812;border-top:1px solid var(--line2);border-radius:14px 14px 0 0;padding:18px 18px calc(24px + env(safe-area-inset-bottom));box-shadow:0 -20px 40px rgba(0,0,0,.5)}
+.tc-close{position:sticky;top:0;float:right;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);width:34px;height:34px;border-radius:50%;font-size:20px;cursor:pointer}
+.tc-guide{position:fixed;inset:0;z-index:80;background:#100c08;display:none;align-items:center;justify-content:center;padding:20px;text-align:center}
+.tc-guide.on{display:flex}
+.tc-gin{max-width:520px;width:100%}
+.tc-gstep{font-size:14px;color:#8fc3a4;font-style:italic}
+.tc-gname{font-family:var(--display);font-size:32px;color:var(--ink);margin:6px 0 2px;line-height:1.15}
+.tc-gdose{font-size:16px;color:var(--amber)}
+.tc-gclock{font-size:min(22vw,110px);color:var(--ink);line-height:1.1;margin:14px 0 8px;font-variant-numeric:tabular-nums}
+.tc-gcue{font-size:17px;color:var(--ink2);line-height:1.5}
+.tc-gnext{font-size:14px;color:var(--ink3);margin-top:14px}
+.tc-gctl{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:22px}
+.tr-head{align-items:flex-start}
+.tr-plan{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px}
+.tc-wo{margin:6px 0 2px;padding:7px 10px;border-left:3px solid var(--amber);background:rgba(224,168,74,.07);border-radius:0 4px 4px 0;font-size:14px;color:var(--ink);line-height:1.45}
+.tc-wol{display:block;font-size:12px;color:var(--amber);font-style:italic;margin-bottom:1px}
+.tc-filmrec{font-size:12.5px;color:var(--ink3);margin-top:2px}
+.tc-filmrec:before{content:'\25CF';color:#c0392b;font-size:9px;margin-right:6px;vertical-align:1px}
+.tc-noteedit{margin:8px 0;padding:10px;background:var(--panel);border:1px solid var(--line2);border-radius:6px}
+.tc-noteedit textarea{width:100%;background:var(--panel2);border:1px solid var(--line2);border-radius:4px;color:var(--ink);padding:8px 10px;font:15px/1.45 var(--sans);resize:vertical}
+.tc-noterow{display:flex;gap:8px;margin-top:8px}
+.tc-panelnote p{margin:4px 0 8px}
+@media (max-width:480px){ .wk-set{gap:4px;flex-wrap:nowrap} .wk-set .in-note{flex-basis:auto} .wk-set:has(.in-note:not([hidden])){flex-wrap:wrap} .wk-set input{width:50px} .wk-set .in-rpe{width:40px} .wk-tick{width:32px;flex:0 0 32px} .wk-set .u{font-size:10.5px} }
 /* ---- Coach chat ---- */
 .cc-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .cc-top .nu-views{margin:0}
@@ -632,7 +717,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     <div class="trk-pane" data-pane="train">
       <div class="nu-views tr-views"><button class="wk-chipbtn on" data-trv="plan">This week</button><button class="wk-chipbtn" data-trv="trainer">Trainer</button></div>
       <div id="trCoach" hidden></div>
-      <div id="trPlanView">
+      <div id="trPlanView" class="tr-layout"><div class="tr-main">
       <div class="trk-sec">
         <div class="tr-head">
           <h2>This week</h2>
@@ -676,6 +761,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
       <details class="trk-sec tr-fold"><summary>Past workouts</summary>
         <div id="wkPast" style="margin-top:10px"></div>
       </details>
+      </div>
+      <aside class="tr-panel" id="trPanel" aria-label="Coaching"></aside>
       </div>
     </div>
 
@@ -971,6 +1058,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="/js/body3d.js"></script>
+<script src="/js/coaching.js"></script>
+<script src="/js/trainCoach.js"></script>
 <script>
 (function(){
   var API = '/api/fitness';
@@ -2596,6 +2685,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     }catch(e){ busy.textContent='Could not plan the week: '+e.message; this.disabled=false; }
   });
 
+  window.SelfHubTrainRender = function(){ if(train.workouts) renderPlan(); };
   function renderPlan(){
     var today = localISO();
     var plan = train.workouts.filter(function(w){ return w.date>=today || (w.status==='planned' && w.progress.done>0); })
@@ -2609,6 +2699,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
       planEl.innerHTML = plan.map(function(w,i){ return workoutCard(w, train.open[w.id] || (!anyOpen && i===0)); }).join('');
     }
     pastEl.innerHTML = past.length ? past.map(function(w){ return workoutCard(w, !!train.open[w.id]); }).join('') : '<p class="trk-note">None yet.</p>';
+    if(window.SelfHubTrain) SelfHubTrain.overview(plan.find(function(w){ return w.date===today; }) || plan[0] || null);
   }
 
   function fmtDay(d){ var dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
@@ -2669,24 +2760,30 @@ a.trk-btn{text-decoration:none;display:inline-block}
   }
 
   function blockHtml(w,b){
-    var h = '<div class="wk-block" data-bid="'+esc(b.id)+'"><h4>'+esc(b.title)+'<span>'+(b.minutes?esc(b.minutes)+' min':'')+'</span></h4>';
+    var TC = window.SelfHubTrain;
+    var h = '<div class="wk-block wk-'+esc(b.kind)+'" data-bid="'+esc(b.id)+'"><h4>'+esc(b.title)+'<span>'+(b.minutes?esc(b.minutes)+' min':'')+'</span></h4>';
     if(b.notes) h += '<p class="wk-bnote">'+esc(b.notes)+'</p>';
+    // The warm-up, walked through (Nov 1): built from the session's lifts, with a guided timer.
+    if(TC && b.kind==='warmup') return h + TC.warmupHtml(w,b) + '</div>';
+    if(TC) h += TC.blockNote(b);
     var timed = b.items.some(function(it){ return (it.log_as==='engine'||it.log_as==='test') && it.sets.length; });
     if(timed) h += '<button class="trk-btn" data-act="timer" style="margin-bottom:8px;padding:6px 11px;font-size:12px">&#9654; Start interval timer</button>';
     b.items.forEach(function(it){
       // Metcon pieces already name the movement in the prescription ("15 cal Row").
       h += '<div class="wk-item" data-iid="'+esc(it.id)+'">'+(it.test?'<span class="wk-chip amber" style="margin-right:6px">Test</span>':'')+(b.kind==='metcon' && it.prescription
         ? '<span class="mv">'+esc(it.prescription)+'</span>'
-        : '<span class="mv">'+esc(it.movement)+'</span>'+(it.prescription?'<span class="rx">'+esc(it.prescription)+'</span>':'')+
+        : '<button class="mv tc-mv" data-act="coach">'+esc(it.movement)+'</button>'+(it.prescription?'<span class="rx">'+esc(it.prescription)+'</span>':'')+
           (b.kind!=='metcon' && restOf(it)?'<span class="wk-rest" title="Rest between sets">rest '+mmss(restOf(it))+'</span>':''));
       if(it.load_source) h += '<div class="src">'+esc(it.load_source)+'</div>';
       else if(it.notes) h += '<div class="src">'+esc(it.notes)+'</div>';
+      if(TC) h += TC.itemExtras(w,b,it);
       if(b.kind!=='metcon' && it.log_as!=='none' && it.sets.length){
         h += '<div class="wk-sets">'+it.sets.map(function(s,i){ return setHtml(it,s,i); }).join('')+'</div>';
         h += '<button class="wk-addset" data-act="addset">+ set</button>';
       }
       h += '</div>';
     });
+    if(TC && b.kind==='cooldown') h += TC.cooldownHtml(w,b);
     if(b.kind==='metcon'){
       if(b.result) h += '<div class="wk-set done"><span class="res">&#10003; '+esc(b.result.text)+'</span><button class="wk-undo" data-act="unmetcon" title="Undo">&times;</button></div>';
       else h += '<div class="wk-set"><input type="text" style="width:170px" class="mc-res" placeholder="'+(/time/i.test(b.title)?'11:42':'6 rounds + 4')+'"><button class="trk-btn" data-act="metcon" style="padding:6px 11px;font-size:12px">Log result</button></div>';
@@ -2772,6 +2869,10 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var id=Number(card.dataset.wid), act=t.dataset.act;
     var w=train.workouts.find(function(x){ return x.id===id; });
     if(act==='toggle'){ train.open[id]=!card.classList.contains('open'); card.classList.toggle('open'); return; }
+    // Coaching: a movement's form, tension and what it trains; the guided warm-up.
+    if(act==='coach' && window.SelfHubTrain){ var cb=t.closest('.wk-block'), ci=t.closest('.wk-item'); if(cb && ci) SelfHubTrain.select(w, cb.dataset.bid, ci.dataset.iid); return; }
+    if(act==='gwarm' && window.SelfHubTrain){ SelfHubTrain.startWarmup(w); return; }
+    if(act==='liftnote' && window.SelfHubTrain){ var nb=t.closest('.wk-block'), ni=t.closest('.wk-item'); if(nb && ni) SelfHubTrain.noteFromCard(w, nb.dataset.bid, ni.dataset.iid, ni); return; }
     // A set's note box only when he wants one (Oct 31: an empty note box under every set was clutter).
     if(act==='note'){ var ni=t.parentNode.querySelector('.in-note'); ni.hidden=false; t.hidden=true; ni.focus(); return; }
     if(act==='timer'){ var tb=w.body.blocks.find(function(b){ return b.id===(t.closest('.wk-block')||{}).dataset.bid; }); startTimer(tb); return; }

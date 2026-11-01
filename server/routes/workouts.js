@@ -356,6 +356,23 @@ function createWorkoutsRouter({ pool }) {
     try { await pool.query('DELETE FROM fitness_tests WHERE id = $1', [Number(req.params.id)]); res.status(204).end(); } catch (err) { fail(res, err); }
   });
 
+  // ---- lift notes: what he's working on in each lift (Nov 1) ----
+  //   GET /lift-notes → [{ movement, body, updated_at }]    PUT /lift-notes/:movement { body } (empty clears it)
+  router.get('/lift-notes', async (req, res) => {
+    const rows = await q("SELECT movement, body, updated_at FROM lift_notes WHERE body <> '' ORDER BY movement");
+    res.json(rows.map((r) => ({ movement: r.movement, body: r.body, updated_at: new Date(r.updated_at).toISOString() })));
+  });
+  router.put('/lift-notes/:movement', async (req, res) => {
+    const movement = String(req.params.movement || '').trim().slice(0, 80);
+    if (!movement) return res.status(400).json({ error: 'movement is required' });
+    const body = typeof (req.body && req.body.body) === 'string' ? req.body.body.replace(/\r/g, '').trim().slice(0, 2000) : null;
+    if (body === null) return res.status(400).json({ error: 'body is the note text' });
+    if (!body) { await q('DELETE FROM lift_notes WHERE movement = $1', [movement]); return res.json({ movement, body: '' }); }
+    const r = (await q(`INSERT INTO lift_notes (movement, body) VALUES ($1, $2)
+      ON CONFLICT (movement) DO UPDATE SET body = EXCLUDED.body, updated_at = now() RETURNING movement, body, updated_at`, [movement, body]))[0];
+    res.json({ movement: r.movement, body: r.body, updated_at: new Date(r.updated_at).toISOString() });
+  });
+
   router.get('/workouts', async (req, res) => {
     const { from, to } = req.query;
     if ((from && !isDate(from)) || (to && !isDate(to))) return res.status(400).json({ error: 'from/to must be YYYY-MM-DD' });
@@ -1064,6 +1081,8 @@ function createWorkoutsRouter({ pool }) {
         crossfit_percentiles: await percentilesFor(date),
         sets_this_week_by_pattern: ctx.weekSets,
         weekly_set_target: gen.WEEKLY_SET_TARGET,
+        // What he's working on in each lift, from reviewing his own videos (Nov 1): cue these when the lift comes up.
+        lift_notes: Object.fromEntries((await q("SELECT movement, body FROM lift_notes WHERE body <> ''").catch(() => [])).map((r) => [r.movement, r.body])),
         last_28_days: {
           lifts: rows.lifts.filter((l) => ymd(l.entry_date) >= since && ymd(l.entry_date) <= date).map((l) => `${ymd(l.entry_date)} ${l.lift} ${Number(l.load_lb)}×${l.reps}${l.rpe ? ` @${l.rpe}` : ''}`).slice(-120),
           gymnastics: rows.gymnastics.filter((g) => ymd(g.entry_date) >= since && ymd(g.entry_date) <= date).map((g) => `${ymd(g.entry_date)} ${g.movement} ×${g.reps}`).slice(-80),
@@ -1149,6 +1168,8 @@ function createWorkoutsRouter({ pool }) {
         crossfit_percentiles: await percentilesFor(w.date),
         sets_this_week_by_pattern: ctx.weekSets,
         weekly_set_target: gen.WEEKLY_SET_TARGET,
+        // What he's working on in each lift, from reviewing his own videos (Nov 1): cue these when the lift comes up.
+        lift_notes: Object.fromEntries((await q("SELECT movement, body FROM lift_notes WHERE body <> ''").catch(() => [])).map((r) => [r.movement, r.body])),
         last_7_days: { lifts: recentLifts.slice(-40), gymnastics: recentGym.slice(-40) },
         this_week_plan: week.map((x) => ({ id: x.id, date: ymd(x.workout_date), title: x.title, status: x.status })),
       },

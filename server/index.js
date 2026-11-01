@@ -59,6 +59,10 @@ app.use('/api/sentinel', createSentinelActionsRouter());
 app.get('/js/strength.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'lib', 'strength.js'));
 });
+// The trainer's coaching library (form, tempo, tension, what each movement does), shared the same way.
+app.get('/js/coaching.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'lib', 'coaching.js'));
+});
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
 // Express 5 requires a named wildcard, not a bare '*'.

@@ -279,16 +279,17 @@ test('groceries are two-way with Sentinel: snapshot out, ticked off back in (int
 
   // Sentinel's login can tick a plan item off: it goes into the pantry.
   const open = (await call('GET', '/fitness/nutrition/groceries')).body.open;
-  const beef = open.find((x) => x.food_key === 'usda:17458');
-  assert.ok(beef, 'ground beef on the list');
-  const before = (await router.store.pantryMap()).get('usda:17458') || 0;
+  // Whatever the plan put on the list (on a Sunday only today's meals are left in the week, Nov 1).
+  const beef = open.find((x) => x.food_key === 'usda:17458') || open.find((x) => x.food_key && x.grams > 0);
+  assert.ok(beef, 'a planned food on the list');
+  const before = (await router.store.pantryMap()).get(beef.food_key) || 0;
   r = await call('PATCH', `/fitness/nutrition/groceries/${beef.id}`, { status: 'bought' }, SENTINEL);
   assert.equal(r.status, 200);
   assert.equal(r.body.item.status, 'done');
-  assert.equal((await router.store.pantryMap()).get('usda:17458'), before + beef.grams);
+  assert.equal((await router.store.pantryMap()).get(beef.food_key), before + beef.grams);
   // Un-ticked: back out.
   await call('PATCH', `/fitness/nutrition/groceries/${beef.id}`, { status: 'open' }, SENTINEL);
-  assert.equal((await router.store.pantryMap()).get('usda:17458') || 0, before);
+  assert.equal((await router.store.pantryMap()).get(beef.food_key) || 0, before);
   await call('PATCH', `/fitness/nutrition/groceries/${beef.id}`, { status: 'bought' });
 
   // Added from Sentinel (voice: "put oysters on my grocery list").

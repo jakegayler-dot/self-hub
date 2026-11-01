@@ -711,6 +711,17 @@ const COLLECTIONS = [
     },
   },
   {
+    name: 'lift_notes',
+    description: "What Jake is working on in each lift (his own notes, usually from reviewing his videos): the lift and the note. Use when he asks what to focus on in a lift, or before a session with that lift.",
+    kind: 'list',
+    search: ['movement', 'note'],
+    fields: ['id', 'movement', 'note', 'updated'],
+    async load({ pool }) {
+      return (await pool.query("SELECT movement, body, updated_at FROM lift_notes WHERE body <> '' ORDER BY movement")).rows
+        .map((r) => ({ id: r.movement, movement: r.movement, note: r.body, updated: new Date(r.updated_at).toISOString().slice(0, 10) }));
+    },
+  },
+  {
     name: 'expeditions',
     description: "Jake's trips and expeditions (Self Hub's Expeditions): title, kind (trip, expedition, outing), dates, the places in order with their regions, the straight-line distance between them, how many journal pages and photos, and his summary. Use for \"where have I been\", \"when was I last in…\" or planning around a trip.",
     kind: 'list',

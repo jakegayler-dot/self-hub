@@ -339,3 +339,38 @@ test('manual "done" survives later logging; bad ids are 404; week regen keeps re
   const again = (await call('POST', '/workouts/generate-week', { start_date: start, days: 2, minutes: 45, focus: 'strength', equipment: 'box', seed: 4 })).body;
   assert.ok(again.kept_existing.includes(target.id), 'refined plan kept');
 });
+
+// Nov 1: "Could not plan the week … days[3].blocks[1].items[0].sets[0] needs duration_s and unit … engine/test items
+// need block.engine { modality, type }". Machine intervals written loosely are repaired, not refused.
+test('loosely written machine intervals are repaired rather than refusing the week', () => {
+  const G = require('../server/lib/workoutGen');
+  const day = { title: 'Engine + core', blocks: [
+    { kind: 'warmup', title: 'Warm-up', items: [{ movement: 'Easy row', log_as: 'none', sets: [] }] },
+    { kind: 'conditioning', title: 'Threshold intervals on the Echo bike', items: [{ movement: 'Echo Bike', log_as: 'engine', sets: [{ duration_s: 240, rest_s: 120 }, { duration_s: 240, rest_s: 120 }, { duration_s: 240 }] }] },
+    { kind: 'conditioning', title: 'Row', items: [{ movement: 'Row', log_as: 'engine', sets: [{ distance_m: 500, rest_s: 90 }, { distance_m: 500 }] }] },
+    { kind: 'conditioning', title: 'Finisher', items: [{ movement: 'Burpees', log_as: 'engine', sets: [{ reps: 20 }] }] },
+  ] };
+  const { body, errors } = G.sanitizeBody(day, { date: '2026-11-04', title: 'Engine', focus: 'engine', minutes: 60, equipment: [] });
+  assert.deepEqual(errors, []);
+  const [, bike, row, fin] = body.blocks;
+  assert.deepEqual(bike.engine, { modality: 'bike', type: 'threshold', unit: 'cal' });
+  assert.deepEqual(bike.items[0].sets.map((s) => [s.duration_s, s.unit, s.target]), [[240, 'cal', null], [240, 'cal', null], [240, 'cal', null]], 'no baseline yet: no target, shows "max"');
+  assert.equal(row.items[0].log_as, 'conditioning', '500 m pieces with no interval length log as conditioning');
+  assert.equal(row.engine, null);
+  assert.equal(fin.items[0].log_as, 'none', 'burpees are not a machine and have no distance or time');
+});
+
+// Nov 1: "a little note pad that I can enter things to work on with that lift".
+test('lift notes: write, read, rewrite, clear', async () => {
+  let r = await call('PUT', '/lift-notes/Snatch', { body: '  Stay over the bar longer.\r\nElbows fast in the catch.  ' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.body, 'Stay over the bar longer.\nElbows fast in the catch.');
+  await call('PUT', '/lift-notes/Back%20Squat', { body: 'Brace before unracking' });
+  r = await call('GET', '/lift-notes');
+  assert.deepEqual(r.body.map((n) => n.movement), ['Back Squat', 'Snatch']);
+  await call('PUT', '/lift-notes/Snatch', { body: 'Patient off the floor' });
+  assert.equal((await call('GET', '/lift-notes')).body.find((n) => n.movement === 'Snatch').body, 'Patient off the floor');
+  await call('PUT', '/lift-notes/Snatch', { body: '' });
+  assert.deepEqual((await call('GET', '/lift-notes')).body.map((n) => n.movement), ['Back Squat']);
+  assert.equal((await call('PUT', '/lift-notes/Snatch', {})).status, 400);
+});
