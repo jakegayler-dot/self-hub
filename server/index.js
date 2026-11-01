@@ -9,6 +9,7 @@ const { createPercentilesRouter } = require('./routes/percentiles');
 const { createNutritionRouter, createStore: createNutritionStore } = require('./routes/nutrition');
 const { createCoachChatRouter } = require('./routes/coachChat');
 const { createWardrobeRouter, createWardrobeStore } = require('./routes/wardrobe');
+const { createExpeditionsRouter } = require('./routes/expeditions');
 const { createSentinelPusher } = require('./lib/sentinel');
 const { createSentinelReadRouter } = require('./routes/sentinelRead');
 const { createSentinelActionsRouter, trackMountPaths } = require('./routes/sentinelActions');
@@ -20,6 +21,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const sentinelPusher = createSentinelPusher({ pool });
 
+// Expedition photos come as base64 JPEGs (shrunk in the browser, about 0.5 MB each): 12 MB for that route only.
+app.use('/api/fitness/expeditions', express.json({ limit: '12mb' }));
 // 1 MB, not the 100 KB default: the food search posts USDA's results from the browser (Oct 31: they were refused 413).
 app.use(express.json({ limit: '1mb' }));
 
@@ -42,6 +45,8 @@ app.use('/api/fitness', createPercentilesRouter({ pool }));
 app.use('/api/fitness', createNutritionRouter({ pool }));
 // The wardrobe: his clothes, what to wear today, outfits, the wishlist (the stylist in the coach chat works on it).
 app.use('/api/fitness', createWardrobeRouter({ pool }));
+// Expeditions: trips on the map, journal pages with the day's weather, photos, and the training he did on the way.
+app.use('/api/fitness', createExpeditionsRouter({ pool }));
 // The coaches to talk to (trainer, nutritionist): Sentinel thinks, Self Hub keeps the conversation and the memory.
 app.use('/api/fitness', createCoachChatRouter({ pool, workouts: workoutsRouter, nutrition: createNutritionStore(pool), wardrobe: createWardrobeStore(pool) }));
 // Read-only lookup API for Sentinel's voice agent (same Basic auth).

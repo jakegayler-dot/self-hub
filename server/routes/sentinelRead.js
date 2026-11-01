@@ -711,6 +711,33 @@ const COLLECTIONS = [
     },
   },
   {
+    name: 'expeditions',
+    description: "Jake's trips and expeditions (Self Hub's Expeditions): title, kind (trip, expedition, outing), dates, the places in order with their regions, the straight-line distance between them, how many journal pages and photos, and his summary. Use for \"where have I been\", \"when was I last in…\" or planning around a trip.",
+    kind: 'list',
+    search: ['title', 'places', 'summary', 'kind'],
+    custom: { kind: enumFilter('kind', ['trip', 'expedition', 'outing']) },
+    fields: ['id', 'title', 'kind', 'start_date', 'end_date', 'places', 'distance_km', 'pages', 'photos', 'summary'],
+    async load({ pool }) {
+      return (await require('./expeditions').createExpeditionStore(pool).list()).map((e) => ({ id: e.id, title: e.title, kind: e.kind, start_date: e.start_date, end_date: e.end_date,
+        places: e.places.map((p) => [p.name, p.region].filter(Boolean).join(', ')).join('; '), distance_km: e.distance_km, pages: e.entries, photos: e.photos, summary: e.summary }));
+    },
+  },
+  {
+    name: 'expedition_entries',
+    description: "Jake's expedition journal pages: the trip, the date, where he was, what he wrote, and the weather that day (high/low °C, sky, precipitation, wind).",
+    kind: 'list',
+    search: ['expedition', 'place', 'title', 'body'],
+    fields: ['id', 'expedition', 'date', 'place', 'title', 'body', 'weather'],
+    async load({ pool }) {
+      const rows = (await pool.query(`SELECT e.id, x.title AS expedition, e.entry_date, p.name AS place, e.title, e.body, e.weather
+        FROM expedition_entries e JOIN expeditions x ON x.id = e.expedition_id LEFT JOIN expedition_places p ON p.id = e.place_id
+        ORDER BY e.entry_date DESC, e.id DESC`)).rows;
+      const ymd = (d) => (d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10));
+      return rows.map((r) => ({ id: r.id, expedition: r.expedition, date: ymd(r.entry_date), place: r.place || null, title: r.title || null, body: r.body,
+        weather: r.weather ? [r.weather.sky, r.weather.high_c != null ? `${Math.round(r.weather.high_c)}°/${Math.round(r.weather.low_c)}°C` : null, r.weather.precip_mm ? `${r.weather.precip_mm} mm` : null].filter(Boolean).join(', ') : null }));
+    },
+  },
+  {
     name: 'wardrobe_outfits',
     description: "Outfits saved in Jake's wardrobe (by him or his stylist), with the pieces in each and what they're for (farm, town, dressed up, gym).",
     kind: 'list',
