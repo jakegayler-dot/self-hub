@@ -20,6 +20,8 @@ Training:
   POST /workouts/generate { date, minutes 20-120, focus, equipment: [..] | preset name }  quick rules session
   POST /workouts/plan-week { start_date (Monday), days 4-6, minutes, note?, volume_level beginner|intermediate|advanced|elite, availability: { "YYYY-MM-DD": gym|truck|off }, background: true }  the full trainer plan (takes minutes; GET /workouts/plan-week/status)
   POST /workouts/review-week { start_date }  review the week so far and adjust the rest
+  GET /workouts/block?start=  where the week sits in his 6-week block (5 build, week 6 deload) · PUT /workouts/block { start_date, week 1-6 }  set it (6 = deload this week)
+  GET /workouts/weather?start=  the farm forecast per day, and whether a run or ruck can go outside (feels-like 3 °C or warmer at its warmest, no snow)
 Logging what he did:
   POST /workouts/log-entry { date, movement, reps?, load_lb?, rpe?, notes?, distance_m?, duration_s?, output?, minutes?, session_rpe?, session_notes?, done? }  into that day's session (or the history if nothing planned matches)
   POST /workouts/:id/log { block_id, item_id, set_index, reps?, load_lb?, rpe?, duration_s?, distance_m?, output?, notes? } · POST /workouts/:id/unlog { block_id, item_id, set_index }

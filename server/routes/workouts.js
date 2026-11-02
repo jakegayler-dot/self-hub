@@ -39,6 +39,8 @@ const { EQUIPMENT, EQUIPMENT_PRESETS, MOVEMENTS, BY_NAME } = require('../lib/mov
 const coach = require('../lib/coach');
 const ledger = require('../lib/ledger');
 const volume = require('../lib/volume');
+const rules = require('../lib/weekRules');
+const W = require('../lib/wardrobe');
 
 const { ymd, mondayOfStr, addDaysStr } = gen;
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
@@ -52,9 +54,45 @@ function coachFail(res, err) {
   res.status(500).json({ error: 'server error' });
 }
 
-function createWorkoutsRouter({ pool }) {
+function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
   const router = express.Router();
   const q = async (sql, params) => (await pool.query(sql, params)).rows;
+
+  // ---- the training block and the weather (lib/weekRules.js; Nov 2) ----
+  const PHASES = ['Phase 0 (Assess)', 'Phase 1 (Foundation Build)', 'Phase 2 (Shape Build)', 'Phase 3 (Sharpen)', 'Maintain'];
+  async function profileRow() { return (await q('SELECT * FROM fitness_profile WHERE id = 1'))[0] || {}; }
+  async function blockFor(date, level) {
+    const ws = mondayOfStr(date);
+    const p = await profileRow();
+    const L = volume.LEVELS[level];
+    const b = rules.blockInfo(ws, p.block_start ? ymd(p.block_start) : null, L ? L.rpe_cap : 9.5);
+    return { ...b, set: !!p.block_start, phase: p.phase == null ? null : PHASES[p.phase] || null };
+  }
+  // The farm's daily forecast (Open-Meteo, 16 days, no key), kept 30 minutes. Past days and beyond 16 days: none.
+  let wxCache = null;
+  async function weatherFor(dates) {
+    try {
+      if (!wxCache || Date.now() - wxCache.at > 30 * 60000) {
+        const r = await fetchImpl(W.openMeteoUrl(16), { signal: AbortSignal.timeout(8000) });
+        if (!r.ok) throw new Error(`forecast ${r.status}`);
+        wxCache = { at: Date.now(), data: await r.json() };
+      }
+      return rules.weatherByDay(wxCache.data, dates, W.weatherFromOpenMeteo);
+    } catch (e) { return {}; }
+  }
+  const weekDates = (ws) => Array.from({ length: 7 }, (_, i) => addDaysStr(ws, i));
+  // The weather for the trainer: each day's numbers and whether a run or ruck can go outside.
+  const weatherNote = (wx) => Object.fromEntries(Object.entries(wx).map(([d, w]) => {
+    const v = rules.outdoorDay(w);
+    return [d, { high_c: w.high_c, low_c: w.low_c, feels_high_c: w.feels_high_c, feels_low_c: w.feels_low_c, snow_cm: w.snow_cm, precip_mm: w.precip_mm, wind_kmh: w.wind_kmh, outdoor_run_or_ruck: v.ok ? 'ok' : `no: ${v.why}` }];
+  }));
+  // Hard sets logged in the last build week before a date (skips back over a deload, so a block doesn't restart its ramp from half).
+  async function rampReference(ws, lastWeek) {
+    const p = await profileRow();
+    const prev = rules.blockInfo(addDaysStr(ws, -7), p.block_start ? ymd(p.block_start) : null);
+    if (p.block_start && prev.deload && addDaysStr(ws, -7) >= ymd(p.block_start)) return lastWeekHardSets(addDaysStr(ws, -7));
+    return lastWeek;
+  }
 
   // Every handler that reads a workout body, changes it and writes it back
   // runs one-at-a-time per workout, so two quick taps can't overwrite each
@@ -386,6 +424,29 @@ function createWorkoutsRouter({ pool }) {
   // GET /workouts/plan-week/status says how it's going. Without it the request waits, as before.
   let planJob = null;
   router.get('/workouts/plan-week/status', (req, res) => res.json({ job: planJob }));
+  // Where a week sits in the training block (5 build weeks, then a deload), and setting it: { start_date, week 1-6 }
+  // (week 6 = deload this week; the next block starts the week after).
+  router.get('/workouts/block', async (req, res) => {
+    const d = req.query.start || gen.ymd(new Date(Date.now() - 6 * 3600e3));
+    if (!isDate(d)) return res.status(400).json({ error: 'start must be YYYY-MM-DD' });
+    res.json(await blockFor(d));
+  });
+  router.put('/workouts/block', async (req, res) => {
+    const b = req.body || {};
+    const d = b.start_date || gen.ymd(new Date(Date.now() - 6 * 3600e3));
+    const wk = Number(b.week);
+    if (!isDate(d)) return res.status(400).json({ error: 'start_date must be YYYY-MM-DD' });
+    if (!(Number.isInteger(wk) && wk >= 1 && wk <= rules.BLOCK_WEEKS)) return res.status(400).json({ error: `week must be 1-${rules.BLOCK_WEEKS} (${rules.BLOCK_WEEKS} = deload)` });
+    await pool.query('UPDATE fitness_profile SET block_start = $1, updated_at = now() WHERE id = 1', [rules.blockStartFor(mondayOfStr(d), wk)]);
+    res.json(await blockFor(d));
+  });
+  // The week's weather at the farm and whether each day is fit for a run or ruck outside.
+  router.get('/workouts/weather', async (req, res) => {
+    const d = req.query.start || gen.ymd(new Date(Date.now() - 6 * 3600e3));
+    if (!isDate(d)) return res.status(400).json({ error: 'start must be YYYY-MM-DD' });
+    const wx = await weatherFor(weekDates(d));
+    res.json({ min_feels_c: rules.OUTDOOR_MIN_FEELS_C, days: Object.fromEntries(Object.entries(wx).map(([k, w]) => [k, { ...w, outdoor: rules.outdoorDay(w) }])) });
+  });
   router.post('/workouts/plan-week', async (req, res) => {
     try {
       const raw = req.body || {};
@@ -436,16 +497,37 @@ function createWorkoutsRouter({ pool }) {
     return [...out];
   }
 
+  // Raise loads a trainer/coach session set under what his logged sets show (gen.calibrateLoads; Nov 1).
+  async function calibrated(body, date, excludeId = null) {
+    if ((await blockFor(date)).deload) return body; // a deload is light on purpose
+    try { gen.calibrateLoads(body, gen.makeContext(await loadGenRows(date, excludeId), date)); } catch (e) { /* keep the session as written */ }
+    return body;
+  }
+
   async function planWeek(inputs, days, note) {
     {
       const end = addDaysStr(inputs.date, 6);
       const ctx = await athleteContext(inputs.date);
-      const lastWeek = await lastWeekHardSets(inputs.date);
+      const ws = mondayOfStr(inputs.date);
       const level = volume.LEVELS[inputs.volume_level];
+      // Where this week sits in the block; the first planned week starts block 1.
+      if (!(await profileRow()).block_start) await pool.query('UPDATE fitness_profile SET block_start = $1 WHERE id = 1', [ws]);
+      const block = await blockFor(inputs.date, inputs.volume_level);
+      const lastWeek = await rampReference(ws, await lastWeekHardSets(inputs.date));
+      const maxSets = lastWeek > 0 ? Math.max(Math.round(lastWeek * volume.RAMP), volume.startCap(level)) : volume.startCap(level);
+      const deloadCap = Math.round((lastWeek > 0 ? lastWeek : volume.startCap(level)) * rules.DELOAD.sets_factor);
+      const dates = weekDates(inputs.date);
+      const wx = await weatherFor(dates);
+      const weak = rules.weakest(ctx.athlete.strength_scores || {});
       const context = { ...ctx, week_start: inputs.date, days, minutes: inputs.minutes, equipment: inputs.equipment, engine_machine: inputs.engine_modality, note,
         availability: inputs.availability,
+        periodization: { macro_phase: block.phase, block: block.block, week: block.week, of: block.of, deload: block.deload, label: block.label, rpe_cap: block.rpe_cap, plan: block.guidance,
+          structure: `${rules.BLOCK_WEEKS}-week blocks: ${rules.BUILD_WEEKS} build weeks rising in volume and effort, then a deload` },
+        weather_by_day: Object.keys(wx).length ? weatherNote(wx) : 'forecast unavailable: keep runs and rucks to what he can swap indoors',
+        weather_rule: `No run or ruck outside on a day that feels colder than ${rules.OUTDOOR_MIN_FEELS_C} °C at its warmest, or with snow or freezing rain: move it to a fit day that week, else do it on the bike, rower or ski erg.`,
+        whole_body: { rule: `Every major pattern (${rules.MAJOR.join(', ')}) gets hard sets this week; the weakest get at least as many as the typical pattern.`, weakest_patterns: weak },
         volume: { level: inputs.volume_level, ...level, start_cap_hard_sets: volume.startCap(level), last_week_hard_sets_logged: lastWeek,
-          this_week_max_hard_sets: lastWeek > 0 ? Math.max(Math.round(lastWeek * volume.RAMP), volume.startCap(level)) : volume.startCap(level) } };
+          this_week_max_hard_sets: block.deload ? deloadCap : maxSets } };
       const fallbackFor = (d) => ({ date: d.date, title: d.title, focus: gen.FOCI.includes(d.focus) ? d.focus : inputs.focus, minutes: d.minutes || inputs.minutes, equipment: inputs.equipment });
       const check = (r) => {
         const out = [];
@@ -465,6 +547,7 @@ function createWorkoutsRouter({ pool }) {
           }
         });
         out.push(...volume.checkWeekVolume(built, inputs.volume_level, lastWeek));
+        out.push(...rules.checkWeek(built, { weather: wx, block, strengthPatterns: ctx.athlete.strength_scores || {}, deloadCap, weekDates: dates, availability: inputs.availability, e1rm: ctx.athlete.e1rm_60d_lb }));
         return out;
       };
       const plan = await askTrainer('week', context, check);
@@ -480,6 +563,7 @@ function createWorkoutsRouter({ pool }) {
       const out = [];
       for (const d of plan.result.days) {
         const { body, meta } = sessionFrom(d, 'day', fallbackFor(d));
+        await calibrated(body, d.date);
         const rows = await q(
           `INSERT INTO fitness_workouts (workout_date, title, focus, minutes, inputs, body, seed, source, meta)
            VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, 0, 'sentinel', $7::jsonb) RETURNING *`,
@@ -487,7 +571,8 @@ function createWorkoutsRouter({ pool }) {
         out.push(shape(rows[0]));
       }
       const { days: _d, ...week } = plan.result;
-      const weekRow = { ...week, calendar: plan.calendar || [], planned_at: new Date().toISOString(), note, volume_level: inputs.volume_level, availability: inputs.availability };
+      const weekRow = { ...week, calendar: plan.calendar || [], planned_at: new Date().toISOString(), note, volume_level: inputs.volume_level, availability: inputs.availability,
+        block: { block: block.block, week: block.week, of: block.of, deload: block.deload, label: block.label } };
       await pool.query(`INSERT INTO fitness_weeks (week_start, days, plan) VALUES ($1, $2, $3::jsonb)
         ON CONFLICT (week_start) DO UPDATE SET days = EXCLUDED.days, plan = EXCLUDED.plan, review = NULL, reviewed_at = NULL, updated_at = now()`,
       [inputs.date, days, JSON.stringify(weekRow)]);
@@ -514,13 +599,29 @@ function createWorkoutsRouter({ pool }) {
     const workouts = rows.map(shape);
     const tests = await q('SELECT entry_date, modality, test, output, unit FROM fitness_engine_tests WHERE entry_date >= $1 AND entry_date <= $2', [wk.week_start, end]);
     const ctx = await athleteContext(today > end ? end : today);
+    const block = await blockFor(wk.week_start, wk.plan && wk.plan.volume_level);
+    const dates = weekDates(wk.week_start);
+    const wx = await weatherFor(dates.filter((d) => d >= today));
     const context = { ...ctx, week_start: wk.week_start, today, plan: wk.plan,
+      periodization: { macro_phase: block.phase, block: block.block, week: block.week, of: block.of, deload: block.deload, label: block.label, rpe_cap: block.rpe_cap, plan: block.guidance },
+      weather_by_day: Object.keys(wx).length ? weatherNote(wx) : 'forecast unavailable',
+      weather_rule: `No run or ruck outside on a day that feels colder than ${rules.OUTDOOR_MIN_FEELS_C} °C at its warmest, or with snow or freezing rain.`,
       // What he logged: each set's entry (reps, load, RPE, note) is in body; the session's time, RPE, notes and load.
       sessions: workouts.map((w) => ({ date: w.date, title: w.title, status: w.status, started: anyLogged(w.body), progress: w.progress, session: w.session, meta: w.meta, body: w.body })),
       engine_tests_this_week: tests.map((t) => ({ date: ymd(t.entry_date), machine: t.modality, test: t.test, output: Number(t.output), unit: t.unit })) };
     const open = (date) => workouts.find((w) => w.date === date && !anyLogged(w.body) && w.status !== 'done');
     const fb = (d) => ({ date: d.date, title: d.title, focus: gen.FOCI.includes(d.focus) ? d.focus : 'mixed', minutes: d.minutes || 45, equipment: ((open(d.date) || {}).inputs || {}).equipment || [] });
-    const check = (r) => (r.adjustments || []).flatMap((d, i) => (d.date >= today && d.date <= end ? sessionFrom(d, `adjustments[${i}]`, fb(d)).errors : []));
+    const check = (r) => {
+      const out = []; const built = [];
+      (r.adjustments || []).forEach((d, i) => {
+        if (!(d.date >= today && d.date <= end)) return;
+        const sf = sessionFrom(d, `adjustments[${i}]`, fb(d));
+        out.push(...sf.errors);
+        built.push({ date: d.date, body: sf.body });
+      });
+      out.push(...rules.checkWeek(built, { weather: wx, block, weekDates: dates.filter((d) => d >= today), availability: (wk.plan && wk.plan.availability) || {}, coverage: false, label: 'adjustments', e1rm: ctx.athlete.e1rm_60d_lb }));
+      return out;
+    };
     const out = await askTrainer('review', context, check);
     const applied = [];
     for (const d of out.result.adjustments || []) {
@@ -528,6 +629,7 @@ function createWorkoutsRouter({ pool }) {
       const { body, meta, errors } = sessionFrom(d, 'adjustment', fb(d));
       if (errors.length) continue;
       const w = open(d.date);
+      await calibrated(body, d.date, w ? w.id : null);
       if (w) {
         await pool.query(`UPDATE fitness_workouts SET rules_body = COALESCE(rules_body, body), body = $1::jsonb, title = $2, focus = $3, minutes = $4, meta = $5::jsonb,
           source = 'sentinel', updated_at = now() WHERE id = $6`, [JSON.stringify({ ...body, date: d.date }), body.title, body.focus, body.minutes, JSON.stringify(meta), w.id]);
@@ -584,6 +686,7 @@ function createWorkoutsRouter({ pool }) {
       const focus = gen.FOCI.includes(raw.focus) ? raw.focus : gen.FOCI[0];
       const { body, errors } = gen.sanitizeBody(raw, { date: b.date, title: raw.title || 'Workout', focus, minutes: Math.max(10, Math.min(240, Math.round(Number(raw.minutes)) || 60)), equipment: Array.isArray(raw.equipment) ? raw.equipment : [] });
       if (errors.length) return res.status(422).json({ error: 'body does not match the schema', errors: errors.slice(0, 30), schema: gen.REFINE_SCHEMA });
+      await calibrated(body, b.date);
       const w = await insertWorkout(body, { date: b.date, focus: body.focus, minutes: body.minutes, equipment: body.equipment || [] }, 0);
       const meta = {};
       for (const k of ['objective', 'why', 'intensity']) if (typeof b[k] === 'string' && b[k].trim()) meta[k] = b[k].trim().slice(0, 1500);
@@ -927,9 +1030,19 @@ function createWorkoutsRouter({ pool }) {
         const pkg = await refineRequest({ ...w, refine: { ...w.refine, request: note || null } });
         const ctx = await athleteContext(w.date, w.id);
         const fb = { date: w.date, title: w.title, focus: w.focus, minutes: w.minutes, equipment: w.inputs.equipment };
-        const out = await askTrainer('refine', { ...ctx, ...pkg, workout: { date: w.date, ...pkg.workout } }, (x) => sessionFrom(x, 'session', fb).errors);
+        const block = await blockFor(w.date);
+        const wx = await weatherFor(weekDates(mondayOfStr(w.date)).filter((d) => d >= w.date));
+        const refineCtx = { ...ctx, ...pkg, workout: { date: w.date, ...pkg.workout },
+          periodization: { macro_phase: block.phase, week: block.week, of: block.of, deload: block.deload, label: block.label, rpe_cap: block.rpe_cap, plan: block.guidance },
+          weather_by_day: Object.keys(wx).length ? weatherNote(wx) : 'forecast unavailable',
+          weather_rule: `No run or ruck outside on a day that feels colder than ${rules.OUTDOOR_MIN_FEELS_C} °C at its warmest, or with snow or freezing rain: do it on the bike, rower or ski erg.` };
+        const out = await askTrainer('refine', refineCtx, (x) => {
+          const sf = sessionFrom(x, 'session', fb);
+          return [...sf.errors, ...rules.checkWeek([{ date: w.date, body: sf.body }], { weather: wx, block, coverage: false, label: 'session', e1rm: ctx.athlete.e1rm_60d_lb })];
+        });
         if (out.errors.length) return res.status(502).json({ error: "Sentinel's session didn't fit Self Hub's workout format — try again", errors: out.errors.slice(0, 20) });
         const { body, meta } = sessionFrom(out.result, 'session', fb);
+        await calibrated(body, w.date, w.id);
         await pool.query(
           `UPDATE fitness_workouts SET rules_body = COALESCE(rules_body, body), body = $1::jsonb, title = $2, focus = $3, minutes = $4, meta = $5::jsonb,
              source = 'sentinel', refine_status = 'done', refine_notes = $6, refined_at = now(), updated_at = now() WHERE id = $7`,
@@ -961,6 +1074,7 @@ function createWorkoutsRouter({ pool }) {
       if (anyLogged(w.body)) return res.status(409).json({ error: 'Jake has already started this workout (sets logged) — not replacing it' });
       const { body, errors } = gen.sanitizeBody(req.body && req.body.body, { date: w.date, title: w.title, focus: w.focus, minutes: w.minutes, equipment: w.inputs.equipment });
       if (errors.length) return res.status(422).json({ error: 'body does not match the schema', errors: errors.slice(0, 30), schema: gen.REFINE_SCHEMA });
+      await calibrated(body, w.date, w.id);
       const notes = typeof (req.body && req.body.notes) === 'string' ? req.body.notes.trim().slice(0, 2000) : null;
       await pool.query(
         `UPDATE fitness_workouts SET rules_body = COALESCE(rules_body, body), body = $1::jsonb, title = $2, focus = $3, minutes = $4,
@@ -1076,6 +1190,8 @@ function createWorkoutsRouter({ pool }) {
         measurements_in: m ? Object.fromEntries(MEASUREMENT_FIELDS.filter((f) => m[f] != null).map((f) => [f, num(m[f])])) : null,
         strength_scores: ctx.strengthPatterns,
         e1rm_60d_lb: Object.fromEntries(Object.entries(ctx.e1rm).map(([k, v]) => [k, Math.round(v)])),
+        e1rm_from: ctx.e1rmFrom,
+        e1rm_method: 'e1RM = load / %1RM from the RTS (Tuchscherer) RPE chart for the set\'s reps and RPE; Epley when no RPE. Prescribe loads the same way: e1RM × chart % for the target reps and RPE (e.g. 4 × 6 @ RPE 7.5 = 77.4%). Self Hub raises any strength/accessory load more than 7.5% under that.',
         gymnastics_best_set_60d: ctx.gymBest,
         engine_baselines: baselines,
         crossfit_percentiles: await percentilesFor(date),
@@ -1163,6 +1279,8 @@ function createWorkoutsRouter({ pool }) {
         measurements_in: m ? Object.fromEntries(MEASUREMENT_FIELDS.filter((f) => m[f] != null).map((f) => [f, num(m[f])])) : null,
         strength_scores: ctx.strengthPatterns,
         e1rm_60d_lb: Object.fromEntries(Object.entries(ctx.e1rm).map(([k, v]) => [k, Math.round(v)])),
+        e1rm_from: ctx.e1rmFrom,
+        e1rm_method: 'e1RM = load / %1RM from the RTS (Tuchscherer) RPE chart for the set\'s reps and RPE; Epley when no RPE. Prescribe loads the same way: e1RM × chart % for the target reps and RPE (e.g. 4 × 6 @ RPE 7.5 = 77.4%). Self Hub raises any strength/accessory load more than 7.5% under that.',
         gymnastics_best_set_60d: ctx.gymBest,
         engine_baselines: baselines,
         crossfit_percentiles: await percentilesFor(w.date),

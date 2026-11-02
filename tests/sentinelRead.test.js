@@ -127,7 +127,7 @@ test('lifts: newest first, readable fields, e1RM and pattern', async () => {
   const dl = body.rows.find((r) => r.lift === 'Deadlift' && r.date === '2026-09-30');
   assert.deepEqual(Object.keys(dl), ['id', 'date', 'lift', 'load_lb', 'reps', 'rpe', 'notes', 'e1rm_lb', 'pattern', 'benchmark_lift']);
   assert.equal(dl.load_lb, 335);
-  assert.equal(dl.e1rm_lb, 368.5);
+  assert.equal(dl.e1rm_lb, 388.2); // 335 × 3 @ RPE 8: 86.3% on the RTS chart
   assert.equal(dl.pattern, 'Hinge');
   assert.equal(dl.benchmark_lift, true);
   assert.equal(body.rows.find((r) => r.lift === 'Barbell Curl 21s').benchmark_lift, false);
@@ -156,10 +156,10 @@ test('filters: search, custom filters, from/to, month', async () => {
   assert.deepEqual(r.body.rows.map((x) => x.body_fat_pct), [11.8, 12.5]);
   // personal_bests: from/to limit which sets count
   r = await get('/read/personal_bests?lift=Deadlift');
-  assert.equal(r.body.rows[0].best_e1rm_lb, 418.5);
-  assert.equal(r.body.rows[0].best_e1rm_set, '405 lb x 1');
+  assert.equal(r.body.rows[0].best_e1rm_lb, 439.3); // 405 × 1 @ RPE 8: two in reserve, 92.2%
+  assert.equal(r.body.rows[0].best_e1rm_set, '405 lb x 1 @ RPE 8');
   r = await get('/read/personal_bests?lift=Deadlift&from=2026-08-01');
-  assert.equal(r.body.rows[0].best_e1rm_lb, 368.5);
+  assert.equal(r.body.rows[0].best_e1rm_lb, 388.2);
 });
 
 test('id returns one record in full; long text is trimmed in lists only', async () => {
@@ -218,7 +218,7 @@ test('summaries match the app and Sentinel tile calculations', async () => {
   assert.equal(ss[0].score, tile.strength.overall_score);
   assert.equal(ss[0].level, tile.strength.level);
   assert.deepEqual(ss.slice(1).map((p) => [p.pattern, p.score]), tile.strength.by_pattern.map((p) => [p.pattern, p.score]));
-  assert.equal(ss.find((p) => p.pattern === 'Hinge').lifts[0].e1rm_lb, 368.5);
+  assert.equal(ss.find((p) => p.pattern === 'Hinge').lifts[0].e1rm_lb, 388.2);
 
   const wt = (await get('/read/weight_trend')).body.rows;
   const byId = Object.fromEntries(wt.map((r) => [r.id, r]));

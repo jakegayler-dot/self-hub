@@ -200,9 +200,10 @@ function computePercentiles(rows, today, strength) {
         const load = Number(l.load_lb); const reps = Number(l.reps); const rpe = Number(l.rpe);
         if (!(load > 0) || !(reps >= 1)) continue;
         if (reps > 1 && rpe >= 1 && rpe <= 6) continue;
-        // A single is a real 1RM — Epley would add 3.3% to it. Reps > 1 are estimated.
-        const e = reps === 1 ? load : load * (1 + reps / 30);
-        candidates.push({ value: e, date: ymd(l.entry_date), detail: reps === 1 ? `${load} lb single` : `e1RM from ${load} × ${reps}` });
+        // From reps and RPE on the RTS chart (strength.e1rmOf); a single with no RPE is a real 1RM.
+        const e = require('./strength').e1rmOf(load, reps, rpe || null);
+        if (e == null) continue;
+        candidates.push({ value: e, date: ymd(l.entry_date), detail: reps === 1 && !(rpe > 0 && rpe < 10) ? `${load} lb single` : `e1RM from ${load} × ${reps}${rpe ? ` @ RPE ${rpe}` : ''}` });
       }
     }
     if (src.gym) {

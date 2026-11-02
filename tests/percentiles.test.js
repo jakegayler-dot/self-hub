@@ -168,7 +168,7 @@ test("Jake's log: names as he logs them, best ever, warm-ups aren't maxes", () =
   assert.equal(b.back_squat.percentile, P.percentileOf(BY.back_squat, 328));
   assert.ok(b.back_squat.percentile > 50);
   assert.equal(b.deadlift.value, 335);
-  assert.equal(b.deadlift.recent.value, 236.5, 'e1RM from 215 x 3, the easy sets skipped');
+  assert.equal(b.deadlift.recent.value, 245, 'e1RM from 215 x 3 @ RPE 8.5 (87.75% on the RTS chart), the easy sets skipped');
   assert.equal(b.clean_jerk.value, 190, '"Clean and Jerk" is "Clean & Jerk"');
   assert.equal(b.snatch.value, 140);
   assert.equal(b.pullups.value, 20, '"Pull-ups (Kipping)" counts');

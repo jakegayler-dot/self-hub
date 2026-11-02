@@ -107,7 +107,7 @@ function normalizeInputs(raw) {
 //         strengthPatterns: {pattern: score}, plannedOther: [{date, body}] }
 function makeContext(rows, date) {
   const t = dayNum(date);
-  const lifts = (rows.lifts || []).map((l) => ({ date: ymd(l.entry_date), lift: l.lift, load: Number(l.load_lb), reps: Number(l.reps) }));
+  const lifts = (rows.lifts || []).map((l) => ({ date: ymd(l.entry_date), lift: l.lift, load: Number(l.load_lb), reps: Number(l.reps), rpe: l.rpe == null ? null : Number(l.rpe) }));
   const gym = (rows.gymnastics || []).map((g) => ({ date: ymd(g.entry_date), movement: g.movement, reps: Number(g.reps) }));
   const weekStart = mondayOfStr(date);
   const weekEnd = addDaysStr(weekStart, 6);
@@ -152,15 +152,20 @@ function makeContext(rows, date) {
     }
   }
 
-  // Best Epley e1RM per lift in the 60 days up to the date, plus all-time.
+  // Best e1RM per lift in the 60 days up to the date, plus all-time — from reps AND RPE (strength.e1rmOf, the RTS chart),
+  // so 145 × 6 @ 8.5 reads as ~182, not Epley's 174. Keyed by the logged name; e1rmFrom says which set it came from.
   const windowStart = t - E1RM_WINDOW_DAYS;
-  const e1rm = {}; const e1rmAll = {};
+  const e1rm = {}; const e1rmAll = {}; const e1rmFrom = {};
   for (const l of lifts) {
     const d = dayNum(l.date);
     if (d > t) continue;
-    const e = l.load * (1 + l.reps / 30);
+    const e = strength.e1rmOf(l.load, l.reps, l.rpe);
+    if (e == null) continue;
     if (!(e1rmAll[l.lift] >= e)) e1rmAll[l.lift] = e;
-    if (d >= windowStart && !(e1rm[l.lift] >= e)) e1rm[l.lift] = e;
+    if (d >= windowStart && !(e1rm[l.lift] >= e)) {
+      e1rm[l.lift] = e;
+      e1rmFrom[l.lift] = `${l.load} × ${l.reps}${l.rpe ? ` @ RPE ${l.rpe}` : ''} on ${l.date}`;
+    }
   }
   const gymBest = {};
   for (const g of gym) {
@@ -178,21 +183,38 @@ function makeContext(rows, date) {
   const baselines = engine.computeBaselines(rows.engineTests || [], engineHistory, date);
 
   return {
-    date, t, weekStart, weekEnd, weekSets, touches, lastDone, e1rm, e1rmAll, gymBest,
+    date, t, weekStart, weekEnd, weekSets, touches, lastDone, e1rm, e1rmAll, e1rmFrom, gymBest,
     strengthPatterns: rows.strengthPatterns || {}, engineHistory, baselines,
   };
 }
 
+// A lift's e1RM by name, ignoring case and spacing ("strict press" logs count for "Strict Press").
+function e1rmLookup(map, name) {
+  if (!map || !name) return { key: null, v: null };
+  if (map[name]) return { key: name, v: map[name] };
+  const k = String(name).trim().toLowerCase();
+  for (const [key, v] of Object.entries(map)) if (key.trim().toLowerCase() === k) return { key, v };
+  return { key: null, v: null };
+}
+// The % of 1RM for a set target: a scheme with an RPE target uses the RTS chart (reps + RPE), else its fixed pct.
+function schemePct(scheme) {
+  if (scheme.rpe) return strength.pctFor(scheme.reps, scheme.rpe) || scheme.pct || 0.7;
+  return scheme.pct;
+}
 // Load for a lift at a % of max: own 60-day e1RM → own all-time (flagged) →
 // a related lift's e1RM × ratio → null (prescribe by RPE).
 function loadFor(ctx, m, pct) {
-  const own = ctx.e1rm[m.name];
-  if (own) return { load: Math.max(0, round5(own * pct)), source: `${Math.round(pct * 100)}% of your 60-day e1RM (${Math.round(own)} lb)` };
-  const stale = ctx.e1rmAll[m.name];
+  const ownL = e1rmLookup(ctx.e1rm, m.name);
+  const own = ownL.v;
+  if (own) {
+    const from = ctx.e1rmFrom && ctx.e1rmFrom[ownL.key];
+    return { load: Math.max(0, round5(own * pct)), source: `${Math.round(pct * 100)}% of your e1RM ${Math.round(own)} lb${from ? ` (from ${from})` : ''}` };
+  }
+  const stale = e1rmLookup(ctx.e1rmAll, m.name).v;
   if (stale) return { load: Math.max(0, round5(stale * pct * 0.95)), source: `${Math.round(pct * 95)}% of your all-time e1RM (${Math.round(stale)} lb) — nothing logged in 60 days, so 5% back off` };
   if (m.loadFrom) {
     const [other, ratio] = m.loadFrom;
-    const base = ctx.e1rm[other] || ctx.e1rmAll[other];
+    const base = e1rmLookup(ctx.e1rm, other).v || e1rmLookup(ctx.e1rmAll, other).v;
     if (base) return { load: Math.max(0, round5(base * ratio * pct)), source: `estimated from your ${other} e1RM (${Math.round(base)} lb × ${ratio}) — log it and this becomes exact` };
   }
   return { load: null, source: null };
@@ -256,11 +278,13 @@ function choose(candidates, scoreFn, rng) {
 // ---------- prescriptions ----------
 const SCHEMES = {
   main: {
-    strength: [{ sets: 5, reps: 3, pct: 0.85 }, { sets: 5, reps: 5, pct: 0.78 }, { sets: 4, reps: 4, pct: 0.82 }, { sets: 6, reps: 2, pct: 0.88 }],
-    mixed: [{ sets: 5, reps: 3, pct: 0.82 }, { sets: 5, reps: 5, pct: 0.75 }, { sets: 4, reps: 6, pct: 0.72 }],
+    // Lifts are set by reps + target RPE on the RTS chart (Nov 1), the same chart his logged sets are read with —
+    // so a 6 @ RPE 8.5 last week moves this week's loads. Olympic lifts stay on fixed % (speed, not grinding).
+    strength: [{ sets: 5, reps: 3, rpe: 8 }, { sets: 5, reps: 5, rpe: 8 }, { sets: 4, reps: 4, rpe: 8 }, { sets: 6, reps: 2, rpe: 8 }],
+    mixed: [{ sets: 5, reps: 3, rpe: 7.5 }, { sets: 5, reps: 5, rpe: 7.5 }, { sets: 4, reps: 6, rpe: 7.5 }],
   },
-  second: [{ sets: 4, reps: 6, pct: 0.72 }, { sets: 4, reps: 8, pct: 0.68 }],
-  hyp: [{ sets: 4, reps: 8, pct: 0.7 }, { sets: 4, reps: 10, pct: 0.65 }],
+  second: [{ sets: 4, reps: 6, rpe: 7.5 }, { sets: 4, reps: 8, rpe: 7.5 }],
+  hyp: [{ sets: 4, reps: 8, rpe: 8 }, { sets: 4, reps: 10, rpe: 8 }],
   oly: [{ sets: 6, reps: 2, pct: 0.75 }, { sets: 5, reps: 3, pct: 0.7 }, { sets: 8, reps: 1, pct: 0.8 }],
   oly_support: [{ sets: 4, reps: 3, pct: 0.85 }, { sets: 4, reps: 4, pct: 0.8 }],
 };
@@ -282,11 +306,14 @@ function setsThatFit(minutes, restS, wanted, minSets = 2) {
 
 function liftItem(ctx, m, scheme, minutes, slot, rpeFallback) {
   const sets = setsThatFit(minutes, REST[slot], scheme.sets);
-  const { load, source } = loadFor(ctx, m, scheme.pct);
+  const pct = schemePct(scheme);
+  const { load, source } = loadFor(ctx, m, pct);
   const isAddedWeight = m.name === 'Weighted Pull-Up';
-  const rpe = load == null ? rpeFallback : null;
-  const setRows = Array.from({ length: sets }, () => ({ reps: scheme.reps, load_lb: load, pct_1rm: load != null ? Math.round(scheme.pct * 100) : null, rpe }));
-  const loadText = load != null ? `${load} lb${m.unit && m.unit.includes('hand') ? ' per hand' : ''}${isAddedWeight ? ' added' : ''}` : `RPE ${rpeFallback}`;
+  const rpe = scheme.rpe || (load == null ? rpeFallback : null);
+  const setRows = Array.from({ length: sets }, () => ({ reps: scheme.reps, load_lb: load, pct_1rm: load != null ? Math.round(pct * 100) : null, rpe }));
+  const loadText = load != null
+    ? `${load} lb${m.unit && m.unit.includes('hand') ? ' per hand' : ''}${isAddedWeight ? ' added' : ''}${scheme.rpe ? `, RPE ${scheme.rpe}` : ''}`
+    : `RPE ${scheme.rpe || rpeFallback}`;
   return {
     movement: m.name, log_as: 'lift', pattern: m.pattern, rest_s: REST[slot],
     prescription: `${sets} × ${scheme.reps}${m.unit && m.unit.includes('side') ? ' per side' : ''} @ ${loadText}`,
@@ -403,7 +430,7 @@ function metconBlock(ctx, avail, minutes, rng, avoidPatterns, why) {
       reps = Math.max(1, Math.round(reps * scale));
       let load = '';
       if (m.kind === 'lift') {
-        const base = mc.from ? (ctx.e1rm[mc.from] || ctx.e1rmAll[mc.from]) : null;
+        const base = mc.from ? (e1rmLookup(ctx.e1rm, mc.from).v || e1rmLookup(ctx.e1rmAll, mc.from).v) : null;
         const lb = base && mc.pct ? round5(base * mc.pct) : mc.load;
         if (lb) load = ` @ ${lb} lb`;
       }
@@ -794,8 +821,47 @@ const REFINE_SCHEMA = {
   notes: 'string — a short note to Jake about the refinement',
 };
 
+// A session from Sentinel's trainer (or a custom/refined one) can set loads under what his own logged sets show — the
+// trainer reads the same e1RMs, but picks percentages by hand. Raise any strength/accessory set that sits more than
+// 7.5% under the RTS-chart load for its reps and RPE (RPE 8 when the set gives none), and say so on the item.
+// Olympic blocks and lifts are left alone (speed work on purpose), as are warm-up sets (RPE under 6.5) and sets past
+// 10 reps. Returns the body (mutated) and the list of changes.
+function calibrateLoads(body, ctx) {
+  const changes = [];
+  if (!body || !ctx) return { body, changes };
+  for (const b of body.blocks || []) {
+    if (!['strength', 'accessory'].includes(b.kind)) continue;
+    for (const it of b.items || []) {
+      if (!it || it.log_as !== 'lift' || !it.movement) continue;
+      const m = BY_NAME.get(it.movement);
+      const pattern = it.pattern || (m && m.pattern) || strength.liftPattern(it.movement);
+      if (pattern === 'Olympic') continue;
+      if (it.movement === 'Weighted Pull-Up') continue;
+      const { key, v: e } = e1rmLookup(ctx.e1rm, it.movement);
+      if (!e) continue;
+      let raised = 0; let to = null;
+      for (const s of it.sets || []) {
+        const reps = Number(s && s.reps); const load = Number(s && s.load_lb);
+        if (!(load > 0) || !(reps >= 1 && reps <= 10)) continue;
+        const rpe = s.rpe == null ? 8 : Number(s.rpe);
+        const pct = strength.pctFor(reps, rpe);
+        if (!pct) continue;
+        const target = round5(e * pct);
+        if (load < target * 0.925) { s.load_lb = target; s.pct_1rm = Math.round(pct * 100); if (s.rpe == null) s.rpe = rpe; raised++; to = target; }
+      }
+      if (!raised) continue;
+      const from = ctx.e1rmFrom && ctx.e1rmFrom[key];
+      const why = `Raised to ${to} lb: your e1RM is ${Math.round(e)} lb${from ? ` (from ${from})` : ''}, so the planned weight was too light for the reps and RPE.`;
+      it.load_source = it.load_source ? `${why} ${it.load_source}`.slice(0, 300) : why;
+      if (it.prescription) it.prescription = String(it.prescription).replace(/@\s*\d+(\.\d+)?\s*lb/, `@ ${to} lb`);
+      changes.push({ movement: it.movement, sets: raised, to, e1rm: Math.round(e) });
+    }
+  }
+  return { body, changes };
+}
+
 module.exports = {
-  repairEngineBlock,
+  repairEngineBlock, calibrateLoads, e1rmLookup,
   generateSession, generateWeek, sanitizeBody, normalizeInputs, makeContext,
   REFINE_SCHEMA, FOCI, FOCUS_LABEL, MINUTES, MAJOR, WEEKLY_SET_TARGET,
   ymd, mondayOfStr, addDaysStr,

@@ -24,6 +24,7 @@ const { runMigrations, pool } = require('../server/db');
 const { basicAuth } = require('../server/middleware/basicAuth');
 const fitnessRouter = require('../server/routes/fitness');
 const { createWorkoutsRouter } = require('../server/routes/workouts');
+const gen = require('../server/lib/workoutGen');
 
 const JAKE = 'Basic ' + Buffer.from('jake:testpass123').toString('base64');
 let server; let base; let sentinel; const asked = [];
@@ -44,6 +45,10 @@ const session = (date, title, extra = {}) => ({
   why: 'Bench is the weakest pattern', ...extra,
   body: { title, rationale: ['Weakest pattern first'], blocks: [{ kind: 'strength', title: 'Bench', minutes: 30, items: [{ movement: 'Bench Press', log_as: 'lift', prescription: '4 × 4 @ 165 lb', load_source: '80% of 205 lb e1RM', sets: [{ reps: 4, load_lb: 165 }, { reps: 4, load_lb: 165 }] }] }] },
 });
+// The rest of the body (Nov 2: every major pattern gets trained in the week), two sets each.
+const WHOLE = { kind: 'strength', title: 'Whole body', minutes: 25, items: [['Back Squat', 'Squat', 185], ['Deadlift', 'Hinge', 225], ['Strict Press', 'Push Vertical', 95], ['Barbell Row', 'Pull Horizontal', 135], ['Weighted Pull-Up', 'Pull Vertical', 25]]
+  .map(([movement, pattern, load]) => ({ movement, pattern, log_as: 'lift', prescription: `2 × 5 @ ${load} lb`, sets: [{ reps: 5, load_lb: load, rpe: 7 }, { reps: 5, load_lb: load, rpe: 7 }] })) };
+const wholeBody = (s) => ({ ...s, body: { ...s.body, blocks: [...s.body.blocks, WHOLE] } });
 let weekAnswer;
 
 test.before(async () => {
@@ -53,9 +58,14 @@ test.before(async () => {
   s.post('/v1/selfhub/trainer', (req, res) => {
     asked.push({ auth: req.headers.authorization, ...req.body });
     const { task, errors } = req.body;
+    if (task === 'week' && req.body.context.note === 'run on the snow day') {
+      // A run on the snowy day; once told, it moves to a fit day.
+      const run = (d) => ({ ...session(d, 'Easy run'), body: { title: 'Easy run', blocks: [{ kind: 'conditioning', title: 'Run', minutes: 30, items: [{ movement: 'Easy Run', log_as: 'conditioning', sets: [{ distance_m: 5000 }] }] }] } });
+      return res.json({ result: { objective: 'Base', days: [wholeBody(session(day(0), 'Heavy bench')), run(errors ? day(3) : day(4))] } });
+    }
     if (task === 'week') {
       weekAnswer = { objective: 'Pressing strength and aerobic base', weekly_targets: { push_sets: 12 }, progression: '+5 lb on top sets when all reps land at RPE 8', watch: ['Bench top set'],
-        days: [session(day(0), 'Heavy bench'), session(day(2), 'Pull + engine'), session(day(4), 'Squat'),
+        days: [session(day(0), 'Heavy bench'), wholeBody(session(day(2), 'Pull + engine')), session(day(4), 'Squat'),
           errors ? session(day(5), 'Accessories') : { ...session(day(5), 'Accessories'), body: { blocks: [] } }] };
       return res.json({ result: weekAnswer, calendar: [{ date: day(0), harvest_day: 'yes: combining 11:00-22:00' }] });
     }
@@ -77,7 +87,13 @@ test.before(async () => {
   app.use(express.json());
   app.use(basicAuth);
   app.use('/api/fitness', fitnessRouter);
-  app.use('/api/fitness', createWorkoutsRouter({ pool }));
+  // The farm forecast (Open-Meteo's shape): day(4) is -10 °C with snow, the rest 8 °C and dry.
+  const wxDays = Array.from({ length: 16 }, (_, i) => day(i - 2));
+  const forecast = { daily: { time: wxDays, temperature_2m_max: wxDays.map((d) => (d === day(4) ? -10 : 8)), temperature_2m_min: wxDays.map(() => -2),
+    apparent_temperature_max: wxDays.map((d) => (d === day(4) ? -16 : 6)), apparent_temperature_min: wxDays.map(() => -6), precipitation_sum: wxDays.map(() => 0),
+    precipitation_probability_max: wxDays.map(() => 10), snowfall_sum: wxDays.map((d) => (d === day(4) ? 4 : 0)), wind_speed_10m_max: wxDays.map(() => 15), weather_code: wxDays.map((d) => (d === day(4) ? 73 : 3)) } };
+  const fetchImpl = async (url, opts) => (String(url).includes('open-meteo') ? { ok: true, json: async () => forecast } : fetch(url, opts));
+  app.use('/api/fitness', createWorkoutsRouter({ pool, fetchImpl }));
   await new Promise((r) => { server = app.listen(0, r); });
   base = `http://127.0.0.1:${server.address().port}/api/fitness`;
   await call('POST', '/lifts', { entry_date: day(-10), lift: 'Bench Press', load_lb: 185, reps: 5 });
@@ -108,7 +124,10 @@ test('plan a week with Sentinel: what each session is for, every set loggable, e
   assert.equal(w.meta.objective, 'Heavy bench: build top-set strength');
   assert.deepEqual(w.meta.systems, { phosphagen: 70, glycolytic: 20, oxidative: 10 });
   assert.deepEqual(w.meta.qualities, { max_strength: 3, power: 1, hypertrophy: 2 });
-  assert.equal(w.body.blocks[0].items[0].sets[0].load_lb, 165);
+  // 165 for 4 reps is under what 185 × 5 shows (e1RM ~216, so 4 @ RPE 8 = 180): raised, and the card says why.
+  assert.equal(w.body.blocks[0].items[0].sets[0].load_lb, 180);
+  assert.match(w.body.blocks[0].items[0].load_source, /^Raised to 180 lb: your e1RM is 216 lb \(from 185 × 5 on /);
+  assert.match(w.body.blocks[0].items[0].prescription, /@ 180 lb/);
   const wk = await call('GET', `/workouts/week?start=${START}`);
   assert.equal(wk.body.week.plan.objective, 'Pressing strength and aerobic base');
   assert.equal(wk.body.week.plan.calendar[0].harvest_day, 'yes: combining 11:00-22:00');
@@ -297,4 +316,40 @@ test('his days and volume are kept: a truck or off day the plan ignores goes bac
   assert.ok(w.volume && Number.isFinite(w.volume.planned.hard_sets));
   const wk = (await call('GET', `/workouts/week?start=${day(0)}`)).body.week;
   assert.ok(wk.volume && Number.isFinite(wk.volume.planned.hard_sets) && Number.isFinite(wk.volume.last_week_hard_sets));
+});
+
+// Nov 2: "look at where i am on my periodization table, and if it is a deload week… check the weather for each day and
+// not to schedule things like rucks or running on days that are cold or snowing… targeting the whole body".
+test('the week knows the weather: a run on a snowy day goes back and moves to a fit day', async () => {
+  const r = await call('POST', '/workouts/plan-week', { start_date: day(0), days: 4, minutes: 45, equipment: 'box', note: 'run on the snow day' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const asks = asked.filter((a) => a.task === 'week' && a.context.note === 'run on the snow day');
+  const wx = asks[0].context.weather_by_day;
+  assert.match(wx[day(4)].outdoor_run_or_ruck, /^no: feels like -16 °C at its warmest, 4 cm of snow$/);
+  assert.equal(wx[day(3)].outdoor_run_or_ruck, 'ok');
+  assert.match(asks[1].errors.find((e) => e.includes('Easy Run')), new RegExp(`^days\\[1\\] \\(${day(4)}\\): Easy Run outside, but feels like -16 °C.*move it to a day that's fit outside \\(${day(0)}, ${day(1)}, ${day(2)}, ${day(3)}, ${day(5)}, ${day(6)}\\), or do it on the bike, rower or ski erg$`));
+  assert.ok(r.body.workouts.some((w) => w.date === day(3) && w.title === 'Easy run'));
+  const w = (await call('GET', `/workouts/weather?start=${day(0)}`)).body;
+  assert.equal(w.days[day(4)].outdoor.ok, false);
+  assert.equal(w.days[day(1)].outdoor.ok, true);
+});
+
+test('the block: 5 build weeks then a deload; the trainer is told, and a deload week is held to half the sets and RPE 7', async () => {
+  let b = (await call('GET', `/workouts/block?start=${day(0)}`)).body;
+  assert.equal(b.deload, false);
+  assert.ok(b.week >= 1 && b.week <= 5, JSON.stringify(b));
+  assert.equal((await call('PUT', '/workouts/block', { start_date: day(0), week: 7 })).status, 400);
+  b = (await call('PUT', '/workouts/block', { start_date: day(0), week: 6 })).body;
+  assert.deepEqual([b.week, b.deload, b.label], [6, true, 'Deload (week 6 of 6)']);
+  assert.equal((await call('GET', `/workouts/block?start=${gen.addDaysStr(day(0), 7)}`)).body.label, 'Build week 1 of 5', 'the next block starts after the deload');
+  const r = await call('POST', '/workouts/plan-week', { start_date: day(0), days: 4, minutes: 45, equipment: 'box' });
+  const ask = asked.filter((a) => a.task === 'week').at(-1);
+  assert.equal(ask.context.periodization.deload, true);
+  assert.equal(ask.context.periodization.rpe_cap, 7);
+  assert.match(ask.context.periodization.plan, /^Deload week: about half the hard sets/);
+  // The stand-in's usual week is a full week, too much for a deload: it goes back.
+  assert.equal(r.status, 502, JSON.stringify(r.body));
+  assert.ok(r.body.errors.some((e) => /^deload week: \d+ hard sets planned, at most \d+/.test(e)), JSON.stringify(r.body.errors));
+  b = (await call('PUT', '/workouts/block', { start_date: day(0), week: 2 })).body;
+  assert.equal(b.label, 'Build week 2 of 5');
 });

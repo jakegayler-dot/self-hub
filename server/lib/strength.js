@@ -143,6 +143,30 @@
     if(score<100) return 'Advanced';
     return 'Elite';
   }
+  // ---- e1RM from reps and RPE (Nov 1: "145 x 6 at 8.5 rpe… would infer a larger 1RM than what's on record") ----
+  // Mike Tuchscherer's RPE chart (Reactive Training Systems): % of 1RM by reps to failure, where reps to failure =
+  // reps + (10 - RPE). So 6 @ RPE 8.5 is 7.5 to failure = 79.9%; 145 lb / 0.799 = 182 lb. Epley alone (145 × 1.2 = 174)
+  // treats every set as taken to failure, which under-reads sets with reps in reserve.
+  var RTF = [100, 95.5, 92.2, 89.2, 86.3, 83.7, 81.1, 78.6, 76.2, 73.9, 70.7, 68.0]; // 1..12 reps to failure
+  function pctFor(reps, rpe){
+    var r = Number(reps), e = Number(rpe);
+    if(!(r >= 1) || !(e >= 6.5 && e <= 10)) return null;
+    var t = r + (10 - e);
+    if(t > 13.5) return null;
+    if(t >= 12) return Math.round((68.0 - (t - 12) * 2.9) * 100) / 10000;
+    var lo = Math.floor(t), f = t - lo;
+    return Math.round((RTF[lo - 1] + (f ? (RTF[lo] - RTF[lo - 1]) * f : 0)) * 100) / 10000;
+  }
+  // The e1RM a logged set shows: by the chart when it has an RPE (6.5-10); a single with no RPE is its load; other
+  // sets with no RPE by Epley (as if to failure, so a floor). An easy set (RPE under 6.5, more than one rep) isn't an
+  // estimate of a max: null.
+  function e1rmOf(load, reps, rpe){
+    var w = Number(load), r = Number(reps), e = Number(rpe);
+    if(!(w > 0) || !(r >= 1)) return null;
+    if(e >= 6.5 && e <= 10){ var p = pctFor(r, e); if(p) return w / p; }
+    if(e > 0 && e < 6.5 && r > 1) return null;
+    return r === 1 ? w : w * (1 + r / 30);
+  }
   // lifts / bodyweight are rows shaped like GET /api/fitness/lifts and
   // /bodyweight: entry_date may be a Date (pg) or its JSON ISO string.
   function windowedBestE1RM(lifts, liftName, windowStart, windowEnd){
@@ -151,8 +175,8 @@
       if(l.lift!==liftName) return;
       var d=new Date(l.entry_date);
       if(d<windowStart || d>windowEnd) return;
-      var e=l.load_lb*(1+l.reps/30);
-      if(best===null||e>best) best=e;
+      var e=e1rmOf(l.load_lb, l.reps, l.rpe);
+      if(e!=null && (best===null||e>best)) best=e;
     });
     return best;
   }
@@ -251,6 +275,8 @@
     levelScore: levelScore,
     levelLabel: levelLabel,
     windowedBestE1RM: windowedBestE1RM,
+    pctFor: pctFor,
+    e1rmOf: e1rmOf,
     windowedAvgBodyweight: windowedAvgBodyweight,
     computeStrengthProfile: computeStrengthProfile,
     computeStrengthTrend: computeStrengthTrend

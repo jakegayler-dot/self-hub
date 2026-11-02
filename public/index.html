@@ -161,6 +161,12 @@ body.resting .wrap{padding-bottom:110px}
 .av b{font-weight:600;color:var(--ink);font-size:11.5px}
 .av-truck{border-color:var(--amber-dim);color:var(--amber)}
 .av-off{opacity:.55;text-decoration:line-through}
+.av i{font-style:normal;font-size:10.5px;color:var(--ink3)}
+.av-cold i{color:#8fb7d9}
+.cw-block{flex:1 1 100%;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--ink2)}
+.cw-block b{color:var(--ink);font-weight:600}
+.cw-block.deload b{color:var(--amber)}
+.cw-block select{font-size:12px;padding:2px 4px}
 .wk-vol{font-size:12.5px;color:var(--ink2);line-height:1.5;margin-bottom:4px}
 .wk-vol b{color:var(--ink);font-weight:600}
 .wk-vol.sub{font-size:11.5px;color:var(--ink3)}
@@ -727,6 +733,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
             <button class="trk-btn primary" id="cwPlan">Plan my week</button>
             <input type="text" id="cwNote" maxlength="500" placeholder="Anything to know this week? (optional)">
             <div class="cw-avail" id="cwAvail" title="Tap a day: Gym, Truck (harvest: no gym, near the truck), Off"></div>
+            <div class="cw-block" id="cwBlock"></div>
           </div>
         </div>
         <details class="tr-opts"><summary>Options</summary>
@@ -1058,6 +1065,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="/js/body3d.js"></script>
+<script src="/js/strength.js"></script>
 <script src="/js/coaching.js"></script>
 <script src="/js/trainCoach.js"></script>
 <script>
@@ -1653,12 +1661,17 @@ a.trk-btn{text-decoration:none;display:inline-block}
     if(reps<=12) return 'Hypertrophy';
     return 'Muscular Endurance';
   }
+  // e1RM from reps and RPE (RTS chart, lib/strength.js), the same as the server.
+  function e1rmOf(load,reps,rpe){
+    if(window.SelfHubStrength) return window.SelfHubStrength.e1rmOf(load,reps,rpe);
+    return Number(load)*(1+Number(reps)/30);
+  }
   function bestE1RMAllTime(name){
     var best=null;
     cache.lifts.forEach(function(l){
       if(l.lift!==name) return;
-      var e=l.load_lb*(1+l.reps/30);
-      if(best===null || e>best) best=e;
+      var e=e1rmOf(l.load_lb,l.reps,l.rpe);
+      if(e!=null && (best===null || e>best)) best=e;
     });
     return best;
   }
@@ -1959,8 +1972,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
       if(l.lift!==liftName) return;
       var d=new Date(l.entry_date);
       if(d<windowStart || d>windowEnd) return;
-      var e=l.load_lb*(1+l.reps/30);
-      if(best===null||e>best) best=e;
+      var e=e1rmOf(l.load_lb,l.reps,l.rpe);
+      if(e!=null && (best===null||e>best)) best=e;
     });
     return best;
   }
@@ -2205,7 +2218,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
 
       thead.innerHTML='<th>Date</th><th>Load&times;Reps</th><th>RPE</th><th>e1RM</th>';
       fillTableReadonly('mvTable', rows.slice().reverse(), function(r){
-        var e1rm = Math.round(r.load_lb*(1+r.reps/30)*10)/10;
+        var e = e1rmOf(r.load_lb,r.reps,r.rpe);
+        var e1rm = e==null ? '—' : Math.round(e*10)/10;
         return [fmtDate(r.entry_date), r.load_lb+'&times;'+r.reps, r.rpe!=null?r.rpe:'—', e1rm];
       });
     }
@@ -2492,7 +2506,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     });
     if(prefs.days) document.getElementById('cwDays').value = String(prefs.days);
     if(prefs.level) document.getElementById('cwLevel').value = prefs.level;
-    document.getElementById('wkDate').addEventListener('change', renderAvail);
+    document.getElementById('wkDate').addEventListener('change', function(){ renderAvail(); loadBlockWx(); });
     renderAvail();
     var eqBox=document.getElementById('wkEquip'); eqBox.innerHTML='';
     var chosen = prefs.equipment || o.presets.box.equipment;
@@ -2518,8 +2532,27 @@ a.trk-btn{text-decoration:none;display:inline-block}
       train.workouts = r[0]; train.engine = r[1]; train.week = r[2].week; train.trainerReady = r[2].trainer_ready; train.loaded = true;
       renderTrain();
       if(!train.planWatching){ train.planWatching=true; watchPlan(); } // a plan started earlier may still be running
-      loadLedger();
+      loadLedger(); loadBlockWx();
     }catch(e){ toast('Could not load workouts: '+e.message); }
+  }
+  // Where the week sits in the block (5 build weeks, then a deload) and the week's weather, for the plan header.
+  async function loadBlockWx(){
+    var start=document.getElementById('wkDate').value || localISO();
+    var r=await Promise.all([api('GET','/workouts/block?start='+start).catch(function(){ return null; }), api('GET','/workouts/weather?start='+start).catch(function(){ return null; })]);
+    train.block=r[0]; train.wx=r[1]; renderAvail(); renderBlock();
+  }
+  function renderBlock(){
+    var el=document.getElementById('cwBlock'); if(!el) return;
+    var b=train.block; if(!b){ el.innerHTML=''; return; }
+    el.className='cw-block'+(b.deload?' deload':'');
+    var opts='';
+    for(var i=1;i<=b.of;i++) opts+='<option value="'+i+'"'+(i===b.week?' selected':'')+'>'+(i===b.of?'Deload':'Build week '+i)+'</option>';
+    el.innerHTML='<span><b>'+esc(b.label)+'</b>'+(b.set?' · block '+esc(b.block):' · block 1 starts when you plan')+' · sets up to RPE '+esc(b.rpe_cap)+(b.phase?' · '+esc(b.phase):'')+'</span>'+
+      '<select id="cwBlockWeek" title="Where this week sits in the block">'+opts+'</select>';
+    document.getElementById('cwBlockWeek').addEventListener('change', async function(){
+      try{ train.block=await api('PUT','/workouts/block',{ start_date: document.getElementById('wkDate').value || localISO(), week: parseInt(this.value,10) }); renderBlock(); toast(train.block.label); }
+      catch(e){ toast('Could not set the week: '+e.message); }
+    });
   }
   async function reloadEngine(){ try{ train.engine = await api('GET','/engine?date='+localISO()); renderEngine(); }catch(e){} }
 
@@ -2541,7 +2574,10 @@ a.trk-btn{text-decoration:none;display:inline-block}
     for(var i=0;i<7;i++){
       var d=new Date(start+'T12:00:00'); d.setDate(d.getDate()+i); var iso=localISO(d);
       var mode=train.avail[iso]||'gym';
-      h+='<button type="button" class="av av-'+mode+'" data-date="'+iso+'"><b>'+d.toLocaleDateString(undefined,{weekday:'short'})+'</b><span>'+AVAIL_LABEL[mode]+'</span></button>';
+      // The day's weather (Nov 2): feels-like at its warmest; blue when it's too cold or snowy to run or ruck outside.
+      var wx=train.wx && train.wx.days && train.wx.days[iso], wt='', cold=false, tip='';
+      if(wx){ var f=wx.feels_high_c!=null?wx.feels_high_c:wx.high_c; wt=(f!=null?Math.round(f)+'°':'')+(wx.snow_cm>=0.5?' ❄':''); cold=wx.outdoor&&wx.outdoor.ok===false; tip=cold?'Too cold to run or ruck outside: '+wx.outdoor.why:'Fine outside: '+(wx.outdoor?wx.outdoor.why:''); }
+      h+='<button type="button" class="av av-'+mode+(cold?' av-cold':'')+'" data-date="'+iso+'"'+(tip?' title="'+esc(tip)+'"':'')+'><b>'+d.toLocaleDateString(undefined,{weekday:'short'})+'</b><span>'+AVAIL_LABEL[mode]+'</span>'+(wt?'<i>'+esc(wt)+'</i>':'')+'</button>';
     }
     el.innerHTML=h;
     el.querySelectorAll('.av').forEach(function(b){ b.addEventListener('click', function(){

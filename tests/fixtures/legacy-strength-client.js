@@ -1,7 +1,8 @@
 // FROZEN COPY of the strength-profile code from public/index.html at origin/main 6241ac0
 // (lines 1253-1379, verbatim, plus the non-DOM part of renderStrengthProfile).
 // Used only by tests/strength.test.js to prove server/lib/strength.js returns identical numbers.
-// Do not edit to match new behaviour — that would defeat the purpose.
+// Do not edit to match new behaviour — that would defeat the purpose. One deliberate exception (2026-11-01): the
+// e1RM line now reads reps AND RPE (RTS chart, strength.e1rmOf) instead of Epley, as the page and server both do.
 module.exports = function legacyStrengthProfile(cache, now){
   var LIFT_PATTERN = {
     'Alternating DB Bench Press':'Push Horizontal','Back Rack Lunges':'Squat','Back Squat':'Squat',
@@ -116,7 +117,7 @@ module.exports = function legacyStrengthProfile(cache, now){
       if(l.lift!==liftName) return;
       var d=new Date(l.entry_date);
       if(d<windowStart || d>windowEnd) return;
-      var e=l.load_lb*(1+l.reps/30);
+      var e=require('../../server/lib/strength').e1rmOf(l.load_lb,l.reps,l.rpe); if(e==null) return;
       if(best===null||e>best) best=e;
     });
     return best;

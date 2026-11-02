@@ -2,6 +2,7 @@ const express = require('express');
 const { pool } = require('../db');
 const { buildSummary: buildSentinelSummary } = require('../lib/sentinel');
 const { computeWeeklyLoad: computeWeeklyLoadFor } = require('../lib/weeklyLoad');
+const { e1rmOf } = require('../lib/strength');
 
 // The week turns over at midnight in Regina (UTC-6, no DST), not at midnight UTC (6 pm his Sunday).
 const computeWeeklyLoad = () => computeWeeklyLoadFor(pool, new Date(Date.now() - 6 * 3600e3));
@@ -205,7 +206,9 @@ router.get('/summary', async (req, res) => {
   const bestByLift = {};
   for (const l of lifts) {
     if (!benchmarkLiftNames.includes(l.lift)) continue;
-    const e1rm = Math.round(Number(l.load_lb) * (1 + Number(l.reps) / 30) * 10) / 10;
+    const e = e1rmOf(l.load_lb, l.reps, l.rpe);
+    if (e == null) continue;
+    const e1rm = Math.round(e * 10) / 10;
     if (!bestByLift[l.lift] || e1rm > bestByLift[l.lift].e1rm) {
       bestByLift[l.lift] = { entry_date: l.entry_date, load_lb: Number(l.load_lb), reps: l.reps, e1rm };
     }
@@ -381,11 +384,13 @@ router.get('/coach-prompt', async (req, res) => {
     `SELECT entry_date, ${MEASUREMENT_FIELDS.join(', ')} FROM fitness_measurements ORDER BY entry_date DESC LIMIT 2`
   )).rows;
   const benchmarkLiftNames = (await pool.query('SELECT lift FROM fitness_benchmark_lifts')).rows.map((r) => r.lift);
-  const allLifts = (await pool.query('SELECT entry_date, lift, load_lb, reps FROM fitness_lifts ORDER BY entry_date ASC')).rows;
+  const allLifts = (await pool.query('SELECT entry_date, lift, load_lb, reps, rpe FROM fitness_lifts ORDER BY entry_date ASC')).rows;
   const bestByLift = {};
   for (const l of allLifts) {
     if (!benchmarkLiftNames.includes(l.lift)) continue;
-    const e1rm = Math.round(Number(l.load_lb) * (1 + Number(l.reps) / 30) * 10) / 10;
+    const e = e1rmOf(l.load_lb, l.reps, l.rpe);
+    if (e == null) continue;
+    const e1rm = Math.round(e * 10) / 10;
     if (bestByLift[l.lift] == null || e1rm > bestByLift[l.lift]) bestByLift[l.lift] = e1rm;
   }
 

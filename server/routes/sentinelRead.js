@@ -55,7 +55,8 @@ function ymd(d) {
 }
 const num = (v) => (v == null || v === '' ? null : Number(v));
 const round = (v, dp = 1) => (v == null || !Number.isFinite(v) ? null : Math.round(v * 10 ** dp) / 10 ** dp);
-const e1rm = (load, reps) => round(Number(load) * (1 + Number(reps) / 30)); // Epley, as everywhere in the app
+// From reps and RPE on the RTS chart (lib/strength e1rmOf), as everywhere in the app; Epley when no RPE.
+const e1rm = (load, reps, rpe) => round(strength.e1rmOf(load, reps, rpe));
 const slug = (s) => String(s).toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 function hms(seconds) {
   if (seconds == null) return null;
@@ -207,7 +208,7 @@ const COLLECTIONS = [
       const bench = await benchmarkSet(pool);
       return (await rowsOf(pool, Q.lifts)).map((r) => ({
         id: r.id, date: ymd(r.entry_date), lift: r.lift, load_lb: num(r.load_lb), reps: num(r.reps), rpe: num(r.rpe), notes: r.notes || null,
-        e1rm_lb: e1rm(r.load_lb, r.reps), pattern: strength.liftPattern(r.lift), benchmark_lift: bench.has(r.lift),
+        e1rm_lb: e1rm(r.load_lb, r.reps, r.rpe), pattern: strength.liftPattern(r.lift), benchmark_lift: bench.has(r.lift),
       }));
     },
   },
@@ -422,7 +423,7 @@ const COLLECTIONS = [
       for (const r of await rowsOf(pool, Q.lifts)) {
         const date = ymd(r.entry_date);
         if (!inRange(date, ctx)) continue;
-        const load = num(r.load_lb); const reps = num(r.reps); const e = e1rm(load, reps);
+        const load = num(r.load_lb); const reps = num(r.reps); const rpe = num(r.rpe); const e = e1rm(load, reps, rpe);
         let b = by.get(r.lift);
         if (!b) {
           b = { id: slug(r.lift), lift: r.lift, pattern: strength.liftPattern(r.lift), benchmark_lift: bench.has(r.lift),
@@ -431,7 +432,7 @@ const COLLECTIONS = [
         }
         b.sets_logged += 1;
         if (!b.last_logged_on || date > b.last_logged_on) b.last_logged_on = date;
-        if (e > b.best_e1rm_lb) { b.best_e1rm_lb = e; b.best_e1rm_set = `${load} lb x ${reps}`; b.best_e1rm_on = date; }
+        if (e != null && e > b.best_e1rm_lb) { b.best_e1rm_lb = e; b.best_e1rm_set = `${load} lb x ${reps}${rpe ? ` @ RPE ${rpe}` : ''}`; b.best_e1rm_on = date; }
         if (load > b.heaviest_load_lb || (load === b.heaviest_load_lb && reps > b.heaviest_reps)) {
           b.heaviest_load_lb = load; b.heaviest_reps = reps; b.heaviest_on = date;
         }
