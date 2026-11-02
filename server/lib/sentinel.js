@@ -172,6 +172,14 @@ async function buildSummary(pool, now = new Date()) {
   try {
     out.summary.today_workout = await loadTodayWorkout(pool, reginaDate(now));
   } catch (err) { /* no workouts table: leave it out */ }
+  // Where this week sits in the training block (lib/weekRules.js, Nov 2), once a block has started.
+  try {
+    const r = (await pool.query('SELECT block_start FROM fitness_profile WHERE id = 1')).rows[0];
+    if (r && r.block_start) {
+      const b = require('./weekRules').blockInfo(wk.start, isoDate(r.block_start));
+      out.summary.training_block = { block: b.block, week: b.week, of: b.of, deload: b.deload, rpe_cap: b.rpe_cap, label: b.label, guidance: b.guidance };
+    }
+  } catch (err) { /* no block column yet: leave it out */ }
   return out;
 }
 

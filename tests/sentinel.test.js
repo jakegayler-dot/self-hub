@@ -76,6 +76,14 @@ test('buildSummary produces the Sentinel shape', async () => {
   // 09-28, 09-29, 09-30 — not Sunday 09-27
   assert.deepEqual(body.summary.training_week, { sessions_done: 3, sessions_goal: 4 });
   assert.deepEqual(body.summary.needs_input, []);
+  // No block started: no training_block. Started three weeks before this week's Monday (09-28): build week 4 of 5.
+  assert.equal(body.summary.training_block, undefined);
+  await pool.query("UPDATE fitness_profile SET block_start = '2026-09-07' WHERE id = 1");
+  const tb = (await buildSummary(pool, NOW)).summary.training_block;
+  assert.deepEqual([tb.block, tb.week, tb.of, tb.deload, tb.label], [1, 4, 6, false, 'Build week 4 of 5']);
+  await pool.query("UPDATE fitness_profile SET block_start = '2026-08-24' WHERE id = 1");
+  assert.equal((await buildSummary(pool, NOW)).summary.training_block.deload, true);
+  await pool.query('UPDATE fitness_profile SET block_start = NULL WHERE id = 1');
 });
 
 test('the page and the push agree (API rows → shared module vs /sentinel-preview)', async () => {
