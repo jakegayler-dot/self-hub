@@ -1108,8 +1108,28 @@ a.trk-btn{text-decoration:none;display:inline-block}
       var mb = document.querySelector('.nav-moreBtn'); mb.setAttribute('aria-expanded','false'); mb.classList.toggle('has-on', btn.classList.contains('nav-more'));
       window.scrollTo(0,0);
       if(btn.dataset.tab==='train') loadTrain();
+      if((location.hash||'').split('/')[1] !== btn.dataset.tab) history.replaceState(null, '', '#/' + btn.dataset.tab);
     });
   });
+  // Each tab and view has an address (Nov 2, so Sentinel can open the exact page): #/<tab> or #/<tab>/<view>, e.g.
+  // #/nutrition/groceries, #/train/trainer, #/wardrobe/stylist. A view chip writes its address too.
+  document.addEventListener('click', function(ev){
+    var chip = ev.target.closest && ev.target.closest('[data-trv],[data-nv],[data-wv]');
+    var pane = chip && chip.closest('.trk-pane');
+    if (pane) history.replaceState(null, '', '#/' + pane.dataset.pane + '/' + (chip.dataset.trv || chip.dataset.nv || chip.dataset.wv));
+  });
+  function openFromHash(){
+    var p = (location.hash || '').replace(/^#\/?/, '').split('/');
+    var btn = p[0] && document.querySelector('.trk-tab[data-tab="' + p[0] + '"]');
+    if (!btn) return;
+    btn.click();
+    if (p[1]) setTimeout(function(){
+      var sel = ['trv', 'nv', 'wv'].map(function(k){ return '.trk-pane[data-pane="' + p[0] + '"] [data-' + k + '="' + p[1] + '"]'; }).join(',');
+      var chip = document.querySelector(sel); if (chip) chip.click();
+    }, 400);
+  }
+  window.addEventListener('hashchange', openFromHash);
+  window.addEventListener('load', openFromHash);
 
   ['bwDate','liftDate','bmDate','mDate','cdDate','gymDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
 
