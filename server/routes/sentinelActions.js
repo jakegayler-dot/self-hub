@@ -18,7 +18,7 @@
 const express = require('express');
 
 const METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
-const MAX_BYTES = 200 * 1024;
+const MAX_BYTES = 4 * 1024 * 1024; // Nov 2: big pages came back cut; Sentinel outlines and picks from them
 const TIMEOUT_MS = 20000;
 const EXCLUDED_WORDS = /(login|logout|auth|session|user|password)/i;
 

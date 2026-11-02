@@ -42,7 +42,7 @@ function buildApp() {
     res.status(201).json({ created: req.body });
   });
   things.delete('/:id', (req, res) => res.json({ deleted: req.params.id }));
-  things.get('/big', (req, res) => res.type('text').send('x'.repeat(300 * 1024)));
+  things.get('/big', (req, res) => res.type('text').send('x'.repeat(5 * 1024 * 1024)));
   things.get('/broken', (req, res) => res.status(400).json({ error: 'bad thing' }));
   app.use('/api/things', things);
   app.get('/api/things', (req, res) => res.json({ dup: true })); // duplicate, listed once
@@ -167,11 +167,11 @@ test('proxied POST carries the body; params and nested routes work; inner status
   assert.deepEqual(b.body, { status: 400, body: { error: 'bad thing' } });
 });
 
-test('large responses are truncated to ~200 KB text', async () => {
+test('large responses are truncated to ~4 MB text', async () => {
   const r = await bridge({ method: 'GET', path: '/api/things/big' });
   assert.equal(r.status, 200);
   assert.equal(r.body.truncated, true);
-  assert.equal(r.body.body.length, 200 * 1024);
+  assert.equal(r.body.body.length, 4 * 1024 * 1024);
 });
 
 test('matchesRoute', () => {
