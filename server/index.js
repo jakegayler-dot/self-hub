@@ -10,6 +10,7 @@ const { createNutritionRouter, createStore: createNutritionStore } = require('./
 const { createCoachChatRouter } = require('./routes/coachChat');
 const { createWardrobeRouter, createWardrobeStore } = require('./routes/wardrobe');
 const { createExpeditionsRouter } = require('./routes/expeditions');
+const { createRoleRouter } = require('./routes/role');
 const { createSentinelPusher } = require('./lib/sentinel');
 const { createSentinelReadRouter } = require('./routes/sentinelRead');
 const { createSentinelActionsRouter, trackMountPaths } = require('./routes/sentinelActions');
@@ -45,6 +46,8 @@ app.use('/api/fitness', createPercentilesRouter({ pool }));
 app.use('/api/fitness', createNutritionRouter({ pool }));
 // The wardrobe: his clothes, what to wear today, outfits, the wishlist (the stylist in the coach chat works on it).
 app.use('/api/fitness', createWardrobeRouter({ pool }));
+// The Andrew page (Nov 3): the role, the Trinity Bond courses through Sentinel, the actor's notebook.
+app.use('/api/fitness', createRoleRouter({ pool }));
 // Expeditions: trips on the map, journal pages with the day's weather, photos, and the training he did on the way.
 app.use('/api/fitness', createExpeditionsRouter({ pool }));
 // The coaches to talk to (trainer, nutritionist): Sentinel thinks, Self Hub keeps the conversation and the memory.

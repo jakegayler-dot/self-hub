@@ -620,6 +620,78 @@ a.trk-btn{text-decoration:none;display:inline-block}
 .phy-bar i.done{background:#8fb39a}
 .phy-trend,.phy-when{color:var(--ink3);font-size:12.5px}
 @media(max-width:700px){.phy-row{grid-template-columns:90px 1fr 70px;}.phy-trend,.phy-when{display:none}}
+
+/* ---- The Andrew page (Nov 3): the role, the Trinity Bond courses, the character ---- */
+.rl-head{margin:2px 0 12px}
+.rl-slate{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--amber)}
+.rl-title{font-family:var(--display);font-weight:400;font-size:clamp(22px,4.4vw,30px);line-height:1.15;margin:4px 0 0;color:var(--ink);text-wrap:balance}
+.rl-cue{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber)}
+.rl-gap{margin:22px 0 8px}
+.rl-intro{color:var(--ink2);font-size:14px;line-height:1.6;max-width:66ch;margin:0 0 14px}
+.rl-scene{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);padding:14px 16px;margin-bottom:12px}
+.rl-scene h3{font-family:var(--display);font-weight:400;font-size:22px;margin:4px 0 6px;color:var(--ink)}
+.rl-scene p{color:var(--ink);font-size:15px;line-height:1.55;margin:0 0 6px;max-width:66ch}
+.rl-scene details{margin-top:6px}.rl-scene summary{cursor:pointer;color:var(--ink3);font-size:12.5px}
+.rl-shows{color:var(--ink2)!important;font-size:13.5px!important}
+.rl-obj{padding:4px 0 10px;margin-bottom:6px;border-bottom:1px solid var(--line)}
+.rl-big{font-family:var(--display);font-size:18px;line-height:1.4;color:var(--ink);margin:4px 0;max-width:62ch}
+.rl-warn{color:var(--red);font-size:13px}
+.rl-course{background:var(--panel);border:1px solid var(--line);padding:14px 16px;margin-bottom:12px;min-width:0}
+.rl-ch{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.rl-ch b{font-family:var(--display);font-weight:400;font-size:19px;color:var(--ink)}
+.rl-code{font-size:11.5px;letter-spacing:.08em;color:var(--ink3);font-variant-numeric:tabular-nums}
+.rl-state{margin-left:auto;font-size:11px;text-transform:uppercase;letter-spacing:.1em;padding:2px 8px;border:1px solid var(--line2);color:var(--ink2);border-radius:3px}
+.rl-state.rl-stalled,.rl-state.rl-overdue{color:var(--amber);border-color:var(--amber-dim);background:var(--amber-bg)}
+.rl-state.rl-moving{color:var(--green);border-color:var(--green)}
+.rl-role{color:var(--ink2);font-size:14px;line-height:1.5;margin:6px 0 10px;max-width:66ch}
+.rl-ses{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.rl-ses > div{display:flex;flex-direction:column;gap:2px;min-width:0}.rl-ses b{color:var(--ink);font-weight:500}
+.rl-ses a.wk-chipbtn,.rl-more a.wk-chipbtn{text-decoration:none;white-space:nowrap}
+.rl-note{margin-top:10px}.rl-note p{color:var(--ink);font-size:14.5px;line-height:1.6;margin:4px 0;max-width:66ch}
+.rl-why{color:var(--ink2)!important}
+.rl-reassure{margin:10px 0 0;padding-left:12px;border-left:2px solid var(--green);color:var(--ink);font-size:14px;line-height:1.55;max-width:66ch}
+.rl-insp{margin:8px 0 0;color:var(--ink3);font-style:italic;font-size:13.5px;line-height:1.5;max-width:66ch}
+.rl-foot{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:6px}
+.rl-foot p{color:var(--ink2);font-size:14px;line-height:1.5;margin:4px 0}.rl-foot b{color:var(--ink);font-weight:500}
+.rl-level{margin-bottom:18px}.rl-lh{margin-bottom:6px}
+.rl-lh h3{font-family:var(--display);font-weight:400;font-size:21px;margin:2px 0;color:var(--ink)}
+.rl-row{display:grid;grid-template-columns:70px 1fr auto;gap:2px 12px;align-items:baseline;padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.rl-row:hover,.rl-row:focus-visible{background:var(--panel);outline:none}
+.rl-name{color:var(--ink2);font-size:15px;min-width:0}
+.rl-row.live .rl-name,.rl-row.done .rl-name{color:var(--ink)}
+.rl-st{font-size:11.5px;color:var(--ink3);text-align:right;white-space:nowrap}
+.rl-row.live .rl-st{color:var(--amber)}.rl-row.done .rl-st{color:var(--green)}
+.rl-row .rl-bar{grid-column:2/4}
+.rl-line{grid-column:2/4;color:var(--ink3);font-size:12.5px;line-height:1.45;min-width:0}
+.rl-more{grid-column:1/4;padding:6px 0 4px 70px;color:var(--ink);font-size:14px;line-height:1.55}
+.rl-more p{margin:0 0 6px;max-width:64ch}
+.rl-bar{display:block;height:3px;background:var(--line);margin-top:4px}.rl-bar i{display:block;height:100%;background:var(--amber)}
+.rl-force{border-bottom:1px solid var(--line);padding:10px 0}
+.rl-force summary{cursor:pointer;font-family:var(--display);font-size:19px;color:var(--ink);list-style:none;display:flex;gap:12px;align-items:baseline}
+.rl-force summary::-webkit-details-marker{display:none}
+.rl-n{font-family:var(--sans);font-size:12px;color:var(--amber);font-variant-numeric:tabular-nums}
+.rl-force p{color:var(--ink);font-size:14.5px;line-height:1.6;margin:8px 0 0 30px;max-width:64ch}
+.rl-actor{border-left:2px solid var(--amber-dim);padding-left:12px}
+.rl-actor b{display:block;font-family:var(--sans);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--amber);font-weight:500}
+.rl-tbl{overflow-x:auto}
+.rl-tbl table{border-collapse:collapse;width:100%;font-size:13.5px}
+.rl-tbl th,.rl-tbl td{text-align:left;padding:7px 10px 7px 0;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink)}
+.rl-tbl th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-weight:500}
+.rl-rule{margin:10px 0;padding:10px 12px;background:var(--amber-bg);border-left:3px solid var(--amber);color:var(--ink);font-size:14px;line-height:1.55}
+.rl-good{background:var(--panel);border-left-color:var(--green)}
+.rl-arc{display:grid;grid-template-columns:170px 1fr;gap:4px 14px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px;line-height:1.5}
+.rl-arc b{font-family:var(--display);font-weight:400;font-size:16px;color:var(--ink)}.rl-arc span{color:var(--ink2);min-width:0}
+.rl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.rl-card{background:var(--panel);border:1px solid var(--line);padding:10px 12px;min-width:0}
+.rl-card b{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--amber);font-weight:500}
+.rl-card p{margin:4px 0 0;color:var(--ink);font-size:14px;line-height:1.5}
+.rl-q{margin-bottom:16px}
+.rl-q label{display:block;font-family:var(--display);font-size:17px;color:var(--ink);line-height:1.35;margin-bottom:4px;max-width:62ch}
+.rl-q textarea{width:100%;box-sizing:border-box;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);font:14.5px/1.55 var(--sans);padding:8px 10px;resize:vertical;margin-top:4px}
+.rl-q textarea:focus{outline:1px solid var(--amber-dim);border-color:var(--amber-dim)}
+.rl-saved{font-size:11px;color:var(--ink3)}
+.rl-links a{color:var(--amber)}
+@media (max-width:560px){.rl-arc{grid-template-columns:1fr}.rl-row{grid-template-columns:62px 1fr}.rl-st{grid-column:2;text-align:left}.rl-more{padding-left:0}.rl-force p{margin-left:0}}
 </style>
 </head>
 <body>
@@ -636,6 +708,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     <button class="trk-tab nav-more" data-tab="health"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12.5h4l2-5 3.5 10 2.5-6 1.5 1h4.5"/></svg><span>Health</span></button>
     <button class="trk-tab" data-tab="nutrition"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.5h17a8.5 7.5 0 0 1-17 0Z"/><path d="M9 8c-.6-1 .6-1.8 0-3M13 8c-.6-1 .6-1.8 0-3"/></svg><span>Nutrition</span></button>
     <button class="trk-tab" data-tab="wardrobe"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6.5a2 2 0 1 1 2 2v2"/><path d="M12 10.5 21 17H3Z"/></svg><span>Wardrobe</span></button>
+    <button class="trk-tab nav-more" data-tab="role"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 9.5h17v10h-17Z"/><path d="M3.5 9.5 4.6 5l16 3.6-.1.9"/><path d="M8.2 5.9 9.9 9.5M13 7l1.7 2.5"/></svg><span>Andrew</span></button>
     <button class="trk-tab nav-more" data-tab="expeditions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 6.5 9 4l6 2.5 5.5-2.5v13.5L15 20l-6-2.5-5.5 2.5Z"/><path d="M9 4v13.5M15 6.5V20"/></svg><span>Expeditions</span></button>
     <button class="nav-moreBtn" type="button" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/></svg><span>More</span></button>
     <div class="nav-foot"><b>The target</b>Lean and athletic, 8 to 10% body fat, a V-taper. Foundation Build, Shape Build, then Sharpen.</div>
@@ -1065,6 +1138,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
 
     <div class="trk-pane" data-pane="nutrition" id="nutritionPane"></div>
     <div class="trk-pane" data-pane="wardrobe" id="wardrobePane"></div>
+    <div class="trk-pane" data-pane="role" id="rolePane"></div>
     <div class="trk-pane" data-pane="expeditions" id="expeditionsPane"></div>
 
 
@@ -3178,6 +3252,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
 <script src="/js/nutrition.js"></script>
 <script src="/js/wardrobe.js"></script>
 <script src="/js/expeditions.js"></script>
+<script src="/js/role.js"></script>
 <script>
 // The trainer lives in Train, as the nutritionist does in Nutrition and the stylist in Wardrobe (Oct 31: one place each).
 (function () {
