@@ -46,11 +46,13 @@ function seriesOf(key, measurements, bodyweight) {
   return rows.filter((r) => r.value != null).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** Least-squares change per 30 days over the last TREND_DAYS (null without two readings two weeks apart). */
-function trendPer30(series, today) {
+/** Least-squares change per 30 days over the last TREND_DAYS (null without enough readings far enough apart).
+ *  Bodyweight and body fat swing 2 lb or a few points day to day, so they need four readings over three weeks before
+ *  there's a trend (Nov 3: two weigh-ins and a 2 lb dip three days later read as "losing 0.6 lb a month"). */
+function trendPer30(series, today, { min = 2, spanDays = 14 } = {}) {
   const from = ymd(new Date(Date.parse(`${today}T12:00:00Z`) - TREND_DAYS * DAY));
   const pts = series.filter((p) => p.date >= from).map((p) => ({ x: Date.parse(`${p.date}T12:00:00Z`) / DAY, y: p.value }));
-  if (pts.length < 2 || pts[pts.length - 1].x - pts[0].x < 14) return null;
+  if (pts.length < min || !pts.length || pts[pts.length - 1].x - pts[0].x < spanDays) return null;
   const n = pts.length, mx = pts.reduce((s, p) => s + p.x, 0) / n, my = pts.reduce((s, p) => s + p.y, 0) / n;
   const den = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
   return den ? (pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / den) * 30 : null;
@@ -68,7 +70,7 @@ function physiqueStatus({ profile, measurements, bodyweight, today }) {
     const current = last ? last.value : null;
     const gap = current == null || target == null ? null : r1(target - current); // + = still to add, - = still to lose
     const reached = current != null && target != null && (def.down ? current <= target : current >= target);
-    const trend = trendPer30(s, today);
+    const trend = trendPer30(s, today, key === 'weight_lb' || key === 'body_fat_pct' ? { min: 4, spanDays: 21 } : undefined);
     // Moving the right way: months to the target at that pace (capped at five years: past that it's "not at this pace").
     const helping = trend != null && gap != null && !reached && Math.sign(trend) === Math.sign(gap) && Math.abs(trend) > 0.01;
     const months = helping ? Math.abs(gap) / Math.abs(trend) : null;

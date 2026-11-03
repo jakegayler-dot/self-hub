@@ -59,3 +59,11 @@ test("the trainer's priorities follow the measured gaps", () => {
   assert.equal(p.shoulder, 0.1); // never measured: the fallback (maintenance)
   assert.deepEqual(gen.physiquePriority(null), { seat_hips: 1.0, bust: 0.5, arms: 0.35, neck: 0.3, shoulder: 0.1 });
 });
+
+test('two weigh-ins and a dip three days later are not a trend', () => {
+  const bw = [{ entry_date: '2026-09-04', weight_lb: 147 }, { entry_date: '2026-10-31', weight_lb: 147 }, { entry_date: '2026-11-03', weight_lb: 145 }];
+  const st = physique.physiqueStatus({ profile, measurements: [], bodyweight: bw, today });
+  assert.equal(st.metrics.weight_lb.trend_per_30d, null);
+  const more = [...bw, { entry_date: '2026-10-10', weight_lb: 146 }];
+  assert.notEqual(physique.physiqueStatus({ profile, measurements: [], bodyweight: more, today }).metrics.weight_lb.trend_per_30d, null);
+});
