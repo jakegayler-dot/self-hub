@@ -40,12 +40,13 @@ const coach = require('../lib/coach');
 const ledger = require('../lib/ledger');
 const volume = require('../lib/volume');
 const rules = require('../lib/weekRules');
+const physique = require('../lib/physique');
 const W = require('../lib/wardrobe');
 
 const { ymd, mondayOfStr, addDaysStr } = gen;
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const num = (v) => (v === null || v === undefined || v === '' ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
-const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high', 'thigh', 'calf', 'upper_arm'];
+const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'shoulder_circ', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high', 'thigh', 'calf', 'upper_arm'];
 
 // Trainer errors carry their own status (503 not connected, 429 budget, 502 Sentinel); everything else is a 500.
 function coachFail(res, err) {
@@ -189,6 +190,8 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
       lifts, gymnastics, bodyweight, benchmarkLifts: bench.map((r) => r.lift),
       engineTests: tests.map((t) => ({ ...t, intervals: typeof t.intervals === 'string' ? JSON.parse(t.intervals) : t.intervals })),
       strengthPatterns, plannedOther, engineHistory,
+      // The measured physique gaps set which accessories come first (lib/physique.js, Nov 3).
+      physique: await physique.loadStatus(pool, date).catch(() => null),
     };
   }
 
@@ -300,7 +303,7 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
       : [{ machine: 'one machine (rower, bike or ski)', test: 'tt10, sprint60 and repeat (over two sessions)', reason: 'no engine baseline at all' }];
     // Latest value of each measurement (not every entry has every field), with its own date.
     const measurements = {};
-    for (const f of ['thigh', 'calf', 'upper_arm', 'waist']) {
+    for (const f of ['shoulder_circ', 'bust', 'waist', 'upper_arm', 'neck', 'thigh', 'calf']) {
       const r = mrows.find((x) => x[f] != null);
       if (r) measurements[f] = { value: Number(r[f]), date: ymd(r.entry_date) };
     }
@@ -329,14 +332,15 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
     } catch (err) { fail(res, err); }
   });
   // Numbers he gives (the Train page's card, or Sentinel by voice): measurements, body fat, resting HR, age, gear.
-  //   POST /body-data { date?, thigh?, calf?, upper_arm?, waist?, body_fat_pct?, weight_lb?, resting_hr?, age?, fins?, swim_gear? }
+  //   POST /body-data { date?, shoulder_circ?, bust?, waist?, upper_arm?, neck?, thigh?, calf?, body_fat_pct?, body_fat_method?, weight_lb?, resting_hr?, age?, fins?, swim_gear? }
   router.post('/body-data', async (req, res) => {
     try {
       const b = req.body || {};
       const date = isDate(b.date) ? b.date : todayStr();
       const saved = {};
       const n = (v, lo, hi) => { if (v == null || v === '') return null; const x = num(v); return x != null && x >= lo && x <= hi ? x : NaN; };
-      const m = { thigh: n(b.thigh, 10, 45), calf: n(b.calf, 8, 30), upper_arm: n(b.upper_arm, 8, 30), waist: n(b.waist, 20, 60) };
+      const m = { thigh: n(b.thigh, 10, 45), calf: n(b.calf, 8, 30), upper_arm: n(b.upper_arm, 8, 30), waist: n(b.waist, 20, 60),
+        shoulder_circ: n(b.shoulder_circ, 30, 70), bust: n(b.bust, 25, 60), neck: n(b.neck, 10, 25) };
       const other = { body_fat_pct: n(b.body_fat_pct, 3, 50), weight_lb: n(b.weight_lb, 60, 500), resting_hr: n(b.resting_hr, 25, 120), age: n(b.age, 14, 99) };
       const bad = [...Object.entries(m), ...Object.entries(other)].filter((e) => Number.isNaN(e[1])).map((e) => e[0]);
       if (bad.length) return res.status(400).json({ error: `out of range: ${bad.join(', ')} (inches for measurements)` });
@@ -349,7 +353,8 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
         const last = (await q('SELECT weight_lb FROM fitness_bodyweight ORDER BY entry_date DESC, id DESC LIMIT 1'))[0];
         const weight = other.weight_lb != null ? other.weight_lb : (last ? Number(last.weight_lb) : null);
         if (weight == null) return res.status(400).json({ error: 'give your weight with the body fat (there is no weigh-in yet)' });
-        await pool.query('INSERT INTO fitness_bodyweight (entry_date, weight_lb, body_fat_pct) VALUES ($1, $2, $3)', [date, weight, other.body_fat_pct]);
+        const method = ['scale', 'calipers', 'tape', 'dexa', 'estimate'].includes(b.body_fat_method) ? b.body_fat_method : null;
+        await pool.query('INSERT INTO fitness_bodyweight (entry_date, weight_lb, body_fat_pct, body_fat_method) VALUES ($1, $2, $3, $4)', [date, weight, other.body_fat_pct, other.body_fat_pct == null ? null : method]);
         if (other.body_fat_pct != null) saved.body_fat_pct = other.body_fat_pct;
         if (other.weight_lb != null) saved.weight_lb = other.weight_lb;
       }
@@ -1180,6 +1185,8 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
           leaderboard_goal: profile.leaderboard_goal,
           summary: 'Top of the local CrossFit leaderboard and the physique below; continuous lean gain, no cut.',
           physique_target: profile.physique_target || null,
+          // The target in numbers and where he is against it (lib/physique.js, Nov 3): build for the biggest gaps.
+          physique_in_numbers: await physique.loadStatus(pool).then(physique.physiqueBrief).catch(() => null),
           ...(profile.physique_assessment ? { his_own_notes: profile.physique_assessment } : {}),
         },
         physique_evidence: await physiqueEvidence(m, ctx.strengthPatterns, profile),
@@ -1272,6 +1279,8 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
           leaderboard_goal: profile.leaderboard_goal,
           summary: 'Top of the local CrossFit leaderboard and the physique below; continuous lean gain, no cut.',
           physique_target: profile.physique_target || null,
+          // The target in numbers and where he is against it (lib/physique.js, Nov 3): build for the biggest gaps.
+          physique_in_numbers: await physique.loadStatus(pool).then(physique.physiqueBrief).catch(() => null),
           ...(profile.physique_assessment ? { his_own_notes: profile.physique_assessment } : {}),
         },
         physique_evidence: await physiqueEvidence(m, ctx.strengthPatterns, profile),

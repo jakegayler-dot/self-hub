@@ -169,6 +169,20 @@ async function buildSummary(pool, now = new Date()) {
     ]);
     out.summary.figure = figure.buildFigure({ profile: prof.rows[0], measurements, lifts: data.lifts, gymnastics: gym.rows, week: wk, today });
   } catch (err) { /* the window goes without the figure */ }
+  // The physique against its target (lib/physique.js, Nov 3): where each measurement is, the gap, the pace and when
+  // it gets there, for Sentinel's fitness tile and its answers.
+  try {
+    const st = await require('./physique').loadStatus(pool, today);
+    const metrics = {};
+    for (const [k, m] of Object.entries(st.metrics)) {
+      metrics[k] = { label: m.label, unit: m.unit, current: m.current, target: m.target, gap: m.gap, reached: m.reached, lower_is_better: m.lower_is_better, trend_per_30d: m.trend_per_30d, eta: m.eta, measured_on: m.measured_on, stale: m.stale };
+    }
+    out.summary.physique = {
+      target_words: st.target_words, metrics, ratios: st.ratios,
+      lean_mass_lb: st.lean_mass_lb, lean_mass_target_lb: st.lean_mass_target_lb, lean_to_add_lb: st.lean_to_add_lb,
+      biggest_gaps: st.biggest_gaps, measure_due: st.measure_due,
+    };
+  } catch (err) { /* no physique columns yet: leave it out */ }
   try {
     out.summary.today_workout = await loadTodayWorkout(pool, reginaDate(now));
   } catch (err) { /* no workouts table: leave it out */ }

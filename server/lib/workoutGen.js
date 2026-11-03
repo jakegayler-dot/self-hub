@@ -37,8 +37,28 @@ const MAJOR = ['Squat', 'Hinge', 'Push Vertical', 'Push Horizontal', 'Pull Verti
 const WEEKLY_SET_TARGET = 10; // ACSM ≥10 sets/muscle group/week — same threshold as the dashboard bar
 const REGION = { Squat: 'lower', Hinge: 'lower', 'Push Vertical': 'upper', 'Push Horizontal': 'upper', 'Pull Vertical': 'upper', 'Pull Horizontal': 'upper', Olympic: 'full' };
 // Jake's gaps, not the target's features (2026-10-18): legs and glutes are furthest behind; his shoulders
-// are already big and broad, so they get maintenance only.
+// are already big and broad, so they get maintenance only. That's the fallback; when his tape measurements are in,
+// the priorities come from the measured gaps (lib/physique.js biggest_gaps, Nov 3), see physiquePriority.
 const PHYSIQUE_PRIORITY = { seat_hips: 1.0, bust: 0.5, arms: 0.35, neck: 0.3, shoulder: 0.1 };
+// Which movement tag builds which measurement.
+const TAG_OF_METRIC = { thigh: 'seat_hips', calf: 'seat_hips', bust: 'bust', upper_arm: 'arms', neck: 'neck', shoulder_circ: 'shoulder' };
+/** Priorities from the physique status: the biggest gap (as a share of its target) is 1.0, the rest in proportion;
+ *  a measurement he's reached gets maintenance (0.1); one never measured keeps the fallback. */
+function physiquePriority(status) {
+  if (!status || !status.metrics) return PHYSIQUE_PRIORITY;
+  const share = {};
+  for (const [key, tag] of Object.entries(TAG_OF_METRIC)) {
+    const m = status.metrics[key];
+    if (!m || m.current == null || !m.target) continue;
+    const s = m.reached ? 0 : Math.abs(m.gap) / m.target;
+    share[tag] = Math.max(share[tag] || 0, s);
+  }
+  const top = Math.max(0, ...Object.values(share));
+  if (!top) return Object.keys(share).length ? Object.fromEntries(Object.keys(PHYSIQUE_PRIORITY).map((t) => [t, t in share ? 0.1 : PHYSIQUE_PRIORITY[t]])) : PHYSIQUE_PRIORITY;
+  const out = {};
+  for (const tag of Object.keys(PHYSIQUE_PRIORITY)) out[tag] = tag in share ? Math.max(0.1, Math.round((share[tag] / top) * 100) / 100) : PHYSIQUE_PRIORITY[tag];
+  return out;
+}
 const PHYSIQUE_REASON = { shoulder: 'shoulder width', bust: 'chest/back thickness', neck: 'traps/neck', arms: 'arms', seat_hips: 'glutes' };
 // Push / pull / legs families — used to keep a session balanced and to avoid
 // hammering the same family on back-to-back days.
@@ -185,6 +205,7 @@ function makeContext(rows, date) {
   return {
     date, t, weekStart, weekEnd, weekSets, touches, lastDone, e1rm, e1rmAll, e1rmFrom, gymBest,
     strengthPatterns: rows.strengthPatterns || {}, engineHistory, baselines,
+    physiquePriority: physiquePriority(rows.physique),
   };
 }
 
@@ -255,15 +276,25 @@ function movementRecency(ctx, name) {
   if (d <= 6) return 0;
   return 0.3;
 }
-function physiqueScore(m) {
-  const base = (m.tags || []).reduce((best, tag) => Math.max(best, PHYSIQUE_PRIORITY[tag] || 0), 0);
+function physiqueScore(m, ctx) {
+  const pri = (ctx && ctx.physiquePriority) || PHYSIQUE_PRIORITY;
+  const base = (m.tags || []).reduce((best, tag) => Math.max(best, pri[tag] || 0), 0);
   // Dedicated isolation for a physique lever (lateral raises etc.) beats a
   // compound that only touches it.
   return base + (m.physique && base >= 0.5 ? 0.5 : 0);
 }
-function physiqueReason(m) {
-  const top = (m.tags || []).slice().sort((a, b) => (PHYSIQUE_PRIORITY[b] || 0) - (PHYSIQUE_PRIORITY[a] || 0))[0];
+function physiqueReason(m, ctx) {
+  const pri = (ctx && ctx.physiquePriority) || PHYSIQUE_PRIORITY;
+  const top = (m.tags || []).slice().sort((a, b) => (pri[b] || 0) - (pri[a] || 0))[0];
   return top ? PHYSIQUE_REASON[top] : null;
+}
+
+const TAG_WORDS = { seat_hips: 'legs and glutes', bust: 'chest and back', arms: 'arms', neck: 'neck and traps', shoulder: 'shoulders' };
+function gapWords(ctx) {
+  const pri = (ctx && ctx.physiquePriority) || PHYSIQUE_PRIORITY;
+  const order = Object.entries(pri).sort((a, b) => b[1] - a[1]);
+  const low = order.filter(([, v]) => v <= 0.1).map(([t]) => TAG_WORDS[t]);
+  return `${TAG_WORDS[order[0][0]]} first${low.length ? `; ${low.join(', ')} ${low.length > 1 ? 'are' : 'is'} maintenance` : ''}`;
 }
 
 function choose(candidates, scoreFn, rng) {
@@ -557,7 +588,7 @@ function generateSession(rows, rawInputs, seed = 0) {
       for (let i = 0; i < n; i++) {
         const cand = avail.filter((m) => m.roles.includes('acc') && free(m) && m.pattern !== 'Core');
         const m = choose(cand, (x) => {
-          let s = physiqueScore(x) * 1.6 + gapScore(ctx, x.pattern) * 0.8 - recoveryPenalty(ctx, x.pattern, false) * 0.6 + movementRecency(ctx, x.name);
+          let s = physiqueScore(x, ctx) * 1.6 + gapScore(ctx, x.pattern) * 0.8 - recoveryPenalty(ctx, x.pattern, false) * 0.6 + movementRecency(ctx, x.name);
           if (usedPatterns.includes(x.pattern) && x.pattern !== 'Accessory') s -= 0.8;
           if (items.some((it) => it.pattern === x.pattern)) s -= 1.2;
           return s;
@@ -570,10 +601,10 @@ function generateSession(rows, rawInputs, seed = 0) {
         blocks.push({ kind, title, minutes: mins, notes: items.length > 1 ? 'Superset in pairs — alternate movements, rest after each pair.' : null, items });
         const parts = items.map((it) => {
           const m = BY_NAME.get(it.movement);
-          const r = m && physiqueReason(m);
+          const r = m && physiqueReason(m, ctx);
           return r ? `${it.movement} (${r})` : it.movement;
         });
-        why.push(`Accessories lean on the physique gaps (legs and glutes first; shoulders are already there): ${parts.join(', ')}.`);
+        why.push(`Accessories lean on the physique gaps (${gapWords(ctx)}): ${parts.join(', ')}.`);
       } else {
         const core = choose(avail.filter((m) => m.roles.includes('core') && free(m)), (x) => movementRecency(ctx, x.name), rng);
         if (core) {
@@ -584,7 +615,7 @@ function generateSession(rows, rawInputs, seed = 0) {
       }
     } else if (slot === 'skill') {
       const cand = avail.filter((m) => m.roles.includes('skill') && free(m));
-      const m = choose(cand, (x) => movementRecency(ctx, x.name) * 1.2 + physiqueScore(x) * 0.3 - recoveryPenalty(ctx, x.pattern, false) * 0.4, rng);
+      const m = choose(cand, (x) => movementRecency(ctx, x.name) * 1.2 + physiqueScore(x, ctx) * 0.3 - recoveryPenalty(ctx, x.pattern, false) * 0.4, rng);
       if (m) {
         blocks.push({ kind, title, minutes: mins, items: [gymItem(ctx, m, 'skill', mins)] });
         usedNames.add(m.name); usedPatterns.push(m.pattern);
@@ -601,7 +632,7 @@ function generateSession(rows, rawInputs, seed = 0) {
       const items = [];
       for (let i = 0; i < 2; i++) {
         const cand = avail.filter((m) => m.roles.includes('gstr') && free(m) && !items.some((it) => it.pattern === m.pattern));
-        const m = choose(cand, (x) => gapScore(ctx, x.pattern) * 1.5 + physiqueScore(x) * 0.5 - recoveryPenalty(ctx, x.pattern, false) + movementRecency(ctx, x.name)
+        const m = choose(cand, (x) => gapScore(ctx, x.pattern) * 1.5 + physiqueScore(x, ctx) * 0.5 - recoveryPenalty(ctx, x.pattern, false) + movementRecency(ctx, x.name)
           - (items.some((it) => DIR[it.pattern] && DIR[it.pattern] === DIR[x.pattern]) ? 1.0 : 0), rng);
         if (!m) break;
         items.push(gymItem(ctx, m, 'gstr', mins / 2));
@@ -861,6 +892,7 @@ function calibrateLoads(body, ctx) {
 }
 
 module.exports = {
+  physiquePriority,
   repairEngineBlock, calibrateLoads, e1rmLookup,
   generateSession, generateWeek, sanitizeBody, normalizeInputs, makeContext,
   REFINE_SCHEMA, FOCI, FOCUS_LABEL, MINUTES, MAJOR, WEEKLY_SET_TARGET,

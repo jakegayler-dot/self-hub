@@ -256,7 +256,7 @@
     mats.brass = new THREE.MeshStandardMaterial({ color: hex('#c99442'), roughness: 0.35, metalness: 0.75 });
     Object.keys(GROUPS).forEach(function (g) { mats.group[g] = new THREE.MeshStandardMaterial({ color: rampColor(0), roughness: 0.48, metalness: 0.06, bumpMap: fibre, bumpScale: 0.05 }); });
 
-    var fig = null, sets = {}, selected = null, hover = null;
+    var fig = null, ghost = null, sets = {}, selected = null, hover = null;
     var yaw = -0.42, pitch = 0.06, dist = 175, H = 70;
     function place() {
       target.position.set(0, H * 0.5, 0);
@@ -330,6 +330,20 @@
       setBody: function (body) {
         if (fig) { scene.remove(fig.group); fig.group.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); }
         fig = buildFigure(body, mats, fibre); H = fig.height; scene.add(fig.group); size(); paint();
+      },
+      // The target physique as a faint verdigris shell round him (Nov 3), so the gap shows where it is; null hides it.
+      setTarget: function (body) {
+        if (ghost) { scene.remove(ghost); ghost.traverse(function (o) { if (o.geometry) o.geometry.dispose(); }); ghost = null; }
+        if (body) {
+          var gm = new THREE.MeshBasicMaterial({ color: hex('#5fb894'), transparent: true, opacity: 0.13, depthWrite: false });
+          var gmats = { core: gm, bone: gm, stone: gm, brass: gm, group: {} };
+          Object.keys(GROUPS).forEach(function (g) { gmats.group[g] = gm; });
+          var g = buildFigure(body, gmats, fibre);
+          // No second plinth: the last two children are the plinth and its ring.
+          g.group.remove(g.group.children[g.group.children.length - 1]); g.group.remove(g.group.children[g.group.children.length - 1]);
+          g.group.renderOrder = 2; ghost = g.group; scene.add(ghost);
+        }
+        draw();
       },
       // Colour values per group, 0 (fresh, yellow) to FULL_LOAD+ (just worked hard, red). setLoad is the same call by its new name.
       setSets: function (s) { sets = s || {}; paint(); },

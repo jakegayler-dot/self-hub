@@ -29,12 +29,17 @@ const BENCHMARK_RETEST_DAYS = 56;
 const MAIN_LIFTS = ['Back Squat', 'Deadlift', 'Bench Press', 'Strict Press', 'Clean & Jerk', 'Snatch'];
 const LIFT_RETEST_DAYS = 60;
 
+// The physique's measurements (Nov 3: shoulders, chest and neck were never asked for, and they're the V-taper ones),
+// every four weeks; body fat by the same method each time.
 const MEASURES = {
-  thigh: { label: 'Thigh circumference (in, mid-thigh, relaxed)', every_days: 30 },
-  calf: { label: 'Calf circumference (in, widest point)', every_days: 30 },
-  upper_arm: { label: 'Upper-arm circumference (in, flexed)', every_days: 30 },
-  waist: { label: 'Waist circumference (in, at the navel)', every_days: 30 },
-  body_fat: { label: 'Body fat %', every_days: 30 },
+  shoulder_circ: { label: 'Shoulders (in, all the way round at the widest point, arms relaxed)', every_days: 28 },
+  bust: { label: 'Chest (in, round the nipple line, after breathing out)', every_days: 28 },
+  waist: { label: 'Waist circumference (in, at the navel)', every_days: 28 },
+  upper_arm: { label: 'Upper-arm circumference (in, flexed)', every_days: 28 },
+  neck: { label: "Neck (in, just below the Adam's apple)", every_days: 28 },
+  thigh: { label: 'Thigh circumference (in, mid-thigh, relaxed)', every_days: 28 },
+  calf: { label: 'Calf circumference (in, widest point)', every_days: 28 },
+  body_fat: { label: 'Body fat % (the same method each time)', every_days: 28 },
 };
 const FACTS = {
   age: { label: 'Age' },

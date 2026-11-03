@@ -846,7 +846,7 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
     for (const p of pan) if (p.food) known.add(p.food);
     const ctx = {
       today: today(),
-      athlete: { weight_lb_recent: w.slice(-10), goal: 'Continuous lean gain to a lean athletic physique (about 8-10% body fat); top of his local CrossFit leaderboard', diet: 'No dairy. Staples: beef liver, oysters, sardines, eggs, fattier beef cuts.' },
+      athlete: { weight_lb_recent: w.slice(-10), goal: `${await require('../lib/physique').loadStatus(pool).then(require('../lib/physique').physiqueBrief).catch(() => 'Continuous lean gain to a lean athletic physique (about 10% body fat).')} Also: top of his local CrossFit leaderboard.`, diet: 'No dairy. Staples: beef liver, oysters, sardines, eggs, fattier beef cuts.' },
       targets: { base_kcal: t.week.base_kcal, protein_g: t.week.protein_g, rate_band_lb_wk: [s.rate_min_lb, s.rate_max_lb], week_decision: t.week.rationale, days: t.days },
       recipes: list.map((r) => ({ id: r.id, name: r.name, kind: r.kind, slot: r.slot, servings: r.servings, per_serving: r.per_serving, portable: r.portable, max_per_week: r.max_per_week, liver: r.liver,
         ingredients: r.ingredients.map((i) => `${i.label || i.food} ${Math.round(i.grams)} g`) })),

@@ -199,13 +199,15 @@ function createCoachChatRouter({ pool, workouts = null, nutrition = null, wardro
     const W = require('../lib/wardrobe');
     const [items, worn, outfits, today] = await Promise.all([wardrobe.items(), wardrobe.lastWorn(), wardrobe.outfits(), wardrobe.today({ date, occasion: occasion || 'farm', weather: null })]);
     const body = (await q('SELECT entry_date, weight_lb FROM fitness_bodyweight ORDER BY entry_date DESC LIMIT 1').catch(() => []))[0];
-    const m = (await q('SELECT * FROM fitness_measurements ORDER BY entry_date DESC LIMIT 1').catch(() => []))[0];
+    // The latest value of each measurement on its own (Nov 3), not just the newest entry's fields.
+    const m = require('../lib/physique').latestEach(await q('SELECT * FROM fitness_measurements ORDER BY entry_date ASC, id ASC').catch(() => []),
+      ['bust', 'shoulder', 'shoulder_circ', 'waist', 'seat_hips', 'neck', 'sleeve', 'arm_length', 'length', 'inseam_low', 'inseam_high', 'thigh', 'calf', 'upper_arm']);
     const prof = (await q('SELECT height_in, physique_target, bodyweight_goal_lb, body_fat_target FROM fitness_profile WHERE id = 1').catch(() => []))[0] || {};
     const keep = (o) => Object.fromEntries(Object.entries(o || {}).filter(([k, v]) => v != null && !['id', 'entry_date', 'created_at'].includes(k)).map(([k, v]) => [k, isNaN(Number(v)) ? v : Number(v)]));
     return {
       items: items.map((i) => ({ ...i, last_worn: worn[i.id] || null })), outfits, gaps: W.gaps(items), stats: W.stats(items), today,
       body: { weight_lb: body ? Number(body.weight_lb) : null, measurements_in: keep(m), height_in: prof.height_in == null ? null : Number(prof.height_in),
-        goal: 'Continuous lean gain: getting bigger through the chest, shoulders and back (V-taper), about 8-10% body fat', physique_target: prof.physique_target || null, bodyweight_goal_lb: prof.bodyweight_goal_lb == null ? null : Number(prof.bodyweight_goal_lb) },
+        goal: await require('../lib/physique').loadStatus(pool).then(require('../lib/physique').physiqueBrief).catch(() => 'Continuous lean gain to the Casino Royale build'), physique_target: prof.physique_target || null },
     };
   }
   async function snapshot(c) {

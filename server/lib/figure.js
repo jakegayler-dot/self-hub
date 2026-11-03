@@ -72,7 +72,9 @@ function muscleWeekSets(lifts, gymnastics, week) {
 // The body passed to setBody(), from his height and latest tape measurements (defaults where not measured).
 function bodyFor(profile, measurements) {
   const p = profile || {};
-  const m = (measurements && measurements.length ? measurements[measurements.length - 1] : null) || {};
+  // The latest value of each measurement on its own (Nov 3: the newest entry had only calf and arm, so the chest,
+  // shoulders and neck fell back to the population defaults).
+  const m = require('./physique').latestEach(measurements, ['shoulder', 'bust', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high']);
   const d = BODY_DEFAULTS;
   const defaults = [];
   const pick = (val, key) => { if (val != null) return Number(val); defaults.push(key); return d[key]; };

@@ -610,6 +610,16 @@ a.trk-btn{text-decoration:none;display:inline-block}
 .rest-bar{visibility:hidden;transition:transform .25s,visibility .25s}
 .rest-bar.on{visibility:visible}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+.phy-row{display:grid;grid-template-columns:110px 150px 1fr 90px 130px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+.phy-row.stale .phy-val{opacity:.65}
+.phy-lbl{color:var(--ink2)}
+.phy-val{color:var(--ink);font-variant-numeric:tabular-nums}
+.phy-to{color:var(--ink3)}
+.phy-bar{height:7px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.phy-bar i{display:block;height:100%;background:var(--amber)}
+.phy-bar i.done{background:#8fb39a}
+.phy-trend,.phy-when{color:var(--ink3);font-size:12.5px}
+@media(max-width:700px){.phy-row{grid-template-columns:90px 1fr 70px;}.phy-trend,.phy-when{display:none}}
 </style>
 </head>
 <body>
@@ -640,6 +650,12 @@ a.trk-btn{text-decoration:none;display:inline-block}
     <div class="trk-pane on" data-pane="dash">
       <div class="trk-phase" id="phaseBar"></div>
       <div class="trk-grid" id="statGrid"></div>
+      <div class="trk-sec" id="physiqueSec" style="display:none">
+        <h2>Physique against the target</h2>
+        <p class="trk-note" id="physiqueWords"></p>
+        <div id="physiqueRows"></div>
+        <p class="trk-note" id="physiqueGapNote"></p>
+      </div>
       <div class="trk-sec d-load">
         <h2>Weekly training load</h2>
         <details class="how"><summary>How this is worked out</summary><p class="trk-note">Compared against published sports-science minimums, not your own history: &ge;2 resistance sessions/week hitting all major muscle groups and 150&ndash;300 min/week moderate aerobic activity (WHO 2020 / ACSM guidelines), and &ge;10 sets per muscle group per week for a reliable hypertrophy stimulus (ACSM resistance-training update). No skill-work tracking exists yet; ask if you want that added as its own log.</p></details>
@@ -994,11 +1010,14 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <p class="trk-note" style="margin-bottom:10px">All in inches. Leave any field blank to skip it — only the date and one measurement are required.</p>
         <div class="trk-row">
           <div class="trk-field"><label>Date</label><input type="date" id="mDate"></div>
-          <div class="trk-field"><label>Arm length</label><input type="number" step="0.1" id="mArmLength" placeholder="22"></div>
-          <div class="trk-field"><label>Bust</label><input type="number" step="0.1" id="mBust" placeholder="37"></div>
+          <div class="trk-field"><label>Shoulders around (widest)</label><input type="number" step="0.1" id="mShoulderCirc" placeholder="46"></div>
+          <div class="trk-field"><label>Chest (bust)</label><input type="number" step="0.1" id="mBust" placeholder="37"></div>
         </div>
         <div class="trk-row">
-          <div class="trk-field"><label>Shoulder</label><input type="number" step="0.1" id="mShoulder" placeholder="18"></div>
+          <div class="trk-field"><label>Arm length</label><input type="number" step="0.1" id="mArmLength" placeholder="22"></div>
+        </div>
+        <div class="trk-row">
+          <div class="trk-field"><label>Shoulder (back width)</label><input type="number" step="0.1" id="mShoulder" placeholder="18"></div>
           <div class="trk-field"><label>Length</label><input type="number" step="0.1" id="mLength" placeholder="23"></div>
           <div class="trk-field"><label>Waist</label><input type="number" step="0.1" id="mWaist" placeholder="29.5"></div>
         </div>
@@ -1023,7 +1042,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <h2>Measurement trend</h2>
         <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
           <select id="measureChartFilter">
-            <option value="shoulder">Shoulder</option>
+            <option value="shoulder_circ">Shoulders around</option>
+            <option value="shoulder">Shoulder (back width)</option>
             <option value="waist">Waist</option>
             <option value="bust">Bust</option>
             <option value="arm_length">Arm length</option>
@@ -1310,7 +1330,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
 
   document.getElementById('mSubmit').addEventListener('click', async function(){
     var d=document.getElementById('mDate').value;
-    var fieldIds={arm_length:'mArmLength',bust:'mBust',shoulder:'mShoulder',length:'mLength',waist:'mWaist',
+    var fieldIds={shoulder_circ:'mShoulderCirc',arm_length:'mArmLength',bust:'mBust',shoulder:'mShoulder',length:'mLength',waist:'mWaist',
       seat_hips:'mSeatHips',neck:'mNeck',sleeve:'mSleeve',inseam_low:'mInseamLow',inseam_high:'mInseamHigh',thigh:'mThigh',calf:'mCalf',upper_arm:'mUpperArm'};
     var body={entry_date:d}; var any=false;
     Object.keys(fieldIds).forEach(function(f){
@@ -1460,7 +1480,9 @@ a.trk-btn{text-decoration:none;display:inline-block}
 
   function computeBodyProfile(){
     var p = cache.profile || {};
-    var m = cache.measurements.length ? cache.measurements[cache.measurements.length-1] : {};
+    // The latest value of each measurement on its own (Nov 3: the newest entry had only calf and arm).
+    var m = {};
+    cache.measurements.forEach(function(r){ Object.keys(r).forEach(function(k){ if(r[k]!=null && r[k]!=='' && k!=='id' && k!=='entry_date') m[k]=r[k]; }); });
     var d = BODY_DEFAULTS;
     var usedDefault = [];
     function pick(val, key){
@@ -1624,6 +1646,20 @@ a.trk-btn{text-decoration:none;display:inline-block}
     });
   });
 
+  // The target build at his own frame (Nov 3): chest, waist and neck at their targets; shoulder width and hips scaled by
+  // how far the shoulders-around and the thighs have to go. Null until there's a physique status.
+  function targetBody(body, ph){
+    if(!ph||!ph.metrics||!body) return null;
+    var m=ph.metrics, t=Object.assign({}, body);
+    var ratio=function(k){ return m[k]&&m[k].current&&m[k].target? m[k].target/m[k].current : 1; };
+    if(m.bust&&m.bust.target) t.bust=Math.max(body.bust||0, m.bust.target);
+    if(m.waist&&m.waist.target) t.waist=Math.min(body.waist||m.waist.target, m.waist.target);
+    if(m.neck&&m.neck.target) t.neck=Math.max(body.neck||0, m.neck.target);
+    if(body.shoulder) t.shoulder=body.shoulder*ratio('shoulder_circ');
+    if(body.hips) t.hips=body.hips*Math.sqrt(ratio('thigh'));
+    return t;
+  }
+
   function renderPhysique(){
     // The target and his own read of where he is (the trainer programs the gap); don't clobber unsaved typing.
     var pt=document.getElementById('pqTarget'), pn=document.getElementById('pqNow');
@@ -1642,6 +1678,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var bodyKey = JSON.stringify(prof.raw);
     if(body3d){
       if(body3d._key!==bodyKey){ body3d.setBody(prof.raw); body3d._key=bodyKey; }
+      var tb=targetBody(prof.raw, cache.summary && cache.summary.physique), tKey=JSON.stringify(tb);
+      if(body3d.setTarget && body3d._tkey!==tKey){ body3d.setTarget(tb); body3d._tkey=tKey; }
       (body3d.setLoad||body3d.setSets)(physiqueWeek.load);
       body3d.select(physiqueSelectedKey);
     }
@@ -1649,9 +1687,9 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var note = document.getElementById('physiqueNote');
     if(prof.usedDefault.length){
       var missing = prof.usedDefault.map(function(k){ return BODY_FIELD_LABELS[k]||k; }).join(', ');
-      note.textContent = 'Proportions from your height and tape measurements; colour from the last 7 days of training. Average values stand in for '+missing+' until you log them in Health.';
+      note.textContent = 'Proportions from your height and tape measurements; colour from the last 7 days of training; the faint green shell is the target build. Average values stand in for '+missing+' until you log them in Health.';
     } else {
-      note.textContent = 'Proportions from your height and tape measurements; colour from the last 7 days of training.';
+      note.textContent = 'Proportions from your height and tape measurements; colour from the last 7 days of training; the faint green shell is the target build.';
     }
 
     showPhysiqueInfo(physiqueSelectedKey);
@@ -1827,7 +1865,9 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var sq=s.latest_lifts['Back Squat'], dl=s.latest_lifts['Deadlift'];
     card('Back Squat', sq? sq.load_lb+'&times;'+sq.reps:'—');
     card('Deadlift', dl? dl.load_lb+'&times;'+dl.reps:'—');
-    card('Shoulder:waist', s.shoulder_waist_ratio!=null? s.shoulder_waist_ratio:'—', (s.shoulder_waist_ratio!=null && s.shoulder_waist_ratio>=1.6)?'green':'');
+    var sw = s.physique ? s.physique.ratios.shoulder_to_waist : null;
+    card('Shoulders:waist'+(sw?' (→ '+sw.target+')':''), sw && sw.current!=null? sw.current:'measure shoulders', (sw && sw.current!=null && sw.current>=sw.target)?'green':'');
+    renderPhysiqueGaps(s.physique);
 
     var note=document.getElementById('bwNote');
     if(s.bodyweight_weekly_rate_lb==null){ note.textContent='Log at least two bodyweight entries to see a trend.'; }
@@ -1835,6 +1875,33 @@ a.trk-btn{text-decoration:none;display:inline-block}
       var wk=s.bodyweight_weekly_rate_lb;
       note.textContent='Rate since first entry: '+(wk>=0?'+':'')+wk+' lb/week. Lean-gain target is +0.25 to +0.5 lb/week.';
     }
+  }
+
+  // The physique against its target (Nov 3, server lib/physique.js): each measurement now → target, how far along,
+  // the monthly trend and when it gets there at that pace.
+  function renderPhysiqueGaps(ph){
+    var sec=document.getElementById('physiqueSec');
+    if(!ph){ sec.style.display='none'; return; }
+    sec.style.display='';
+    document.getElementById('physiqueWords').textContent=ph.target_words+(ph.lean_to_add_lb!=null? ' About '+ph.lean_to_add_lb+' lb of lean mass to add.':'');
+    var order=['weight_lb','body_fat_pct','shoulder_circ','bust','waist','upper_arm','neck','thigh','calf'];
+    var u=function(m,v){ return v==null?'—':(m.unit==='in'? v+'"' : m.unit==='%'? v+'%' : v+' '+m.unit); };
+    var html='';
+    order.forEach(function(k){
+      var m=ph.metrics[k]; if(!m) return;
+      var pct=m.progress!=null? Math.round(m.progress*100) : (m.reached?100:0);
+      var trend=m.trend_per_30d==null? '' : (m.trend_per_30d>0?'+':'')+m.trend_per_30d+(m.unit==='in'?'"':m.unit==='%'?'%':' '+m.unit)+'/mo';
+      var when=m.reached? 'there' : m.current==null? 'measure it' : m.eta? 'at this pace: '+m.eta.slice(0,7) : m.trend_per_30d==null? 'no trend yet' : 'not at this pace';
+      html+='<div class="phy-row'+(m.stale?' stale':'')+'" title="'+m.how+'">'+
+        '<span class="phy-lbl">'+m.label+'</span>'+
+        '<span class="phy-val">'+u(m,m.current)+' <span class="phy-to">→ '+u(m,m.target)+'</span></span>'+
+        '<span class="phy-bar"><i style="width:'+pct+'%"'+(m.reached?' class="done"':'')+'></i></span>'+
+        '<span class="phy-trend">'+trend+'</span><span class="phy-when">'+when+'</span></div>';
+    });
+    document.getElementById('physiqueRows').innerHTML=html;
+    var due=(ph.measure_due||[]).map(function(k){ return ph.metrics[k].label.toLowerCase(); });
+    document.getElementById('physiqueGapNote').textContent=(ph.biggest_gaps.length? 'Biggest gaps: '+ph.biggest_gaps.map(function(g){ return g.label+' '+(g.gap>0?'+':'')+g.gap+'"'; }).join(', ')+'. ':'')+
+      (due.length? 'Due for a measure: '+due.join(', ')+' (every four weeks; hover a row for how).' : '');
   }
 
   function renderCharts(){
@@ -2269,11 +2336,11 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var ctx3=document.getElementById('measureChart').getContext('2d');
     var field = document.getElementById('measureChartFilter').value;
     var rows = cache.measurements.filter(function(m){
-      if(field==='shoulder_waist_ratio') return m.shoulder!=null && m.waist!=null;
+      if(field==='shoulder_waist_ratio') return m.shoulder_circ!=null && m.waist!=null;
       return m[field]!=null;
     });
     var data = field==='shoulder_waist_ratio'
-      ? rows.map(function(m){ return Math.round((Number(m.shoulder)/Number(m.waist))*100)/100; })
+      ? rows.map(function(m){ return Math.round((Number(m.shoulder_circ)/Number(m.waist))*100)/100; })
       : rows.map(function(m){ return Number(m[field]); });
     if(measureChartRef) measureChartRef.destroy();
     measureChartRef=new Chart(ctx3,{type:'line',data:{

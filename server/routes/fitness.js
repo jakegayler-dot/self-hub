@@ -16,7 +16,8 @@ function num(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
-const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high', 'thigh', 'calf', 'upper_arm'];
+const MEASUREMENT_FIELDS = ['arm_length', 'bust', 'shoulder', 'shoulder_circ', 'length', 'waist', 'seat_hips', 'neck', 'sleeve', 'inseam_low', 'inseam_high', 'thigh', 'calf', 'upper_arm'];
+const physique = require('../lib/physique');
 
 // ---- profile / phase ----
 router.get('/profile', async (req, res) => {
@@ -32,6 +33,16 @@ router.put('/profile', async (req, res) => {
   // The look he's after and his own read of where he is: free text the trainer works from.
   const text = (v) => (typeof v === 'string' ? v.trim().slice(0, 1000) : null);
   const physique_target = text(req.body.physique_target), physique_assessment = text(req.body.physique_assessment);
+  // The target in numbers (Nov 3): any of weight_lb, body_fat_pct, bust, waist, shoulder_circ, upper_arm, neck, thigh, calf.
+  if (req.body.physique_targets && typeof req.body.physique_targets === 'object') {
+    const cur = physique.targetsOf((await pool.query('SELECT physique_targets FROM fitness_profile WHERE id = 1')).rows[0]);
+    for (const [k, v] of Object.entries(req.body.physique_targets)) {
+      if (!(k in physique.DEFAULT_TARGETS)) return res.status(400).json({ error: `unknown target ${k}` });
+      if (num(v) === null || num(v) <= 0) return res.status(400).json({ error: `${k} must be a positive number` });
+      cur[k] = num(v);
+    }
+    await pool.query('UPDATE fitness_profile SET physique_targets = $1::jsonb, updated_at = now() WHERE id = 1', [JSON.stringify(cur)]);
+  }
   if (physique_target !== null || physique_assessment !== null) {
     await pool.query(`UPDATE fitness_profile SET physique_target = COALESCE($1, physique_target),
       physique_assessment = COALESCE($2, physique_assessment), updated_at = now() WHERE id = 1`, [physique_target, physique_assessment]);
@@ -66,10 +77,12 @@ router.post('/bodyweight', async (req, res) => {
   if (!isValidDate(entry_date) || num(weight_lb) === null) {
     return res.status(400).json({ error: 'entry_date (YYYY-MM-DD) and weight_lb are required' });
   }
+  // How it was measured (Nov 3), so body fat is compared like with like: scale, calipers, tape, DEXA or estimate.
+  const method = ['scale', 'calipers', 'tape', 'dexa', 'estimate'].includes(req.body.body_fat_method) ? req.body.body_fat_method : null;
   const { rows } = await pool.query(
-    `INSERT INTO fitness_bodyweight (entry_date, weight_lb, body_fat_pct)
-     VALUES ($1, $2, $3) RETURNING id, entry_date, weight_lb, body_fat_pct`,
-    [entry_date, num(weight_lb), num(body_fat_pct)]
+    `INSERT INTO fitness_bodyweight (entry_date, weight_lb, body_fat_pct, body_fat_method)
+     VALUES ($1, $2, $3, $4) RETURNING id, entry_date, weight_lb, body_fat_pct, body_fat_method`,
+    [entry_date, num(weight_lb), num(body_fat_pct), num(body_fat_pct) == null ? null : method]
   );
   res.status(201).json(rows[0]);
 });
@@ -214,13 +227,16 @@ router.get('/summary', async (req, res) => {
     }
   }
 
+  // Every entry, and the latest value of each measurement on its own (Nov 3: an entry with only calf and arm used to
+  // blank the rest). Shoulders:waist is shoulders all the way round against the waist (it was back width / waist, ~0.6).
   const measurements = (await pool.query(
-    `SELECT entry_date, ${MEASUREMENT_FIELDS.join(', ')} FROM fitness_measurements ORDER BY entry_date DESC LIMIT 1`
+    `SELECT entry_date, ${MEASUREMENT_FIELDS.join(', ')} FROM fitness_measurements ORDER BY entry_date ASC, id ASC`
   )).rows;
-  const latestMeasurement = measurements[0] || null;
-  const shoulderWaistRatio = latestMeasurement && latestMeasurement.shoulder && latestMeasurement.waist
-    ? Math.round((Number(latestMeasurement.shoulder) / Number(latestMeasurement.waist)) * 100) / 100
-    : null;
+  const each = physique.latestEach(measurements, MEASUREMENT_FIELDS);
+  const latestMeasurement = measurements.length ? { entry_date: measurements[measurements.length - 1].entry_date, ...each } : null;
+  const today = new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10);
+  const physiqueNow = physique.physiqueStatus({ profile, measurements, bodyweight: bw, today });
+  const shoulderWaistRatio = physiqueNow.ratios.shoulder_to_waist.current;
 
   const weeklyLoad = await computeWeeklyLoad();
 
@@ -238,6 +254,7 @@ router.get('/summary', async (req, res) => {
     benchmark_lift_bests: bestByLift,
     latest_measurements: latestMeasurement,
     shoulder_waist_ratio: shoulderWaistRatio,
+    physique: physiqueNow,
     weekly_load: weeklyLoad,
     entry_counts: { bodyweight: bw.length, lifts: lifts.length, measurements: measurements.length },
   });
@@ -414,7 +431,8 @@ router.get('/coach-prompt', async (req, res) => {
     const parts = [];
     if (m.shoulder) parts.push(`shoulder ${Number(m.shoulder)}"`);
     if (m.waist) parts.push(`waist ${Number(m.waist)}"`);
-    if (m.shoulder && m.waist) parts.push(`ratio ${(Number(m.shoulder) / Number(m.waist)).toFixed(2)}`);
+    if (m.shoulder_circ) parts.push(`shoulders around ${Number(m.shoulder_circ)}"`);
+    if (m.shoulder_circ && m.waist) parts.push(`shoulders:waist ${(Number(m.shoulder_circ) / Number(m.waist)).toFixed(2)}`);
     if (m.bust) parts.push(`bust ${Number(m.bust)}"`);
     if (m.arm_length) parts.push(`arm ${Number(m.arm_length)}"`);
     if (m.sleeve) parts.push(`sleeve ${Number(m.sleeve)}"`);
@@ -434,7 +452,7 @@ router.get('/coach-prompt', async (req, res) => {
   const wlLine = `Strength: ${weeklyLoad.strength.sessions_this_week}/${weeklyLoad.strength.sessions_goal} sessions, ${weeklyLoad.strength.tonnage_this_week_lb} lb tonnage this week vs ${weeklyLoad.strength.tonnage_4wk_avg_lb} lb 4-week avg (ACWR ${weeklyLoad.strength.acwr ?? 'n/a'}, ${weeklyLoad.strength.status})
 Conditioning: ${weeklyLoad.conditioning.sessions_this_week}/${weeklyLoad.conditioning.sessions_goal} sessions, ${weeklyLoad.conditioning.minutes_this_week} min this week vs ${weeklyLoad.conditioning.minutes_4wk_avg} min 4-week avg (ACWR ${weeklyLoad.conditioning.acwr ?? 'n/a'}, ${weeklyLoad.conditioning.status})`;
 
-  const prompt = `You are my strength and conditioning coach. I started underweight and lean. My targets are the Casino Royale build (lean with a real V-taper, body fat ${profile.body_fat_target}%) and top of the leaderboard at my local CrossFit box. I am running a continuous lean gain — there is no cut in my programme. I am in ${phaseNames[profile.phase]}.
+  const prompt = `You are my strength and conditioning coach. I started underweight and lean. My targets are the Casino Royale build (${(await physique.loadStatus(pool).then(physique.physiqueBrief).catch(() => `lean with a real V-taper, body fat ${profile.body_fat_target}%`))}) and top of the leaderboard at my local CrossFit box. I am running a continuous lean gain — there is no cut in my programme. I am in ${phaseNames[profile.phase]}.
 
 My data:
 - Bodyweight (7-day avg): ${avg7 ? avg7 + ' lb' : 'not enough data yet'}
