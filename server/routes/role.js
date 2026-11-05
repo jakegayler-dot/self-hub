@@ -67,6 +67,18 @@ function createRoleRouter({ pool, env = process.env, fetchImpl = (...a) => fetch
     }
   });
 
+  // His answers on their own, for Sentinel's day planner (through the bridge): the questions he's answered.
+  router.get('/role/notebook', async (req, res) => {
+    try {
+      const rows = await q('SELECT question_id, answer, updated_at FROM role_notebook');
+      const by = new Map(rows.map((r) => [r.question_id, r]));
+      res.json({ answers: R.QUESTIONS.filter((x) => by.has(x.id)).map((x) => ({ id: x.id, q: x.q, answer: by.get(x.id).answer, updated_at: by.get(x.id).updated_at })) });
+    } catch (err) {
+      console.error('role notebook read failed:', err);
+      res.status(500).json({ error: 'failed' });
+    }
+  });
+
   router.put('/role/notebook/:id', async (req, res) => {
     try {
       const id = String(req.params.id);
