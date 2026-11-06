@@ -70,6 +70,8 @@ function walk(stack, prefix, out) {
 
 function isExcluded(p) {
   const lower = p.toLowerCase();
+  // A workout's session (time, RPE, notes, done) isn't a login session: the coach couldn't finish a workout (Nov 3).
+  if (/^\/api\/fitness\/workouts\/\d+\/session$/.test(lower)) return false;
   return lower === '/api/sentinel' || lower.startsWith('/api/sentinel/') || lower.startsWith('/api/sentinel-')
     || EXCLUDED_WORDS.test(lower);
 }

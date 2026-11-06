@@ -361,6 +361,35 @@ test('loosely written machine intervals are repaired rather than refusing the we
 });
 
 // Nov 1: "a little note pad that I can enter things to work on with that lift".
+test('soreness and the true picture: saved by word, read back, and a past part-logged session is over', async () => {
+  const bad = await call('POST', '/soreness', { areas: ['feelings'] });
+  assert.equal(bad.status, 400);
+  const saved = await call('POST', '/soreness', { areas: ['low back', 'quads'], level: 2, note: 'after squats' });
+  assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  assert.deepEqual(saved.body.areas, ['lowerback', 'quads']);
+  assert.equal((await call('POST', '/soreness', { areas: ['quads'], level: 0 })).status, 201);
+  const read = await call('GET', '/soreness');
+  assert.deepEqual(read.body.map((x) => [x.area, x.level]), [['lowerback', 2]], 'cleared and the rest kept');
+  const pic = await call('GET', '/recent-training');
+  assert.equal(pic.status, 200);
+  assert.equal(pic.body.soreness[0].area, 'lowerback');
+  assert.ok(pic.body.rules.length);
+  await call('POST', '/soreness', { areas: ['low back'], level: 0 });
+
+  // A past session with a set logged: done everywhere, not at the top of the plan and not volume still to come.
+  const made = await call('POST', '/workouts/generate', { date: daysAgo(2), minutes: 60, focus: 'strength', equipment: 'full', seed: 7 });
+  const w = made.body;
+  const b = w.body.blocks.find((x) => x.items.some((i) => i.log_as === 'lift'));
+  const it = b.items.find((i) => i.log_as === 'lift');
+  const logged = await call('POST', `/workouts/${w.id}/log`, { block_id: b.id, item_id: it.id, set_index: 0, load_lb: 100 });
+  assert.equal(logged.body.status, 'done');
+  assert.equal(logged.body.partial, true);
+  const brief = await call('GET', `/workouts?from=${daysAgo(2)}&to=${daysAgo(2)}&brief=1`);
+  assert.equal(brief.body.find((x) => x.id === w.id).status, 'done');
+  assert.equal(brief.body[0].body, undefined, 'brief carries no bodies');
+  await call('DELETE', `/workouts/${w.id}`);
+});
+
 test('lift notes: write, read, rewrite, clear', async () => {
   let r = await call('PUT', '/lift-notes/Snatch', { body: '  Stay over the bar longer.\r\nElbows fast in the catch.  ' });
   assert.equal(r.status, 200);

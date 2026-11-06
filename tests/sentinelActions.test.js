@@ -11,7 +11,7 @@ process.env.SENTINEL_PASS = 'sentinelpass456';
 
 const express = require('express');
 const { basicAuth } = require('../server/middleware/basicAuth');
-const { createSentinelActionsRouter, trackMountPaths, matchesRoute } = require('../server/routes/sentinelActions');
+const { createSentinelActionsRouter, trackMountPaths, matchesRoute, validate } = require('../server/routes/sentinelActions');
 
 trackMountPaths();
 const fitnessRouter = require('../server/routes/fitness');
@@ -92,6 +92,13 @@ test('routes: lists every /api route incl. nested routers, sorted and de-duplica
   assert.equal(keys.filter((k) => k === 'GET /api/things').length, 1);
   const sorted = [...r.body.routes].sort((a, b) => (a.path + ' ' + a.method).localeCompare(b.path + ' ' + b.method));
   assert.deepEqual(r.body.routes.map((x) => x.path), sorted.map((x) => x.path));
+});
+
+test("a workout's session isn't a login session: the coach can finish a workout", () => {
+  const routes = [{ method: 'PUT', path: '/api/fitness/workouts/:id/session' }, { method: 'GET', path: '/api/session' }];
+  assert.equal(validate('PUT', '/api/fitness/workouts/64/session', routes), null);
+  assert.match(validate('GET', '/api/session', routes), /not available/);
+  assert.match(validate('PUT', '/api/fitness/workouts/64/session/x', routes), /not available/);
 });
 
 test('routes: excludes sentinel, auth/login/session/user/password and non-/api routes', async () => {

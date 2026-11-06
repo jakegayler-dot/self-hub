@@ -206,6 +206,9 @@ function makeContext(rows, date) {
     date, t, weekStart, weekEnd, weekSets, touches, lastDone, e1rm, e1rmAll, e1rmFrom, gymBest,
     strengthPatterns: rows.strengthPatterns || {}, engineHistory, baselines,
     physiquePriority: physiquePriority(rows.physique),
+    // Nov 6: the quick generator keeps off a metcon he's just done and a muscle he said was sore.
+    metconsDone: new Set(rows.metconsDone || []),
+    soreMuscles: new Set(rows.sore || []),
   };
 }
 
@@ -252,8 +255,11 @@ function weaknessScore(ctx, pattern) {
   if (s == null) return MAJOR.includes(pattern) || pattern === 'Olympic' ? 0.4 : 0;
   return clamp((100 - s) / 100, 0, 1);
 }
+// The muscles a pattern works hardest (figure.js's rules), for soreness.
+const PATTERN_MUSCLES = { Squat: ['quads', 'glutes'], Hinge: ['hamstrings', 'glutes', 'lowerback'], 'Push Vertical': ['shoulders'], 'Push Horizontal': ['chest'], 'Pull Vertical': ['lats'], 'Pull Horizontal': ['midback'], Olympic: ['quads', 'glutes', 'traps'] };
 function recoveryPenalty(ctx, pattern, heavyOnly) {
   let pen = 0;
+  if (ctx.soreMuscles && (PATTERN_MUSCLES[pattern] || []).some((m) => ctx.soreMuscles.has(m))) pen = 1.5;
   for (const x of ctx.touches) {
     if (x.pattern !== pattern) continue;
     if (heavyOnly && !x.heavy) continue;
@@ -435,10 +441,11 @@ function metconBlock(ctx, avail, minutes, rng, avoidPatterns, why) {
   };
   const avoid = (m) => !avoidPatterns.includes(m.pattern);
   const sameFamily = (m) => (pieces.some((p) => DIR[p.pattern] && DIR[p.pattern] === DIR[m.pattern]) ? 0.9 : 0);
+  const justDone = (m) => (ctx.metconsDone && ctx.metconsDone.has(m.name) ? 1.2 : 0);
   pickOne((m) => m.roles.includes('mono'), (m) => movementRecency(ctx, m.name));
-  pickOne((m) => m.roles.includes('metcon') && m.kind === 'gym' && avoid(m), (m) => gapScore(ctx, m.pattern) + movementRecency(ctx, m.name));
+  pickOne((m) => m.roles.includes('metcon') && m.kind === 'gym' && avoid(m), (m) => gapScore(ctx, m.pattern) + movementRecency(ctx, m.name) - justDone(m));
   if (D > 8) {
-    pickOne((m) => m.roles.includes('metcon') && m.kind === 'lift' && avoid(m), (m) => gapScore(ctx, m.pattern) + movementRecency(ctx, m.name) - sameFamily(m))
+    pickOne((m) => m.roles.includes('metcon') && m.kind === 'lift' && avoid(m), (m) => gapScore(ctx, m.pattern) + movementRecency(ctx, m.name) - sameFamily(m) - justDone(m))
       || pickOne((m) => m.roles.includes('metcon') && avoid(m), (m) => gapScore(ctx, m.pattern) - sameFamily(m));
   }
   if (pieces.length < 2) pickOne((m) => m.roles.includes('metcon'), () => 0);
@@ -896,5 +903,5 @@ module.exports = {
   repairEngineBlock, calibrateLoads, e1rmLookup,
   generateSession, generateWeek, sanitizeBody, normalizeInputs, makeContext,
   REFINE_SCHEMA, FOCI, FOCUS_LABEL, MINUTES, MAJOR, WEEKLY_SET_TARGET,
-  ymd, mondayOfStr, addDaysStr,
+  ymd, mondayOfStr, addDaysStr, dayGap: (a, b) => dayNum(a) - dayNum(b),
 };

@@ -265,7 +265,9 @@ const COLLECTIONS = [
           }
         }
         return {
-          id: r.id, date: ymd(r.workout_date), title: r.title, focus: r.focus, minutes: num(r.minutes), status: r.status,
+          // A past session he logged part of is over, not still planned (lib/recovery.js).
+          id: r.id, date: ymd(r.workout_date), title: r.title, focus: r.focus, minutes: num(r.minutes),
+          status: require('../lib/recovery').effectiveStatus(r.status, ymd(r.workout_date), done, new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10)),
           source: r.source, refine_status: r.refine_status, sets_logged: done, sets_total: total,
           objective: meta.objective || null, intensity: meta.intensity || null, systems: meta.systems || null, qualities: meta.qualities || null,
           actual_minutes: num(r.actual_minutes), session_rpe: num(r.session_rpe),

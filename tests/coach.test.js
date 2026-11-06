@@ -48,6 +48,8 @@ const session = (date, title, extra = {}) => ({
 // The rest of the body (Nov 2: every major pattern gets trained in the week), two sets each.
 const WHOLE = { kind: 'strength', title: 'Whole body', minutes: 25, items: [['Back Squat', 'Squat', 185], ['Deadlift', 'Hinge', 225], ['Strict Press', 'Push Vertical', 95], ['Barbell Row', 'Pull Horizontal', 135], ['Weighted Pull-Up', 'Pull Vertical', 25]]
   .map(([movement, pattern, load]) => ({ movement, pattern, log_as: 'lift', prescription: `2 × 5 @ ${load} lb`, sets: [{ reps: 5, load_lb: load, rpe: 7 }, { reps: 5, load_lb: load, rpe: 7 }] })) };
+// A light day straight after a hard one is recovery work (lib/recovery.js).
+const easy = (s) => ({ ...s, body: { ...s.body, blocks: s.body.blocks.map((b) => ({ ...b, items: b.items.map((it) => ({ ...it, sets: (it.sets || []).map((x) => ({ ...x, rpe: 6 })) })) })) } });
 const wholeBody = (s) => ({ ...s, body: { ...s.body, blocks: [...s.body.blocks, WHOLE] } });
 let weekAnswer;
 
@@ -66,7 +68,7 @@ test.before(async () => {
     if (task === 'week') {
       weekAnswer = { objective: 'Pressing strength and aerobic base', weekly_targets: { push_sets: 12 }, progression: '+5 lb on top sets when all reps land at RPE 8', watch: ['Bench top set'],
         days: [session(day(0), 'Heavy bench'), wholeBody(session(day(2), 'Pull + engine')), session(day(4), 'Squat'),
-          errors ? session(day(5), 'Accessories') : { ...session(day(5), 'Accessories'), body: { blocks: [] } }] };
+          errors ? easy(session(day(5), 'Accessories')) : { ...session(day(5), 'Accessories'), body: { blocks: [] } }] };
       return res.json({ result: weekAnswer, calendar: [{ date: day(0), harvest_day: 'yes: combining 11:00-22:00' }] });
     }
     if (task === 'review') {
@@ -75,6 +77,13 @@ test.before(async () => {
         adjustments: [{ ...session(day(4), 'Squat (lighter)'), change: 'Dropped to 75% after a hard bench day' }],
         weak_points: [{ area: 'Hinge', evidence: 'Deadlift e1RM 1.4× bodyweight', priority: 1, prescription: 'RDLs twice a week', why_it_matters: 'Leaderboard lifts' }],
         next_week: 'Lean towards the hinge' } });
+    }
+    if (task === 'day') {
+      // Repeats the metcon he just did; once told, writes another.
+      const moves = errors ? ['Thruster', 'Burpees'] : ['KB Swings', 'Box Jumps'];
+      const base = session(req.body.context.date, 'Press and a metcon');
+      return res.json({ result: { ...base, notes: 'Kept off your legs', body: { ...base.body, blocks: [...base.body.blocks,
+        { kind: 'metcon', title: 'Couplet', minutes: 10, format: 'AMRAP', items: moves.map((movement) => ({ movement, log_as: 'none', prescription: `10 ${movement}`, sets: [] })) }] } } });
     }
     if (task === 'refine') return res.json({ result: { ...session(day(2), 'Pull (refined)'), notes: 'Swapped rows for pull-ups' } });
     res.status(422).json({ error: { message: 'unknown task' } });
@@ -242,6 +251,34 @@ test('swims: the pool, fins and swim gear are equipment, swim strokes are moveme
   const c = (await call('GET', '/conditioning')).body.find((x) => x.movement === 'Swim with fins');
   assert.equal(Number(c.distance_m), 400);
   assert.equal(Number(c.duration_seconds), 480);
+});
+
+test('plan today: the trainer reads what he did and what it remembers, a repeated metcon goes back, the day is saved over the untouched one', async () => {
+  const date = '2026-12-16';
+  await call('POST', '/coach/trainer/memory', { text: 'Keep squat volume modest' }).catch(() => {});
+  // He did this on the Monday: a couplet he never scored, in a session he logged a set of.
+  const was = (await call('POST', '/workouts/custom', { date: '2026-12-14', body: { title: 'Monday', focus: 'mixed', minutes: 45, blocks: [
+    { kind: 'strength', title: 'Squat', items: [{ movement: 'Air Squats', log_as: 'gymnastics', sets: [{ reps: 10 }] }] },
+    { kind: 'metcon', title: 'Monday couplet', items: [{ movement: 'KB Swings', log_as: 'none', sets: [] }, { movement: 'Box Jumps', log_as: 'none', sets: [] }] }] } })).body;
+  await call('POST', `/workouts/${was.id}/log`, { block_id: was.body.blocks[0].id, item_id: was.body.blocks[0].items[0].id, set_index: 0, reps: 10 });
+  const untouched = (await call('POST', '/workouts/generate', { date, minutes: 45, focus: 'strength', seed: 3 })).body;
+  asked.length = 0;
+  const r = await call('POST', '/workouts/plan-day', { date, minutes: 45, note: '' });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(asked.length, 2, 'the repeat went back once');
+  assert.equal(asked[0].task, 'day');
+  assert.ok(asked[0].context.recent_training.metcons.some((m) => m.title === 'Monday couplet'));
+  assert.ok(asked[0].context.recent_training.rules.length);
+  assert.ok(Array.isArray(asked[0].context.coach_memory));
+  assert.ok(asked[1].errors.some((e) => /repeats "Monday couplet"/.test(e)), JSON.stringify(asked[1].errors));
+  assert.deepEqual(r.body.body.blocks.find((b) => b.kind === 'metcon').items.map((i) => i.movement), ['Thruster', 'Burpees']);
+  assert.equal(r.body.source, 'sentinel');
+  const that = (await call('GET', `/workouts?from=${date}&to=${date}`)).body;
+  assert.deepEqual(that.map((w) => w.id), [r.body.id], 'the untouched session is replaced');
+  assert.notEqual(r.body.id, untouched.id);
+  await call('POST', `/workouts/${r.body.id}/log`, { block_id: r.body.body.blocks[0].id, item_id: r.body.body.blocks[0].items[0].id, set_index: 0 });
+  assert.equal((await call('POST', '/workouts/plan-day', { date })).status, 409, 'a session he has started stays');
+  for (const id of [was.id, r.body.id]) await call('DELETE', `/workouts/${id}`);
 });
 
 test('planning a week runs in the background: the page starts it and checks back (no long request for the phone to drop)', async () => {

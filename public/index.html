@@ -103,6 +103,11 @@ button,input,select,textarea{font-family:var(--sans)}
 .wk-presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .wk-chipbtn{background:var(--panel2);border:1px solid var(--line2);color:var(--ink2);padding:5px 10px;border-radius:14px;font-size:11.5px;cursor:pointer}
 .wk-chipbtn:hover{color:var(--ink)}
+.sore-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0}
+.sore-q{font-size:12px;color:var(--ink2);margin-right:2px}
+.sore-row .wk-chipbtn{padding:9px 12px;font-size:13px;border-radius:14px}
+.wk-chipbtn.sore-1{color:var(--amber);border-color:var(--amber-dim);background:var(--amber-bg)}
+.wk-chipbtn.sore-2{color:#fff;border-color:#b3412f;background:#b3412f}
 .wk-equip{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px 10px;margin-bottom:12px}
 .wk-equip label{font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px;cursor:pointer}
 .wk-card{border:1px solid var(--line);border-radius:10px;background:var(--panel);margin-bottom:12px;overflow:hidden}
@@ -820,6 +825,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
             <select id="cwDays" title="Training days"><option value="4">4 days</option><option value="5" selected>5 days</option><option value="6">6 days</option></select>
             <select id="cwLevel" title="Volume level: how much training load to build to"><option value="beginner">Beginner</option><option value="intermediate" selected>Intermediate</option><option value="advanced">Advanced</option><option value="elite">Elite</option></select>
             <button class="trk-btn primary" id="cwPlan">Plan my week</button>
+            <button class="trk-btn" id="cwPlanDay">Plan today</button>
             <input type="text" id="cwNote" maxlength="500" placeholder="Anything to know this week? (optional)">
             <div class="cw-avail" id="cwAvail" title="Tap a day: Gym, Truck (harvest: no gym, near the truck), Off"></div>
             <div class="cw-block" id="cwBlock"></div>
@@ -835,6 +841,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
           <div class="wk-equip" id="wkEquip"></div>
         </details>
         <div class="wk-busy" id="cwBusy" hidden></div>
+        <div class="sore-row" id="soreRow"></div>
         <div id="ldgCard"></div>
         <div id="cwWeek"></div>
         <div id="wkPlan"><p class="trk-note">Loading…</p></div>
@@ -2722,7 +2729,21 @@ a.trk-btn{text-decoration:none;display:inline-block}
     if(i===-1) train.workouts.push(w); else train.workouts[i]=w;
   }
 
-  function renderTrain(){ renderWeek(); renderPlan(); renderEngine(); renderLedger(); }
+  function renderTrain(){ renderWeek(); renderPlan(); renderEngine(); renderLedger(); renderSore(); }
+
+  // Soreness (Nov 6): tap what's sore today, again for very sore, again to clear. The plans keep off it for 2 or 3 days.
+  var SORE = [['quads','Quads',['quads']],['hamstrings','Hamstrings',['hamstrings']],['glutes','Glutes',['glutes']],['low back','Low back',['lowerback']],['calves','Calves',['calves']],
+    ['chest','Chest',['chest']],['shoulders','Shoulders',['shoulders']],['back','Back',['lats','midback']],['arms','Arms',['biceps','triceps','forearms']],['core','Core',['abs','obliques']]];
+  async function renderSore(refetch){
+    var el=document.getElementById('soreRow'); if(!el) return;
+    if(refetch!==false){ try{ train.sore=await api('GET','/soreness?days=1'); }catch(e){ train.sore=train.sore||[]; } }
+    var today=localISO(), lv=function(gs){ return (train.sore||[]).reduce(function(m,s){ return s.date===today && gs.indexOf(s.area)>=0 ? Math.max(m,s.level) : m; },0); };
+    el.innerHTML='<span class="sore-q">Sore today?</span>'+SORE.map(function(a){ var l=lv(a[2]); return '<button type="button" class="wk-chipbtn sore-'+l+'" data-sore="'+esc(a[0])+'" data-level="'+l+'">'+esc(a[1])+(l===2?' !!':l===1?' !':'')+'</button>'; }).join('');
+    el.querySelectorAll('[data-sore]').forEach(function(b){ b.addEventListener('click', async function(){
+      var next=(parseInt(b.dataset.level,10)+1)%3, area=b.dataset.sore;
+      try{ await api('POST','/soreness',{ areas:[area], level:next }); renderSore(); }catch(e){ toast('Could not save: '+e.message); }
+    }); });
+  }
 
   // The week's days (Oct 19: "I said I will be harvesting Monday and Tuesday so no gym those days"): each Gym,
   // Truck (harvest: no gym, near the truck) or Off. The trainer has to keep to them; Self Hub checks.
@@ -2851,12 +2872,12 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var job; try{ job=(await api('GET','/workouts/plan-week/status')).job; }catch(e){ planPoll=setTimeout(watchPlan, 8000); return; }
     if(!job) { btn.disabled=false; return; }
     if(job.status==='running'){
-      btn.disabled=true; busy.hidden=false;
+      btn.disabled=true; document.getElementById('cwPlanDay').disabled=true; busy.hidden=false;
       var secs=Math.round((Date.now()-Date.parse(job.started_at))/1000);
-      busy.textContent='Planning your week… '+(secs<60?secs+' s':Math.floor(secs/60)+' min '+(secs%60)+' s')+' (it takes a few minutes; you can leave this page)';
+      busy.textContent=(job.kind==='day'?'Planning today… ':'Planning your week… ')+(secs<60?secs+' s':Math.floor(secs/60)+' min '+(secs%60)+' s')+' (it takes a few minutes; you can leave this page)';
       planPoll=setTimeout(watchPlan, 5000); return;
     }
-    btn.disabled=false;
+    btn.disabled=false; document.getElementById('cwPlanDay').disabled=false;
     if(train.planWatched===job.started_at) return; // already shown
     train.planWatched=job.started_at;
     if(job.status==='failed'){
@@ -2871,6 +2892,12 @@ a.trk-btn{text-decoration:none;display:inline-block}
     try{ var wk=await api('GET','/workouts/week?start='+job.week_start); train.week=wk.week; train.workouts=await api('GET','/workouts'); train.open={}; renderTrain(); }catch(e){}
     if(train.planStarted===job.started_at) toast(job.sessions+' sessions planned'+(job.kept_existing?' — kept '+job.kept_existing+' already started':''));
   }
+  document.getElementById('cwPlanDay').addEventListener('click', async function(){
+    var busy=document.getElementById('cwBusy'), p=currentInputs();
+    this.disabled=true; busy.hidden=false; busy.textContent='Planning today…';
+    try{ await api('POST','/workouts/plan-day',{ date:localISO(), minutes:p.minutes, equipment:p.equipment, engine_modality:p.engine_modality, note:document.getElementById('cwNote').value, background:true }); watchPlan(); }
+    catch(e){ busy.textContent='Could not plan today: '+e.message; this.disabled=false; }
+  });
   document.getElementById('cwPlan').addEventListener('click', async function(){
     var p=currentInputs(); if(!p.date){ toast('Pick a start date under Options'); return; }
     p.start_date=p.date; p.days=parseInt(document.getElementById('cwDays').value,10); p.note=document.getElementById('cwNote').value; p.background=true;
@@ -2885,7 +2912,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
   window.SelfHubTrainRender = function(){ if(train.workouts) renderPlan(); };
   function renderPlan(){
     var today = localISO();
-    var plan = train.workouts.filter(function(w){ return w.date>=today || (w.status==='planned' && w.progress.done>0); })
+    // Still to do only: a finished, skipped or past session is under Past, not at the top (Nov 6).
+    var plan = train.workouts.filter(function(w){ return w.date>=today && w.status==='planned'; })
       .sort(function(a,b){ return a.date<b.date?-1:a.date>b.date?1:a.id-b.id; });
     var past = train.workouts.filter(function(w){ return plan.indexOf(w)===-1; })
       .sort(function(a,b){ return a.date<b.date?1:a.date>b.date?-1:b.id-a.id; }).slice(0,15);
@@ -2906,7 +2934,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var chips = '<span class="wk-chip">'+esc(w.minutes)+' min</span>';
     if(w.volume && w.volume.planned && (w.volume.planned.hard_sets || w.volume.planned.conditioning_min)) chips+='<span class="wk-chip">'+esc(volText(w.volume.planned))+'</span>';
     if(w.meta && w.meta.intensity) chips+='<span class="wk-chip">'+esc(w.meta.intensity)+'</span>';
-    if(w.status==='done') chips+='<span class="wk-chip green">Done</span>';
+    if(w.status==='done') chips+='<span class="wk-chip green">'+(w.partial?'Done, part logged':'Done')+'</span>';
+    if(w.status==='planned' && w.date<today) chips+='<span class="wk-chip">Not done</span>';
     if(w.status==='skipped') chips+='<span class="wk-chip red">Skipped</span>';
     var html = '<div class="wk-card'+(open?' open':'')+(w.date===today?' today':'')+'" data-wid="'+w.id+'">'+
       '<div class="wk-head" data-act="toggle"><div><div class="d">'+esc(fmtDay(w.date))+(w.date===today?' &middot; TODAY':'')+'</div>'+
@@ -2929,7 +2958,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     html += '<button class="trk-btn" data-act="session">Save</button>';
     if(!started) html += '<button class="trk-btn" data-act="refine">Adjust</button>';
     if(w.status==='planned') html += '<button class="trk-btn" data-act="status" data-status="skipped">Skip</button>';
-    if(w.status!=='planned') html += '<button class="trk-btn" data-act="status" data-status="planned">Reopen</button>';
+    if(w.status!=='planned' && !w.partial) html += '<button class="trk-btn" data-act="status" data-status="planned">Reopen</button>';
     html += '<button class="trk-btn" data-act="delete">Delete</button></div>';
     return html + '</div></div>';
   }

@@ -11,9 +11,12 @@ Profile and body:
 
 const TRAINER = `${COMMON}
 Training:
-  GET /workouts?from=&to= (each: id, date, title, focus, minutes, status planned|done|skipped, body.blocks[].items[].sets[], meta.why…)
+  GET /recent-training?date=  what he actually did day by day, days since each pattern and how hard, soreness, recent metcons, what's coming: read it before you program anything
+  POST /soreness { date?, areas: ["low back", "quads"…], level: 1 sore | 2 very sore | 0 clear, note? }  whenever he says he's sore, tight or it's better; save it straight away, plans keep off it
+  POST /workouts/plan-day { date?, minutes?, note? }  build and save one session for a day, held to what he did (about a minute); use this when he asks for a session
+  GET /workouts?from=&to=&brief=1 (each: id, date, title, focus, minutes, status planned|done|skipped, progress; without brief=1 also body.blocks[].items[].sets[], meta.why…)
   GET /workouts/:id · GET /workouts/week?start= (the coached week: plan, review)
-  POST /workouts/custom { date, body: {title, focus, minutes, rationale[], blocks[…]}, objective?, why? }  a new session you write (body as in athlete().schema.body)
+  POST /workouts/custom { date, body: {title, focus, minutes, rationale[], blocks[…]}, objective?, why? }  a new session you write (body as in athlete().schema.body); recovery_warnings in the answer say what it breaks: tell him, or fix it
   PUT /workouts/:id/refined { body, notes }  replace a session he hasn't started (same body format)
   PUT /workouts/:id/date { date }  move it · PUT /workouts/:id/status { status: planned|done|skipped } · DELETE /workouts/:id
   POST /workouts/:id/revert  back to the rules version · POST /workouts/:id/regenerate  a fresh rules session

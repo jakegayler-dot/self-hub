@@ -17,6 +17,9 @@
 //
 //   The coached week (Sentinel's trainer, called directly — lib/coach.js):
 //   POST   /workouts/plan-week              { start_date, days: 4-6, minutes, equipment, engine_modality, note? }
+//   POST   /workouts/plan-day               { date?, minutes?, note?, background? }  one session for a day, saved, held to what he did
+//   GET    /recent-training?date=           what he actually did, how rested each pattern is, soreness, recent metcons
+//   GET    /soreness?days=   POST /soreness { date?, areas: ["low back", …], level: 1 sore | 2 very sore | 0 clear, note? }
 //   POST   /workouts/review-week            { start_date }  → review, adjust the days not started, rank weak points
 //   GET    /workouts/week?start=            the week's plan and latest review
 //
@@ -42,6 +45,7 @@ const volume = require('../lib/volume');
 const rules = require('../lib/weekRules');
 const physique = require('../lib/physique');
 const W = require('../lib/wardrobe');
+const recovery = require('../lib/recovery');
 
 const { ymd, mondayOfStr, addDaysStr } = gen;
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
@@ -58,6 +62,7 @@ function coachFail(res, err) {
 function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
   const router = express.Router();
   const q = async (sql, params) => (await pool.query(sql, params)).rows;
+  const todayStr = () => gen.ymd(new Date(Date.now() - 6 * 3600e3));
 
   // ---- the training block and the weather (lib/weekRules.js; Nov 2) ----
   const PHASES = ['Phase 0 (Assess)', 'Phase 1 (Foundation Build)', 'Phase 2 (Shape Build)', 'Phase 3 (Sharpen)', 'Maintain'];
@@ -114,9 +119,12 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
   function shape(r) {
     if (!r) return null;
     const body = typeof r.body === 'string' ? JSON.parse(r.body) : r.body;
+    const date = ymd(r.workout_date);
+    // A past session he logged part of is over (Nov 6: they sat at the top of the plan as if still to do, for good).
+    const status = recovery.effectiveStatus(r.status, date, recovery.loggedCount(body), todayStr());
     return {
-      id: r.id, date: ymd(r.workout_date), title: r.title, focus: r.focus, minutes: Number(r.minutes),
-      status: r.status, source: r.source, seed: Number(r.seed),
+      id: r.id, date, title: r.title, focus: r.focus, minutes: Number(r.minutes),
+      status, partial: status !== r.status || undefined, source: r.source, seed: Number(r.seed),
       inputs: typeof r.inputs === 'string' ? JSON.parse(r.inputs) : r.inputs,
       body, has_rules_version: r.rules_body != null,
       refine: { status: r.refine_status, request: r.refine_request, requested_at: r.refine_requested_at, notes: r.refine_notes, refined_at: r.refined_at },
@@ -178,15 +186,22 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
     const ws = mondayOfStr(date);
     const lo = addDaysStr(ws, -3); const hi = addDaysStr(ws, 9);
     const hist = addDaysStr(date, -120);
-    const plannedOther = []; const engineHistory = [];
+    const plannedOther = []; const engineHistory = []; const metconsDone = [];
+    const today = todayStr();
     for (const w of workouts) {
       if (excludeId != null && Number(w.id) === Number(excludeId)) continue;
       const d = ymd(w.workout_date);
       const body = typeof w.body === 'string' ? JSON.parse(w.body) : w.body;
-      if (w.status === 'planned' && d >= lo && d <= hi) plannedOther.push({ date: d, body });
+      // A session from before today that didn't get logged didn't happen: it isn't volume on the way (Nov 6).
+      if (w.status === 'planned' && d >= lo && d <= hi && d >= today) plannedOther.push({ date: d, body });
       else if (d >= hist && d <= date) engineHistory.push({ date: d, body });
+      if (d >= addDaysStr(date, -21) && d <= date && (w.status === 'done' || recovery.loggedCount(body) > 0)) {
+        for (const b of body.blocks || []) if (b.kind === 'metcon') for (const it of b.items || []) if (it.movement) metconsDone.push(it.movement);
+      }
     }
+    const sore = await q("SELECT entry_date, area, level, note FROM fitness_soreness WHERE entry_date >= $1 AND entry_date <= $2", [addDaysStr(date, -3), date]).catch(() => []);
     return {
+      metconsDone, sore: sore.filter((s) => Number(s.level) > 0 && gen.dayGap(date, ymd(s.entry_date)) <= recovery.soreDays(s.level)).map((s) => s.area),
       lifts, gymnastics, bodyweight, benchmarkLifts: bench.map((r) => r.lift),
       engineTests: tests.map((t) => ({ ...t, intervals: typeof t.intervals === 'string' ? JSON.parse(t.intervals) : t.intervals })),
       strengthPatterns, plannedOther, engineHistory,
@@ -312,7 +327,6 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
     out.resting_hr_recent = rhr.map((t) => ({ date: ymd(t.entry_date), bpm: Number(t.value) }));
     return out;
   }
-  const todayStr = () => gen.ymd(new Date(Date.now() - 6 * 3600e3));
   router.ledgerFor = ledgerFor; // for the read API (Sentinel)
   router.athleteContext = (date) => athleteContext(date); // for the coach chat
   router.get('/ledger', async (req, res) => {
@@ -399,6 +413,56 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
     try { await pool.query('DELETE FROM fitness_tests WHERE id = $1', [Number(req.params.id)]); res.status(204).end(); } catch (err) { fail(res, err); }
   });
 
+  // ---- what he actually did and how his body is (lib/recovery.js; Nov 6) ----
+  async function recentFor(date, excludeId = null) {
+    const from = addDaysStr(date, -21);
+    const [lifts, gymnastics, conditioning, workouts, soreness] = await Promise.all([
+      q('SELECT entry_date, lift, load_lb, reps, rpe, notes FROM fitness_lifts WHERE entry_date >= $1 AND entry_date <= $2 ORDER BY entry_date ASC, id ASC', [from, date]),
+      q('SELECT entry_date, movement, reps, notes FROM fitness_gymnastics WHERE entry_date >= $1 AND entry_date <= $2 ORDER BY entry_date ASC, id ASC', [from, date]),
+      q('SELECT entry_date, movement, distance_m, duration_seconds, notes FROM fitness_conditioning WHERE entry_date >= $1 AND entry_date <= $2 ORDER BY entry_date ASC, id ASC', [from, date]),
+      q('SELECT id, workout_date, title, status, body, session_rpe, actual_minutes, session_notes FROM fitness_workouts WHERE workout_date >= $1 AND workout_date <= $2 ORDER BY workout_date ASC, id ASC', [from, addDaysStr(date, 7)]),
+      q('SELECT entry_date, area, level, note FROM fitness_soreness WHERE entry_date >= $1 AND entry_date <= $2', [addDaysStr(date, -4), date]),
+    ]);
+    const others = workouts.filter((w) => excludeId == null || Number(w.id) !== Number(excludeId));
+    const upcoming = others.filter((w) => ymd(w.workout_date) > date && w.status === 'planned').map((w) => {
+      const body = typeof w.body === 'string' ? JSON.parse(w.body) : w.body;
+      return { date: ymd(w.workout_date), title: w.title, hard_patterns: Object.keys(recovery.hardByPattern(body)) };
+    });
+    return recovery.recentTraining({ lifts, gymnastics, conditioning, workouts: others, soreness }, date, { upcoming });
+  }
+  router.get('/recent-training', async (req, res) => {
+    try { res.json(await recentFor(isDate(req.query.date) ? req.query.date : todayStr())); } catch (err) { fail(res, err); }
+  });
+  router.get('/soreness', async (req, res) => {
+    try {
+      const days = Math.max(1, Math.min(90, Number(req.query.days) || 7));
+      const rows = await q('SELECT entry_date, area, level, note FROM fitness_soreness WHERE entry_date >= $1 ORDER BY entry_date DESC, area ASC', [addDaysStr(todayStr(), -days)]);
+      res.json(rows.map((r) => ({ date: ymd(r.entry_date), area: r.area, level: Number(r.level), note: r.note || null })));
+    } catch (err) { fail(res, err); }
+  });
+  router.post('/soreness', async (req, res) => {
+    try {
+      const b = req.body || {};
+      const date = isDate(b.date) ? b.date : todayStr();
+      const level = b.level == null ? 1 : Number(b.level);
+      if (![0, 1, 2].includes(level)) return res.status(400).json({ error: 'level is 1 (sore), 2 (very sore) or 0 (clear)' });
+      const words = Array.isArray(b.areas) ? b.areas : (b.area ? [b.area] : []);
+      if (!words.length) return res.status(400).json({ error: 'say where: areas, e.g. ["low back", "quads"]' });
+      const areas = [];
+      for (const w of words) {
+        const found = recovery.soreAreas(w);
+        if (!found.length) return res.status(400).json({ error: `"${String(w).slice(0, 40)}" isn't a body part I know: try quads, hamstrings, glutes, low back, back, chest, shoulders, arms, core, calves` });
+        for (const a of found) if (!areas.includes(a)) areas.push(a);
+      }
+      const note = typeof b.note === 'string' && b.note.trim() ? b.note.trim().slice(0, 300) : null;
+      for (const a of areas) {
+        await pool.query('DELETE FROM fitness_soreness WHERE entry_date = $1 AND area = $2', [date, a]);
+        if (level > 0) await pool.query('INSERT INTO fitness_soreness (entry_date, area, level, note) VALUES ($1, $2, $3, $4)', [date, a, level, note]);
+      }
+      res.status(201).json({ date, areas, level });
+    } catch (err) { fail(res, err); }
+  });
+
   // ---- lift notes: what he's working on in each lift (Nov 1) ----
   //   GET /lift-notes → [{ movement, body, updated_at }]    PUT /lift-notes/:movement { body } (empty clears it)
   router.get('/lift-notes', async (req, res) => {
@@ -420,7 +484,10 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
     const { from, to } = req.query;
     if ((from && !isDate(from)) || (to && !isDate(to))) return res.status(400).json({ error: 'from/to must be YYYY-MM-DD' });
     const rows = await q('SELECT * FROM fitness_workouts ORDER BY workout_date DESC, id DESC');
-    res.json(rows.map(shape).filter((w) => (!from || w.date >= from) && (!to || w.date <= to)));
+    const list = rows.map(shape).filter((w) => (!from || w.date >= from) && (!to || w.date <= to));
+    // brief=1: no bodies, so a whole week fits where a reader's answer is cut short (the trainer said "the list was cut off", Nov 6).
+    if (req.query.brief) return res.json(list.map((w) => ({ id: w.id, date: w.date, title: w.title, focus: w.focus, minutes: w.minutes, status: w.status, progress: w.progress, session: w.session, intensity: w.meta && w.meta.intensity })));
+    res.json(list);
   });
 
   // ---- the coached week (before /workouts/:id so these aren't read as an id) ----
@@ -475,6 +542,57 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
         return res.status(202).json({ job });
       }
       res.status(201).json(await planWeek(inputs, days, note));
+    } catch (err) { if (err.errors) return res.status(502).json({ error: err.message, errors: err.errors }); coachFail(res, err); }
+  });
+
+  // One session for a day (Nov 6: "I asked it to program for me today"): built by the trainer, held to what he did and
+  // how his body is, and saved over that day's untouched session. A session he's started stays: he's told so.
+  async function planDay({ date, minutes, note, equipment, engine_modality }) {
+    const today = await q('SELECT * FROM fitness_workouts WHERE workout_date = $1', [date]);
+    const open = today.map(shape);
+    const started = open.find((w) => anyLogged(w.body));
+    if (started) { const e = new Error(`You've already started "${started.title}" that day: finish it, or unlog it first`); e.status = 409; throw e; }
+    const last = (await q("SELECT inputs, minutes FROM fitness_workouts WHERE source = 'sentinel' ORDER BY id DESC LIMIT 1"))[0];
+    const was = last ? (typeof last.inputs === 'string' ? JSON.parse(last.inputs) : last.inputs) || {} : {};
+    const mins = Math.max(20, Math.min(120, Math.round(Number(minutes) || Number(was.minutes) || (last && Number(last.minutes)) || 60)));
+    const kit = Array.isArray(equipment) && equipment.length ? equipment : (Array.isArray(was.equipment) && was.equipment.length ? was.equipment : gen.normalizeInputs({ date }).inputs.equipment);
+    const level = volume.LEVELS[was.volume_level] ? was.volume_level : 'intermediate';
+    const ctx = await athleteContext(date);
+    const block = await blockFor(date, level);
+    const wx = await weatherFor([date]);
+    const context = { ...ctx, date, minutes: mins, equipment: kit, engine_machine: engine_modality || was.engine_modality || 'auto', note,
+      periodization: { macro_phase: block.phase, block: block.block, week: block.week, of: block.of, deload: block.deload, label: block.label, rpe_cap: block.rpe_cap, plan: block.guidance },
+      weather_by_day: Object.keys(wx).length ? weatherNote(wx) : 'forecast unavailable: keep runs and rucks to what he can swap indoors',
+      weather_rule: `No run or ruck outside on a day that feels colder than ${rules.OUTDOOR_MIN_FEELS_C} °C at its warmest, or with snow or freezing rain: do it on the bike, rower or ski erg.` };
+    const fb = { date, title: 'Workout', focus: 'mixed', minutes: mins, equipment: kit };
+    const plan = await askTrainer('day', context, (x) => {
+      const sf = sessionFrom(x, 'session', { ...fb, title: x.title || fb.title, focus: gen.FOCI.includes(x.focus) ? x.focus : fb.focus });
+      return [...sf.errors, ...(sf.body ? [...rules.checkWeek([{ date, body: sf.body }], { weather: wx, block, coverage: false, label: 'session', e1rm: ctx.athlete.e1rm_60d_lb }),
+        ...recovery.checkRecovery([{ date, body: sf.body }], ctx.recent_training, { note })] : [])];
+    });
+    if (plan.errors.length) throw Object.assign(new Error("The trainer's session kept breaking the rules, so nothing was saved — try again"), { errors: plan.errors.slice(0, 12) });
+    const { body, meta } = sessionFrom(plan.result, 'session', { ...fb, title: plan.result.title || fb.title, focus: gen.FOCI.includes(plan.result.focus) ? plan.result.focus : fb.focus });
+    await calibrated(body, date);
+    for (const w of open) if (w.status === 'planned') await pool.query('DELETE FROM fitness_workouts WHERE id = $1', [w.id]);
+    const rows = await q(`INSERT INTO fitness_workouts (workout_date, title, focus, minutes, inputs, body, seed, source, meta, refine_notes)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, 0, 'sentinel', $7::jsonb, $8) RETURNING *`,
+    [date, body.title, body.focus, body.minutes, JSON.stringify({ date, minutes: mins, equipment: kit, focus: body.focus, volume_level: level }), JSON.stringify({ ...body, date }), JSON.stringify(meta), String(plan.result.notes || '').slice(0, 2000) || null]);
+    return shape(rows[0]);
+  }
+  router.post('/workouts/plan-day', async (req, res) => {
+    try {
+      const raw = req.body || {};
+      const date = isDate(raw.date) ? raw.date : todayStr();
+      const args = { date, minutes: raw.minutes, equipment: raw.equipment, engine_modality: raw.engine_modality, note: typeof raw.note === 'string' ? raw.note.trim().slice(0, 500) : '' };
+      if (raw.background === true) {
+        if (planJob && planJob.status === 'running') return res.status(409).json({ error: 'Already planning — give it a minute', job: planJob });
+        const job = planJob = { status: 'running', kind: 'day', week_start: date, started_at: new Date().toISOString() };
+        planDay(args)
+          .then(() => Object.assign(job, { status: 'done', finished_at: new Date().toISOString(), sessions: 1, kept_existing: 0 }))
+          .catch((e) => Object.assign(job, { status: 'failed', finished_at: new Date().toISOString(), error: e.message || 'Could not plan the day', errors: e.errors }));
+        return res.status(202).json({ job });
+      }
+      res.status(201).json(await planDay(args));
     } catch (err) { if (err.errors) return res.status(502).json({ error: err.message, errors: err.errors }); coachFail(res, err); }
   });
 
@@ -553,6 +671,7 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
         });
         out.push(...volume.checkWeekVolume(built, inputs.volume_level, lastWeek));
         out.push(...rules.checkWeek(built, { weather: wx, block, strengthPatterns: ctx.athlete.strength_scores || {}, deloadCap, weekDates: dates, availability: inputs.availability, e1rm: ctx.athlete.e1rm_60d_lb }));
+        out.push(...recovery.checkRecovery(built, ctx.recent_training, { note, label: 'day' }));
         return out;
       };
       const plan = await askTrainer('week', context, check);
@@ -625,6 +744,7 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
         built.push({ date: d.date, body: sf.body });
       });
       out.push(...rules.checkWeek(built, { weather: wx, block, weekDates: dates.filter((d) => d >= today), availability: (wk.plan && wk.plan.availability) || {}, coverage: false, label: 'adjustments', e1rm: ctx.athlete.e1rm_60d_lb }));
+      out.push(...recovery.checkRecovery(built, ctx.recent_training, { label: 'adjustment' }));
       return out;
     };
     const out = await askTrainer('review', context, check);
@@ -633,6 +753,7 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
       if (!(d.date >= today && d.date <= end)) continue;
       const { body, meta, errors } = sessionFrom(d, 'adjustment', fb(d));
       if (errors.length) continue;
+      if (recovery.checkRecovery([{ date: d.date, body }], ctx.recent_training).length) continue; // still breaks after the fixes: the day stays as it was
       const w = open(d.date);
       await calibrated(body, d.date, w ? w.id : null);
       if (w) {
@@ -696,7 +817,9 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
       const meta = {};
       for (const k of ['objective', 'why', 'intensity']) if (typeof b[k] === 'string' && b[k].trim()) meta[k] = b[k].trim().slice(0, 1500);
       await pool.query(`UPDATE fitness_workouts SET source = 'coach'${Object.keys(meta).length ? ', meta = $2::jsonb' : ''} WHERE id = $1`, Object.keys(meta).length ? [w.id, JSON.stringify(meta)] : [w.id]);
-      res.status(201).json(shape(await getRow(w.id)));
+      // The coach chat writes what he asks for, so these don't stop it: the coach sees them and tells him.
+      const warnings = recovery.checkRecovery([{ date: b.date, body }], await recentFor(b.date, w.id));
+      res.status(201).json({ ...shape(await getRow(w.id)), ...(warnings.length ? { recovery_warnings: warnings } : {}) });
     } catch (err) { fail(res, err); }
   });
   // Move a session to another day: { date }.
@@ -1043,7 +1166,8 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
           weather_rule: `No run or ruck outside on a day that feels colder than ${rules.OUTDOOR_MIN_FEELS_C} °C at its warmest, or with snow or freezing rain: do it on the bike, rower or ski erg.` };
         const out = await askTrainer('refine', refineCtx, (x) => {
           const sf = sessionFrom(x, 'session', fb);
-          return [...sf.errors, ...rules.checkWeek([{ date: w.date, body: sf.body }], { weather: wx, block, coverage: false, label: 'session', e1rm: ctx.athlete.e1rm_60d_lb })];
+          return [...sf.errors, ...rules.checkWeek([{ date: w.date, body: sf.body }], { weather: wx, block, coverage: false, label: 'session', e1rm: ctx.athlete.e1rm_60d_lb }),
+            ...recovery.checkRecovery([{ date: w.date, body: sf.body }], ctx.recent_training, { note })];
         });
         if (out.errors.length) return res.status(502).json({ error: "Sentinel's session didn't fit Self Hub's workout format — try again", errors: out.errors.slice(0, 20) });
         const { body, meta } = sessionFrom(out.result, 'session', fb);
@@ -1211,6 +1335,10 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
           gymnastics: rows.gymnastics.filter((g) => ymd(g.entry_date) >= since && ymd(g.entry_date) <= date).map((g) => `${ymd(g.entry_date)} ${g.movement} ×${g.reps}`).slice(-80),
         },
       },
+      // What he actually did, how rested each pattern is, soreness, recent metcons, and what the coach has learned about
+      // him (Nov 6: none of this reached the plans). Top-level, so a refine package's own athlete doesn't replace it.
+      recent_training: await recentFor(date, excludeId),
+      coach_memory: (await q("SELECT text FROM coach_memory WHERE coach = 'trainer' ORDER BY id ASC").catch(() => [])).map((r) => r.text),
       known_movements: known,
       foci: gen.FOCI,
       schema: gen.REFINE_SCHEMA,
@@ -1234,11 +1362,11 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
     return { body, meta, errors: errors.map((e) => `${where}.${e}`) };
   }
 
-  // Ask the trainer; when Self Hub can't take what comes back, send the errors once to be fixed.
+  // Ask the trainer; when Self Hub can't take what comes back, send the errors back to be fixed, twice at most.
   async function askTrainer(task, context, check) {
     let out = await coach.callTrainer(task, { context });
     let errors = check(out.result);
-    if (errors.length) {
+    for (let i = 0; errors.length && i < 2; i++) {
       out = await coach.callTrainer(task, { context, previous: out.result, errors });
       errors = check(out.result);
     }
