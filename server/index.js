@@ -62,6 +62,10 @@ app.use('/api/sentinel', createSentinelActionsRouter());
 app.get('/js/strength.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'lib', 'strength.js'));
 });
+// The figure's muscle counting (lib/figure.js), shared with the page the same way.
+app.get('/js/figure.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'lib', 'figure.js'));
+});
 // The trainer's coaching library (form, tempo, tension, what each movement does), shared the same way.
 app.get('/js/coaching.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'lib', 'coaching.js'));

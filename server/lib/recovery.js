@@ -77,6 +77,16 @@ function soreAreas(word) {
 const soreDays = (level) => (Number(level) >= 2 ? 3 : 2);
 const LEVEL_WORD = { 1: 'sore', 2: 'very sore' };
 
+// The figure's "too much" that still matters for what's next: not recovered now, or a huge session in the last 2 days.
+// (A huge session 6 days ago stays violet on the figure until it fades, but it has had its rest.)
+function tooMuch(over, date) {
+  const out = {};
+  for (const [g, o] of Object.entries(over || {})) {
+    if (o.why !== 'session' || dayNum(date) - dayNum(o.day) <= 2) out[g] = o;
+  }
+  return out;
+}
+
 // ---- the true picture ----
 // rows: lifts, gymnastics, conditioning (log rows), workouts ({ workout_date, title, status, body, session_rpe,
 // actual_minutes, session_notes }), soreness ({ entry_date, area, level, note }). date: the day being planned.
@@ -168,6 +178,12 @@ function recentTraining(rows, date, { days = 14, upcoming = [] } = {}) {
     };
   }
 
+  // What counts as work on a muscle: everything the figure counts, a past part-logged session's metcon included.
+  const more = { conditioning: rows.conditioning || [], workouts: (rows.workouts || []).map((w) => {
+    const d = ymd(w.workout_date || w.date);
+    const body = typeof w.body === 'string' ? JSON.parse(w.body) : w.body;
+    return { date: d, body, status: d > date ? 'planned' : effectiveStatus(w.status, d, loggedCount(body), date) };
+  }) };
   const soreness = (rows.soreness || []).map((s) => ({ date: ymd(s.entry_date), area: s.area, level: Number(s.level), word: LEVEL_WORD[Number(s.level)] || 'sore', note: s.note || undefined }))
     .filter((s) => s.level > 0 && dayNum(date) - dayNum(s.date) >= 0 && dayNum(date) - dayNum(s.date) <= soreDays(s.level));
 
@@ -175,7 +191,9 @@ function recentTraining(rows, date, { days = 14, upcoming = [] } = {}) {
     as_of: date,
     days: Object.values(byDay).sort((a, b) => (a.date < b.date ? 1 : -1)),
     patterns,
-    muscle_load: figure.muscleLoad(rows.lifts, rows.gymnastics, date),
+    muscle_load: figure.muscleLoad(rows.lifts, rows.gymnastics, date, more),
+    // Worked too hard, the violet on the figure (lib/figure.js): the muscles a plan has to keep off for now.
+    overworked: tooMuch(figure.overworked(rows.lifts, rows.gymnastics, date, more), date),
     soreness,
     metcons: metcons.sort((a, b) => (a.date < b.date ? 1 : -1)),
     upcoming: upcoming.length ? upcoming : undefined,
@@ -185,6 +203,7 @@ function recentTraining(rows, date, { days = 14, upcoming = [] } = {}) {
 }
 const RULES = [
   `Squat and Hinge rest ${LOWER_REST} days between hard sessions of that pattern, a day more after a top set at RPE ${VERY_HARD}+. Presses and pulls rest 2 days, a day more after RPE ${VERY_HARD}+. A session under RPE ${HARD_RPE} is recovery work and doesn't count. Squat and Hinge share the legs: never hard on consecutive days.`,
+  'No hard work on a muscle in overworked: it has had too much and has not recovered. Train something else.',
   'One heavy lower-body pattern a session: not squats and deadlifts together, Romanian deadlifts included.',
   `No muscle he reported sore gets hard work: 2 days after "sore", 3 after "very sore". Train something else, or move it, and say so.`,
   `No metcon from the last ${METCON_LOOKBACK} days again (2 or more of the same movements). A benchmark retest is fine.`,
@@ -270,6 +289,21 @@ function checkRecovery(days, recent, { note = '', label = 'session' } = {}) {
           if (!(it.sets || []).some((x) => x.rpe == null || Number(x.rpe) >= HARD_RPE)) continue;
           if (figure.musclesFor(it.movement)[s.area] === 1 && !asked(it.pattern || patternOf(it.movement))) {
             errors.push(`${label} ${d.date}: ${it.movement} works his ${s.area} hard, and he said it was ${s.word} on ${s.date}. Train something else, or keep it under RPE ${HARD_RPE}.`);
+          }
+        }
+      }
+    }
+    // Worked too hard: not on top of that. Only the first couple of days of a plan: it fades as the days pass.
+    if (dayNum(d.date) - dayNum(recent.as_of || d.date) <= 2) {
+      for (const g of Object.keys(recent.overworked || {})) {
+        for (const b of d.body.blocks || []) {
+          if (['warmup', 'cooldown', 'metcon'].includes(b.kind)) continue;
+          for (const it of b.items || []) {
+            if (!['lift', 'gymnastics'].includes(it.log_as)) continue;
+            if (!(it.sets || []).some((x) => x.rpe == null || Number(x.rpe) >= HARD_RPE)) continue;
+            if (figure.musclesFor(it.movement)[g] === 1 && !asked(it.pattern || patternOf(it.movement))) {
+              errors.push(`${label} ${d.date}: ${it.movement} works his ${g} hard, and it has had too much already (${recent.overworked[g].load} sets still counting). Train something else, or keep it under RPE ${HARD_RPE}.`);
+            }
           }
         }
       }

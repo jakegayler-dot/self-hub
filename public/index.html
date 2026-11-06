@@ -94,6 +94,8 @@ button,input,select,textarea{font-family:var(--sans)}
 .b3d-views .wk-chipbtn.on{color:var(--amber);border-color:var(--amber-dim);background:var(--amber-bg)}
 .b3d-legend{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink3)}
 .b3d-legend i{display:block;width:120px;height:8px;border-radius:2px;background:linear-gradient(90deg,#f2e2a0,#de7a3a,#9b1418)}
+.b3d-legend i.over{width:12px;background:#8a4fd6;margin-left:6px}
+.pq-over{color:#b48cf0}
 .pq-sets{font-size:13.5px;color:var(--ink2);margin:2px 0 8px;line-height:1.5}
 .pq-sets b{color:var(--ink);font-weight:500}
 @media (max-width:899.98px){.b3d{height:460px}}
@@ -774,7 +776,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
           <div class="b3d" id="body3d"><div class="b3d-tag" id="b3dTag" hidden></div></div>
           <div class="b3d-bar">
             <div class="b3d-views"><button class="wk-chipbtn" data-b3v="front">Front</button><button class="wk-chipbtn" data-b3v="side">Side</button><button class="wk-chipbtn" data-b3v="back">Back</button></div>
-            <div class="b3d-legend" title="Each set counts in full the day it's done and fades to nothing over 7 days; a lift's main muscles count a full set, helpers half"><span>Recovered</span><i></i><span>Worked hard</span></div>
+            <div class="b3d-legend" title="Each set counts in full the day it's done and fades to nothing over 7 days; a lift's main muscles count a full set, helpers half"><span>Recovered</span><i></i><span>Worked hard</span><i class="over" title="Too much: over ~11 sets in one session, or trained again before it recovered"></i><span>Too much</span></div>
           </div>
         </div>
         <div class="trk-physique-info" id="physiqueInfo"></div>
@@ -1167,6 +1169,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="/js/body3d.js"></script>
 <script src="/js/strength.js"></script>
+<script src="/js/figure.js"></script>
 <script src="/js/coaching.js"></script>
 <script src="/js/trainCoach.js"></script>
 <script>
@@ -1526,9 +1529,10 @@ a.trk-btn{text-decoration:none;display:inline-block}
 
   async function refresh(){
     var results = await Promise.all([
-      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), Promise.resolve([]), api('GET','/measurements'), api('GET','/benchmark-lifts'), api('GET','/conditioning'), api('GET','/gymnastics'), api('GET','/percentiles?date='+localISO()), api('GET','/open-results')
+      api('GET','/profile'), api('GET','/bodyweight'), api('GET','/lifts'), api('GET','/benchmarks'), api('GET','/summary'), Promise.resolve([]), api('GET','/measurements'), api('GET','/benchmark-lifts'), api('GET','/conditioning'), api('GET','/gymnastics'), api('GET','/percentiles?date='+localISO()), api('GET','/open-results'),
+      api('GET','/workouts?from='+localISO(new Date(Date.now()-13*86400000))).catch(function(){ return []; })
     ]);
-    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7]; cache.conditioning=results[8]; cache.gymnastics=results[9]; cache.percentiles=results[10]; cache.open=results[11];
+    cache.profile=results[0]; cache.bodyweight=results[1]; cache.lifts=results[2]; cache.benchmarks=results[3]; cache.summary=results[4]; cache.coachNotes=results[5]; cache.measurements=results[6]; cache.benchmarkLifts=results[7]; cache.conditioning=results[8]; cache.gymnastics=results[9]; cache.percentiles=results[10]; cache.open=results[11]; cache.recentWorkouts=results[12];
     render();
   }
 
@@ -1626,45 +1630,9 @@ a.trk-btn{text-decoration:none;display:inline-block}
       note:'Bone-length measurement, fixed in adulthood — no exercise changes it.' }
   };
 
-  // Which muscles a set works: the main movers count a full set, helpers half (the usual fractional-set count).
-  function musclesFor(name){
-    var s=String(name||'').toLowerCase(), p=liftPattern(name);
-    if(/calf/.test(s)) return {calves:1};
-    if(/shrug/.test(s)) return {traps:1, forearms:0.5};
-    if(/curl/.test(s) && /leg|nordic|hamstring/.test(s)) return {hamstrings:1};
-    if(/curl/.test(s)) return {biceps:1, forearms:0.5};
-    if(/tricep|skull|pushdown|push-down|french press|overhead extension/.test(s)) return {triceps:1};
-    if(/lateral raise|side raise|rear.?delt|face pull|reverse fly|y.?raise|upright row/.test(s)) return {shoulders:1, traps:0.5};
-    if(/leg extension/.test(s)) return {quads:1};
-    if(/hip thrust|glute|kickback|bridge/.test(s)) return {glutes:1, hamstrings:0.5};
-    if(/good morning|back extension|hyperextension|superman/.test(s)) return {lowerback:1, hamstrings:0.5, glutes:0.5};
-    if(/farmer|suitcase|carry|dead hang|wrist/.test(s)) return {forearms:1, traps:0.5, obliques:/suitcase/.test(s)?0.5:0};
-    if(/rope climb/.test(s)) return {lats:1, biceps:1, forearms:1};
-    if(/pallof|side plank|russian twist|woodchop|oblique/.test(s)) return {obliques:1, abs:0.5};
-    if(/sit-?up|toes.?to.?bar|knees.?to|leg raise|crunch|plank|ab wheel|rollout|v-?up|hollow|l-?sit|ghd/.test(s)) return {abs:1, obliques:0.5};
-    if(/copenhagen|adduct/.test(s)) return {adductors:1};
-    if(/neck/.test(s)) return {neck:1};
-    if(/fly|flye|pec deck/.test(s)) return {chest:1, shoulders:0.5};
-    if(/muscle-?up/.test(s)) return {lats:1, chest:0.5, triceps:0.5, biceps:0.5};
-    if(/lunge|step-?up|split squat|pistol/.test(s)) return {quads:1, glutes:1, adductors:0.5};
-    if(/sumo/.test(s) && /deadlift/.test(s)) return {glutes:1, hamstrings:0.5, adductors:1, quads:0.5, lowerback:0.5, forearms:0.5};
-    if(/romanian|rdl|stiff/.test(s)) return {hamstrings:1, glutes:1, lowerback:0.5};
-    if(/thruster|wall ball/.test(s)) return {quads:1, glutes:0.5, shoulders:1, triceps:0.5};
-    if(/jerk/.test(s) && !/clean/.test(s)) return {shoulders:1, triceps:0.5, quads:0.5};
-    switch(p){
-      case 'Squat': return {quads:1, glutes:0.5, adductors:0.5};
-      case 'Hinge': return {hamstrings:1, glutes:1, lowerback:0.5, traps:0.5, forearms:0.5};
-      case 'Push Vertical': return {shoulders:1, triceps:0.5, traps:0.5};
-      case 'Push Horizontal': return /dip/.test(s) ? {chest:1, triceps:1, shoulders:0.5} : {chest:1, triceps:0.5, shoulders:0.5};
-      case 'Pull Vertical': return {lats:1, biceps:0.5, midback:0.5};
-      case 'Pull Horizontal': return {midback:1, lats:0.5, biceps:0.5, shoulders:0.5};
-      case 'Olympic': return /clean.*jerk/.test(s) ? {quads:1, glutes:0.5, traps:1, shoulders:0.5, triceps:0.5, lowerback:0.5}
-                                                   : {quads:0.5, glutes:1, hamstrings:0.5, traps:1, lowerback:0.5, shoulders:/snatch/.test(s)?0.5:0};
-      case 'Core': return {abs:1, obliques:0.5};
-      case 'Accessory': return {};
-    }
-    return {};
-  }
+  // Which muscles a set works, and everything that counts as work on them: lifts, gymnastics, conditioning and the
+  // metcons he finished (lib/figure.js, shared with Sentinel's figure so the two can't differ).
+  function musclesFor(name){ return SelfHubFigure.musclesFor(name); }
   // This week's sets per muscle (for the 10-a-week target), and the recovery-weighted load that colours the figure
   // (Jake, Oct 31): each set counts in full the day it's done and fades evenly to nothing over 7 days, the time he
   // gives a muscle to recover fully. load 0 = fresh (yellow); 6 or more (a hard session's sets, today) = deep red.
@@ -1672,21 +1640,22 @@ a.trk-btn{text-decoration:none;display:inline-block}
   function muscleWeek(){
     var sets={}, from={}, load={}, last={};
     var today = Date.parse(localISO()+'T00:00:00Z');
-    function count(name, date){
-      var d=String(date).slice(0,10), age=Math.round((today-Date.parse(d+'T00:00:00Z'))/86400000);
-      var m=musclesFor(name), wk=weekIndexOf(date)===0, fresh=age>=0 && age<RECOVERY_DAYS;
+    SelfHubFigure.credits({ lifts: cache.lifts, gymnastics: cache.gymnastics, conditioning: cache.conditioning||[], workouts: cache.recentWorkouts||[] }).forEach(function(c){
+      var age=Math.round((today-Date.parse(c.date+'T00:00:00Z'))/86400000);
+      var m=c.muscles, wk=weekIndexOf(c.date)===0, fresh=age>=0 && age<RECOVERY_DAYS;
       Object.keys(m).forEach(function(g){
         if(!m[g]) return;
-        if(wk){ sets[g]=(sets[g]||0)+m[g]; from[g]=from[g]||{}; from[g][name]=(from[g][name]||0)+m[g]; }
-        if(fresh){ load[g]=(load[g]||0)+m[g]*(1-age/RECOVERY_DAYS); if(last[g]==null || age<last[g]) last[g]=age; }
+        var v=m[g]*c.n;
+        if(wk){ sets[g]=(sets[g]||0)+v; from[g]=from[g]||{}; from[g][c.name]=(from[g][c.name]||0)+v; }
+        if(fresh){ load[g]=(load[g]||0)+v*(1-age/RECOVERY_DAYS); if(last[g]==null || age<last[g]) last[g]=age; }
       });
-    }
-    cache.lifts.forEach(function(l){ count(l.lift, l.entry_date); });
-    cache.gymnastics.forEach(function(g){ count(g.movement, g.entry_date); });
-    return {sets:sets, from:from, load:load, last:last};
+    });
+    // Too much (Nov 5): over ~11 sets in one day, or not recovered (lib/figure.js overworked).
+    var over = SelfHubFigure.overworked(cache.lifts, cache.gymnastics, localISO(), { conditioning: cache.conditioning||[], workouts: cache.recentWorkouts||[] });
+    return {sets:sets, from:from, load:load, last:last, over:over};
   }
 
-  var physiqueSelectedKey = null, body3d = null, physiqueWeek = {sets:{}, from:{}, load:{}, last:{}};
+  var physiqueSelectedKey = null, body3d = null, physiqueWeek = {sets:{}, from:{}, load:{}, last:{}, over:{}};
   // "Recovered", or how worked it is now and the day it's fully recovered.
   function recoveryText(g){
     var L=physiqueWeek.load[g]||0, a=physiqueWeek.last[g];
@@ -1694,6 +1663,14 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var left=RECOVERY_DAYS-a, when=new Date(Date.parse(localISO()+'T12:00:00')+left*86400000).toLocaleDateString(undefined,{weekday:'long'});
     var word = L>=4.5?'Worked hard':L>=2?'Worked':'Lightly worked', ago = a===0?'today':a===1?'yesterday':a+' days ago';
     return word+', last trained '+ago+' · fully recovered '+(left<=1?'tomorrow':'by '+when);
+  }
+  // Why a muscle shows violet: past the per-session ceiling, or not recovered.
+  function overText(g){
+    var o=physiqueWeek.over && physiqueWeek.over[g]; if(!o) return '';
+    var day=new Date(o.day+'T12:00:00').toLocaleDateString(undefined,{weekday:'long'}), bits=[];
+    if(o.why!=='unrecovered') bits.push(fmtSets(o.day_sets)+' sets on '+day+': past ~11 in a session, growth levels off and the extra sets mostly cost recovery');
+    if(o.why!=='session') bits.push('trained again before it recovered ('+(Math.round(o.load*10)/10)+' sets still counting, 1.5× a hard session)');
+    return '<div class="pq-sets pq-over"><b>Too much:</b> '+esc(bits.join('; '))+'. Ease off it until it fades back.</div>';
   }
   var fmtSets = function(n){ return (Math.round(n*2)/2).toString().replace(/\.0$/,''); };
 
@@ -1708,7 +1685,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var lifts = Object.keys(src).sort(function(a,b){ return src[b]-src[a]; }).map(function(l){ return esc(l)+' '+fmtSets(src[l]); });
     var mg = G.measure && MEASUREMENT_GUIDANCE[G.measure];
     var html = '<div style="font-family:var(--display);font-size:18px;color:var(--ink)">'+G.label+' <span style="font-family:var(--sans);font-size:13px;color:var(--ink3);font-style:italic">'+G.latin+'</span></div>'+
-      '<div class="pq-sets"><b>'+esc(recoveryText(key))+'</b></div>'+
+      '<div class="pq-sets"><b>'+esc(recoveryText(key))+'</b></div>'+overText(key)+
       '<div class="pq-sets"><b>'+fmtSets(n)+' set'+(n===1?'':'s')+'</b> this week'+(n<10?', '+fmtSets(10-n)+' short of 10':', at or past 10')+(lifts.length?' &middot; from '+lifts.join(', '):'')+'</div>'+
       '<div style="font-size:13.5px;color:var(--ink2);margin-bottom:6px"><b style="color:var(--ink);font-weight:500">Grows with:</b> '+G.grow.join(', ')+'</div>';
     if(mg) html += '<p class="trk-note" style="margin:0">'+esc(mg.label)+' measurement: '+mg.note+'</p>';
@@ -1753,7 +1730,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
       body3d = SelfHubBody3D.mount(document.getElementById('body3d'), {
         onSelect: selectPhysiqueRegion,
         onDrag: function(){ document.querySelectorAll('[data-b3v]').forEach(function(x){ x.classList.remove('on'); }); },
-        onHover: function(g){ if(!g){ tag.hidden=true; return; } tag.hidden=false; tag.innerHTML=esc(SelfHubBody3D.GROUPS[g].label)+'<small>'+esc(recoveryText(g))+'</small>'; }
+        onHover: function(g){ if(!g){ tag.hidden=true; return; } tag.hidden=false; tag.innerHTML=esc(SelfHubBody3D.GROUPS[g].label)+'<small>'+esc(recoveryText(g))+(physiqueWeek.over&&physiqueWeek.over[g]?' · too much':'')+'</small>'; }
       });
     }
     var bodyKey = JSON.stringify(prof.raw);
@@ -1762,6 +1739,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
       var tb=targetBody(prof.raw, cache.summary && cache.summary.physique), tKey=JSON.stringify(tb);
       if(body3d.setTarget && body3d._tkey!==tKey){ body3d.setTarget(tb); body3d._tkey=tKey; }
       (body3d.setLoad||body3d.setSets)(physiqueWeek.load);
+      if(body3d.setOver) body3d.setOver(physiqueWeek.over);
       body3d.select(physiqueSelectedKey);
     }
 

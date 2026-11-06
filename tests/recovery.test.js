@@ -101,6 +101,18 @@ test('soreness: sore keeps hard work off for 2 days, very sore 3, and only on th
   assert.equal(recent({ soreness: [{ entry_date: '2026-11-01', area: 'quads', level: 2 }] }).soreness.length, 0, 'old soreness drops out of the picture');
 });
 
+test('too much: the figure counts the unscored metcon, and a plan keeps off a muscle that has not recovered', () => {
+  const r = recent();
+  assert.ok(r.muscle_load.hamstrings > 0, 'swings in a session he did count on the hamstrings');
+  const hammered = Array.from({ length: 14 }, () => ({ entry_date: '2026-11-05', lift: 'Deadlift', load_lb: 200, reps: 5, rpe: 8 }));
+  const r2 = recent({ lifts: hammered });
+  assert.ok(r2.overworked.hamstrings, JSON.stringify(r2.overworked));
+  const hip = { blocks: [{ kind: 'strength', title: 'Glutes', items: [lift('Barbell Hip Thrust', 'Accessory', [set(7), set(7)])] }] };
+  assert.ok(R.checkRecovery([{ date: '2026-11-06', body: hip }], r2).some((x) => /had too much/.test(x)));
+  assert.equal(R.checkRecovery([{ date: '2026-11-06', body: PRESS_DAY }], r2).filter((x) => /had too much/.test(x)).length, 0);
+  assert.equal(R.checkRecovery([{ date: '2026-11-12', body: hip }], r2).filter((x) => /had too much/.test(x)).length, 0, 'it fades as the days pass');
+});
+
 test('the words he uses for where it hurts', () => {
   assert.deepEqual(R.soreAreas('low back'), ['lowerback']);
   assert.deepEqual(R.soreAreas('lower back'), ['lowerback']);

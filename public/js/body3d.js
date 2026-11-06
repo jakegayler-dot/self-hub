@@ -31,6 +31,8 @@
   // more fully red (see muscleWeek on the page).
   var RAMP = ['#f2e2a0', '#de7a3a', '#9b1418']; // fresh, half, heavily worked (sRGB)
   var FULL_LOAD = 6;
+  // Worked too hard (Nov 5): violet, off the yellow-to-red scale so it can't read as just "more worked".
+  var OVER = '#8a4fd6';
   function rampColor(t) {
     var a = new THREE.Color(t < 0.5 ? RAMP[0] : RAMP[1]), b = new THREE.Color(t < 0.5 ? RAMP[1] : RAMP[2]);
     return a.lerp(b, t < 0.5 ? t * 2 : (t - 0.5) * 2).convertSRGBToLinear();
@@ -256,7 +258,7 @@
     mats.brass = new THREE.MeshStandardMaterial({ color: hex('#c99442'), roughness: 0.35, metalness: 0.75 });
     Object.keys(GROUPS).forEach(function (g) { mats.group[g] = new THREE.MeshStandardMaterial({ color: rampColor(0), roughness: 0.48, metalness: 0.06, bumpMap: fibre, bumpScale: 0.05 }); });
 
-    var fig = null, ghost = null, sets = {}, selected = null, hover = null;
+    var fig = null, ghost = null, sets = {}, over = {}, selected = null, hover = null;
     var yaw = -0.42, pitch = 0.06, dist = 175, H = 70;
     function place() {
       target.position.set(0, H * 0.5, 0);
@@ -273,8 +275,9 @@
     }
     function paint() {
       Object.keys(GROUPS).forEach(function (g) {
-        var m = mats.group[g], tt = Math.min(1, (sets[g] || 0) / FULL_LOAD);
-        m.color.copy(rampColor(tt));
+        // Square root (Nov 5): a set or two of real work shows (1 set today is a third of the way to red), heavy days still saturate.
+        var m = mats.group[g], tt = Math.min(1, Math.sqrt((sets[g] || 0) / FULL_LOAD));
+        m.color.copy(over[g] ? hex(OVER) : rampColor(tt));
         // Selection and hover glow verdigris, so they never read as more load on the yellow-to-red scale.
         if (g === selected) m.emissive.copy(hex('#5fb894')).multiplyScalar(0.5);
         else if (g === hover) m.emissive.copy(hex('#5fb894')).multiplyScalar(0.22);
@@ -348,6 +351,8 @@
       // Colour values per group, 0 (fresh, yellow) to FULL_LOAD+ (just worked hard, red). setLoad is the same call by its new name.
       setSets: function (s) { sets = s || {}; paint(); },
       setLoad: function (s) { sets = s || {}; paint(); },
+      // Groups worked too hard ({ group: anything truthy }): painted violet.
+      setOver: function (o) { over = o || {}; paint(); },
       select: function (g) { selected = g; paint(); },
       view: function (name) { turnTo({ front: 0, side: -Math.PI / 2, back: Math.PI, three: -0.42 }[name] || 0); }
     };

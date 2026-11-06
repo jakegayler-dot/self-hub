@@ -25,35 +25,31 @@ const { buildSummary, msUntilReginaRollover } = require('../server/lib/sentinel'
 
 const NOW = new Date('2026-10-29T18:00:00Z'); // Thursday 12:00 in Regina; week Mon 10-26 to Sun 11-01
 
-// The page's own musclesFor, lifted out of public/index.html, run against strength.js's liftPattern
-// (the page's liftPattern is the same table; strength.js is shared with the page).
-function pageMusclesFor() {
-  const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
-  const start = html.indexOf('function musclesFor(name){');
-  const end = html.indexOf('function muscleWeek(', start);
-  assert.ok(start > 0 && end > start, 'musclesFor found in index.html');
-  const ctx = { liftPattern: strength.liftPattern };
-  vm.runInNewContext(html.slice(start, end) + '\n;this.musclesFor = musclesFor;', ctx);
-  return ctx.musclesFor;
-}
-
 const plain = (o) => JSON.parse(JSON.stringify(o));
 
-test('musclesFor: server copy matches the page for every known movement', () => {
-  const page = pageMusclesFor();
+test('the page counts with the same file (/js/figure.js), not a copy', () => {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
-  const names = new Set();
-  html.replace(/'([^'\n]{2,80})':'(Squat|Hinge|Olympic|Push Vertical|Push Horizontal|Pull Vertical|Pull Horizontal|Core|Accessory|Balance|Conditioning)'/g, (m, n) => names.add(n));
-  ['Standing Calf Raise', 'Nordic Curl', 'Leg Extension', 'Hip Thrust', 'Good Morning', "Farmer's Carry", 'Suitcase Carry',
-    'Rope Climb', 'Pallof Press', 'GHD Sit-Ups', 'Copenhagen Plank', 'Neck Harness', 'Pec Deck', 'Ring Muscle-Up',
-    'Walking Lunges', 'Sumo Deadlift', 'RDL', 'Thrusters', 'Wall Balls', 'Split Jerk', 'Clean & Jerk', 'Snatch',
-    'Power Clean', 'Weighted Dips', 'Ring Rows', 'Something Unknown'].forEach((n) => names.add(n));
-  assert.ok(names.size > 100);
-  for (const n of names) assert.deepEqual(plain(figure.musclesFor(n)), plain(page(n)), n);
+  assert.ok(html.includes('<script src="/js/figure.js"></script>'));
+  assert.ok(html.includes('function musclesFor(name){ return SelfHubFigure.musclesFor(name); }'));
+  // It runs in a browser: no require, attaches window.SelfHubFigure from window.SelfHubStrength.
+  const src = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'figure.js'), 'utf8');
+  const strSrc = fs.readFileSync(path.join(__dirname, '..', 'server', 'lib', 'strength.js'), 'utf8');
+  const win = {};
+  vm.runInNewContext(strSrc + '\n' + src, { self: win });
+  assert.deepEqual(plain(win.SelfHubFigure.musclesFor('Back Squat')), plain(figure.musclesFor('Back Squat')));
 });
 
 test('musclesFor: the mapping itself', () => {
-  assert.deepEqual(figure.musclesFor('Back Squat'), { quads: 1, glutes: 0.5, adductors: 0.5 });
+  assert.deepEqual(figure.musclesFor('Back Squat'), { quads: 1, glutes: 1, adductors: 1, lowerback: 0.5 }); // Kubo 2019: glutes and adductors grow as much as quads; hamstrings don't
+  assert.deepEqual(figure.musclesFor('Air Squats'), { quads: 1, glutes: 0.5, adductors: 0.5 });
+  // Nov 5: what counted for nothing before.
+  assert.deepEqual(figure.musclesFor('KB Swings'), { hamstrings: 1, glutes: 1, lowerback: 0.5, forearms: 0.5 });
+  assert.deepEqual(figure.musclesFor('Handstand Push-Ups'), { shoulders: 1, triceps: 1, traps: 0.5 });
+  assert.deepEqual(figure.musclesFor('Box Jumps'), { quads: 1, glutes: 0.5, calves: 0.5 });
+  assert.deepEqual(figure.musclesFor('Double-Unders'), { calves: 1 });
+  assert.deepEqual(figure.musclesFor('Chin-Ups'), { lats: 1, biceps: 1, midback: 0.5 });
+  assert.deepEqual(figure.musclesFor('Rack Pull'), { lowerback: 1, traps: 1, glutes: 0.5, hamstrings: 0.5, forearms: 0.5 });
+  assert.deepEqual(figure.musclesFor('Ring Dips'), { chest: 1, triceps: 1, shoulders: 0.5 });
   assert.deepEqual(figure.musclesFor('Deadlift'), { hamstrings: 1, glutes: 1, lowerback: 0.5, traps: 0.5, forearms: 0.5 });
   assert.deepEqual(figure.musclesFor('Bench Press'), { chest: 1, triceps: 0.5, shoulders: 0.5 });
   assert.deepEqual(figure.musclesFor('Weighted Dips'), { chest: 1, triceps: 1, shoulders: 0.5 });
@@ -85,7 +81,7 @@ test('muscleWeekSets counts this week only, lifts and gymnastics', () => {
   ];
   const gym = [{ entry_date: '2026-10-28', movement: 'Toes-to-Bar' }, { entry_date: '2026-11-02', movement: 'Push-Ups' }];
   assert.deepEqual(figure.muscleWeekSets(lifts, gym, week), {
-    quads: 2, glutes: 1, adductors: 1, chest: 1, triceps: 0.5, shoulders: 0.5, abs: 1, obliques: 0.5,
+    quads: 2, glutes: 2, adductors: 2, lowerback: 1, chest: 1, triceps: 0.5, shoulders: 0.5, abs: 1, obliques: 0.5,
   });
 });
 
@@ -149,14 +145,17 @@ test('buildSummary carries figure and today_workout', async () => {
     [JSON.stringify(WORKOUT_BODY)],
   );
   const { summary } = await buildSummary(pool, NOW);
-  assert.deepEqual(summary.figure, {
+  const { over, ...fig } = summary.figure;
+  assert.deepEqual(over, {}, 'nothing worked too hard');
+  assert.deepEqual(fig, {
     height_in: 72,
     body: { height: 72, shoulder: 19, bust: 41, waist: 33, hips: 39, neck: 16, sleeve: 25, inseam: 31.5 },
-    sets: { quads: 2, glutes: 1, adductors: 1, lats: 1, biceps: 0.5, midback: 0.5 },
+    // The squats and pull-ups, and yesterday's finished session's 12-minute AMRAP of wall balls: 4 sets (Nov 5).
+    sets: { quads: 6, glutes: 4, adductors: 2, lowerback: 1, shoulders: 4, triceps: 2, lats: 1, biceps: 0.5, midback: 0.5 },
     week_of: '2026-10-26',
     defaults_used: [],
     // Thursday 10-29: the deadlift 4 days ago, squats 2 days and 1 day ago, pull-ups today.
-    load: { hamstrings: 0.43, glutes: 1.21, lowerback: 0.21, traps: 0.21, forearms: 0.21, quads: 1.57, adductors: 0.79, lats: 1, biceps: 0.5, midback: 0.5 },
+    load: { hamstrings: 0.43, glutes: 3.71, lowerback: 1, traps: 0.21, forearms: 0.21, quads: 5, adductors: 1.57, shoulders: 3.43, triceps: 1.71, lats: 1, biceps: 0.5, midback: 0.5 },
   });
   assert.equal(summary.today_workout.title, 'Squat + AMRAP');
   assert.equal(summary.today_workout.date, '2026-10-29');
@@ -174,17 +173,61 @@ test('muscleLoad: a set counts in full today and fades evenly to nothing over 7 
 
 test("the page's recovery load matches the server's", () => {
   const html = fs.readFileSync(path.join(__dirname, '../public/index.html'), 'utf8');
-  const start = html.indexOf('  var RECOVERY_DAYS = 7;');
+  const start = html.indexOf('  function musclesFor(name){');
   const end = html.indexOf('  var physiqueSelectedKey', start);
   assert.ok(start > 0 && end > start, 'muscleWeek found in index.html');
-  const pageMusclesFor = (() => {
-    const s = html.indexOf('function musclesFor(name){'), e = html.indexOf('  // This week', s);
-    return html.slice(s, e);
-  })();
   const lifts = [{ lift: 'Back Squat', entry_date: '2026-10-31' }, { lift: 'Deadlift', entry_date: '2026-10-28' }, { lift: 'Bench Press', entry_date: '2026-10-24' }];
   const gymnastics = [{ movement: 'Strict Pull-Ups', entry_date: '2026-10-30' }];
-  const ctx = { liftPattern: strength.liftPattern, cache: { lifts, gymnastics }, localISO: () => '2026-10-31', weekIndexOf: () => 0 };
-  vm.runInNewContext(pageMusclesFor + html.slice(start, end) + '\n;this.out = muscleWeek();', ctx);
+  const conditioning = [{ movement: 'Row', entry_date: '2026-10-29', duration_seconds: 108 }];
+  const ctx = { SelfHubFigure: figure, cache: { lifts, gymnastics, conditioning, recentWorkouts: [] }, localISO: () => '2026-10-31', weekIndexOf: () => 0 };
+  vm.runInNewContext(html.slice(start, end) + '\n;this.out = muscleWeek();', ctx);
   const page = Object.fromEntries(Object.entries(ctx.out.load).map(([k, v]) => [k, Math.round(v * 100) / 100]));
-  assert.deepEqual(page, figure.muscleLoad(lifts, gymnastics, '2026-10-31'));
+  assert.deepEqual(page, figure.muscleLoad(lifts, gymnastics, '2026-10-31', { conditioning }));
+});
+
+// Nov 5: "my lower back, biceps, upper back, and hamstrings are all sore from my workout two days ago, but the physique
+// model shows them as not being worked". His Tuesday, as logged: squats to RPE 9.3, presses, bench, two sets of 12
+// pull-ups, toes-to-bar, HSPU, ring dips, a hard 500 m row; an 8-minute AMRAP of KB swings and box jumps.
+test('Tuesday counts: squats load the low back, the row and a finished metcon count', () => {
+  const lifts = ['Back Squat', 'Back Squat', 'Back Squat', 'Back Squat'].map((lift) => ({ lift, entry_date: '2026-11-03' }));
+  const gymnastics = ['Pull-Ups', 'Pull-Ups', 'Toes-to-Bar', 'Handstand Push-Ups', 'Ring Dips'].map((movement) => ({ movement, entry_date: '2026-11-03' }));
+  const conditioning = [{ movement: 'Row', entry_date: '2026-11-03', duration_seconds: 108 }];
+  const metcon = { kind: 'metcon', minutes: 8, result: null, items: [{ movement: 'KB Swings', log_as: 'none' }, { movement: 'Box Jumps', log_as: 'none' }] };
+  const workout = (extra) => ({ date: '2026-11-03', status: 'planned', body: { blocks: [metcon] }, ...extra });
+  // Score not logged and the session not marked done: the metcon can't be counted (nothing says it was done).
+  let L = figure.muscleLoad(lifts, gymnastics, '2026-11-05', { conditioning, workouts: [workout()] });
+  assert.equal(L.lowerback, 1.61, 'four squat sets and the row');
+  assert.equal(L.hamstrings, 0.18, 'only the row');
+  assert.equal(L.biceps, 0.89, 'pull-ups and the row');
+  assert.equal(L.midback, 1.07);
+  // With the score logged: 2 sets each of swings and box jumps.
+  L = figure.muscleLoad(lifts, gymnastics, '2026-11-05', { conditioning, workouts: [workout({ body: { blocks: [{ ...metcon, result: { rounds: 7 } }] } })] });
+  assert.equal(L.hamstrings, 1.61);
+  assert.equal(L.lowerback, 2.32);
+  // Marked done counts too; skipped never does.
+  assert.equal(figure.muscleLoad([], [], '2026-11-05', { workouts: [workout({ status: 'done' })] }).hamstrings, 1.43);
+  assert.deepEqual(figure.muscleLoad([], [], '2026-11-05', { workouts: [workout({ status: 'skipped', body: { blocks: [{ ...metcon, result: {} }] } })] }), {});
+  // A machine in a metcon is the machine, not a barbell row; logged items aren't counted twice.
+  assert.deepEqual(figure.conditioningMuscles('Row'), { quads: 0.5, glutes: 0.25, hamstrings: 0.25, lowerback: 0.25, lats: 0.5, midback: 0.5, biceps: 0.25 });
+  assert.equal(figure.conditioningMuscles('Barbell Row'), null);
+  assert.equal(figure.conditioningMuscles('Double-Unders'), null);
+  assert.deepEqual(figure.credits({ workouts: [workout({ status: 'done', body: { blocks: [{ kind: 'metcon', minutes: 12, items: [{ movement: 'Row', log_as: 'none' }, { movement: 'Thrusters', log_as: 'lift' }] }] } })] }).map((c) => [c.name, c.n]), [['Row', 4]], 'one movement, 12 minutes: capped at 4 sets');
+});
+
+// Nov 5: "it should highlight areas that are being worked too hard". Past ~11 sets on a muscle in one session growth
+// levels off (Remmert/Pelland 2024); or trained again and again before it recovered (load 1.5 × a hard session).
+test('too much: over 11 sets in one day, or not recovered', () => {
+  const sets = (lift, n, date) => Array.from({ length: n }, () => ({ lift, entry_date: date }));
+  // 12 bench sets today: chest 12 (too much in a session); triceps and shoulders 6 each (fine).
+  let o = figure.overworked(sets('Bench Press', 12, '2026-11-05'), [], '2026-11-05');
+  assert.deepEqual(o, { chest: { why: 'both', day: '2026-11-05', day_sets: 12, load: 12 } }); // and today's 12 are still all counting
+  // 11 is at the ceiling, not past it; and a light single session isn't unrecovered.
+  assert.deepEqual(figure.overworked(sets('Bench Press', 11, '2026-11-03'), [], '2026-11-05').chest, undefined);
+  // 6 curls on each of the last three days: never past 11 in a day, but 6 + 5.14 + 4.29 = 15.4 still counting.
+  o = figure.overworked([...sets('DB Curl', 6, '2026-11-05'), ...sets('DB Curl', 6, '2026-11-04'), ...sets('DB Curl', 6, '2026-11-03')], [], '2026-11-05');
+  assert.equal(o.biceps.why, 'unrecovered');
+  assert.equal(o.biceps.load, 15.43);
+  assert.equal(o.forearms, undefined, 'curls give forearms half: 7.7, under 9');
+  // A week ago no longer counts.
+  assert.deepEqual(figure.overworked(sets('Bench Press', 14, '2026-10-29'), [], '2026-11-05'), {});
 });

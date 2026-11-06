@@ -15,6 +15,7 @@
 // and does nothing.
 const strength = require('./strength');
 const figure = require('./figure');
+const { effectiveStatus, loggedCount } = require('./recovery');
 const { loadTodayWorkout } = require('./todayWorkout');
 
 const REGINA_OFFSET_MS = -6 * 3600 * 1000; // America/Regina: UTC−6, no DST
@@ -163,11 +164,16 @@ async function buildSummary(pool, now = new Date()) {
   const today = new Date(now.getTime() + REGINA_OFFSET_MS).toISOString().slice(0, 10);
   const weekAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 6 * 86400000).toISOString().slice(0, 10);
   try {
-    const [prof, gym] = await Promise.all([
+    const span = [wk.start < weekAgo ? wk.start : weekAgo, wk.end > today ? wk.end : today];
+    const [prof, gym, cond, wos] = await Promise.all([
       pool.query('SELECT height_in FROM fitness_profile WHERE id = 1'),
-      pool.query('SELECT entry_date, movement FROM fitness_gymnastics WHERE entry_date >= $1 AND entry_date <= $2', [wk.start < weekAgo ? wk.start : weekAgo, wk.end > today ? wk.end : today]),
+      pool.query('SELECT entry_date, movement FROM fitness_gymnastics WHERE entry_date >= $1 AND entry_date <= $2', span),
+      pool.query('SELECT entry_date, movement, duration_seconds FROM fitness_conditioning WHERE entry_date >= $1 AND entry_date <= $2', span),
+      pool.query('SELECT workout_date, status, body FROM fitness_workouts WHERE workout_date >= $1 AND workout_date <= $2', span),
     ]);
-    out.summary.figure = figure.buildFigure({ profile: prof.rows[0], measurements, lifts: data.lifts, gymnastics: gym.rows, week: wk, today });
+    out.summary.figure = figure.buildFigure({ profile: prof.rows[0], measurements, lifts: data.lifts, gymnastics: gym.rows, week: wk, today,
+      // A past session he logged part of is over, so its metcon counts (lib/recovery.js).
+      more: { conditioning: cond.rows, workouts: wos.rows.map((w) => ({ ...w, status: effectiveStatus(w.status, String(w.workout_date instanceof Date ? w.workout_date.toISOString() : w.workout_date).slice(0, 10), loggedCount(typeof w.body === 'string' ? JSON.parse(w.body) : w.body), today) })) } });
   } catch (err) { /* the window goes without the figure */ }
   // The physique against its target (lib/physique.js, Nov 3): where each measurement is, the gap, the pace and when
   // it gets there, for Sentinel's fitness tile and its answers.
