@@ -283,9 +283,9 @@
     var recs = await loadRecipes();
     body.innerHTML =
       '<div class="tr-head"><div><button class="wk-chipbtn" id="nuWPrev">‹</button> <b>Week of ' + fmt(p.week_start) + '</b> <button class="wk-chipbtn" id="nuWNext">›</button></div></div>' +
-      '<div class="trk-row"><button class="trk-btn" id="nuRules">Plan from my recipes</button><button class="trk-btn primary" id="nuAsk">Ask the nutritionist</button></div>' +
-      '<div class="trk-field" style="margin-bottom:8px"><input id="nuNote" placeholder="Note for the nutritionist (e.g. harvesting Mon–Wed, in town Thursday)"></div><div class="wk-busy" id="nuBusy"></div>' +
-      (p.summary ? '<div class="wk-refined"><b>' + (p.source === 'nutritionist' ? 'Nutritionist' : 'Planner') + ':</b> ' + esc(p.summary) + '</div>' : '') +
+      '<div class="trk-row"><button class="trk-btn" id="nuRules">Plan from my recipes</button><button class="trk-btn primary" id="nuAsk">Ask Cheffy</button></div>' +
+      '<div class="trk-field" style="margin-bottom:8px"><input id="nuNote" placeholder="Note for Cheffy (e.g. harvesting Mon–Wed, in town Thursday)"></div><div class="wk-busy" id="nuBusy"></div>' +
+      (p.summary ? '<div class="wk-refined"><b>' + (p.source === 'chef' ? 'Cheffy' : p.source === 'nutritionist' ? 'Nutritionist' : 'Planner') + ':</b> ' + esc(p.summary) + '</div>' : '') +
       (p.prep && p.prep.length ? '<details class="wk-why" open><summary>Prep</summary><ul>' + p.prep.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></details>' : '') +
       (p.notes && p.notes.length ? '<details class="wk-why"><summary>Notes</summary><ul>' + p.notes.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></details>' : '') +
       p.days.map(function (d) {
@@ -309,7 +309,7 @@
     document.getElementById('nuAsk').onclick = async function () {
       try {
         var j = await api('POST', '/coach', { task: 'week', week_start: state.week, note: document.getElementById('nuNote').value || undefined });
-        waitJob(j.job, 'The nutritionist is planning the week (a minute or two)…', function () { toast('Week planned; groceries updated'); state.recipes = null; show('plan'); });
+        waitJob(j.job, 'Handing the week to Cheffy…', function () { var el = document.getElementById('nuBusy'); if (el) el.textContent = 'Cheffy has it: the menu and groceries land here when Cheffy next runs.'; toast('Cheffy has the week'); });
       } catch (e) { fail(e); }
     };
     body.querySelectorAll('.nu-serv').forEach(function (i) { i.onchange = async function () { try { await api('PUT', '/plan/' + i.dataset.id, { servings: Number(i.value) }); show('plan'); } catch (e) { fail(e); } }; });

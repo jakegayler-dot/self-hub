@@ -1055,12 +1055,37 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
     }
     const eaten = (await S.planRows(ctx.week_start)).filter((m) => m.eaten).map((m) => `${m.date}|${m.slot}`);
     await S.replacePlan(ctx.week_start, meals.filter((m) => !eaten.includes(`${m.date}|${m.slot}`)), {
-      source: 'nutritionist', summary: result.summary, prep: result.prep || [], notes: (result.days || []).filter((d) => d.note).map((d) => `${d.date}: ${d.note}`) });
+      source: result.source === 'chef' ? 'chef' : 'nutritionist', summary: result.summary, prep: result.prep || [], notes: (result.days || []).filter((d) => d.note).map((d) => `${d.date}: ${d.note}`) });
     await S.groceriesFromPlan(ctx.week_start);
     return { plan: await S.planView(ctx.week_start), new_recipes: [...refIds.values()] };
   }
+  // Cheffy (Jake, Nov 8: "Cheffy / chef is also a grok bot not a Claude agent"): the family's week is planned by Jake's
+  // Grok bot, through Sentinel. It reads what the planner would have been given, and hands back a week in the same shape;
+  // the same checks apply (recipes, foods, portions, each person's calories) and a failed check comes back as errors to fix.
+  router.get('/nutrition/chef/context', wrap(async (req, res) => {
+    const week_start = N.mondayOf(isDate(req.query.week_start) ? req.query.week_start : N.addDays(today(), 7 - ((new Date(`${today()}T12:00:00Z`).getUTCDay() + 6) % 7)));
+    res.json(await contextFor('week', { week_start, note: req.query.note }));
+  }));
+  router.post('/nutrition/chef/week', wrap(async (req, res) => {
+    const b = req.body || {};
+    if (!isDate(b.week_start)) throw new Bad('week_start (YYYY-MM-DD) is required');
+    const answer = b.answer && typeof b.answer === 'object' ? b.answer : null;
+    if (!answer) throw new Bad('answer: { summary, days: [{ date, note?, meals: [{ slot, recipe_id | new_recipe, portions }] }], new_recipes?, prep? }');
+    const ctx = await contextFor('week', { week_start: N.mondayOf(b.week_start), note: b.note });
+    const checked = await checkAnswer('week', answer, ctx);
+    if (checked.errors.length) return res.status(422).json({ error: 'Fix these and send the week again', errors: checked.errors.slice(0, 40) });
+    const applied = await applyAnswer('week', { ...answer, source: 'chef' }, checked, ctx);
+    await pool.query("INSERT INTO nutrition_jobs (task, status, result, finished_at) VALUES ('week', 'done', $1::jsonb, now())", [JSON.stringify({ answer, by: 'Cheffy', ...applied })]);
+    res.json({ ok: true, week_start: ctx.week_start, new_recipes: applied.new_recipes, days: applied.plan.days.length });
+  }));
   async function runCoach(jobId, task, b) {
     try {
+      if (task === 'week') {
+        // The week is Cheffy's: Sentinel gives it the job, and the menu lands here when Cheffy next runs.
+        const out = await coach.callTrainer(undefined, { week_start: b.week_start, note: b.note }, { ...callOpts, path: '/v1/selfhub/chef', who: 'Cheffy' });
+        await pool.query("UPDATE nutrition_jobs SET status = 'done', result = $1::jsonb, finished_at = now() WHERE id = $2", [JSON.stringify({ handed_to: 'Cheffy', ...out.result }), jobId]);
+        return;
+      }
       const ctx = await contextFor(task, b);
       let answer = await coach.callNutritionist(task, { context: ctx }, callOpts);
       let checked = await checkAnswer(task, answer.result, ctx);

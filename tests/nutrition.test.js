@@ -323,7 +323,7 @@ test('groceries are two-way with Sentinel: snapshot out, ticked off back in (int
   assert.ok(n.planned.length >= 1);
 });
 
-test('the nutritionist plans the week through Sentinel: unknown foods go back to be fixed, then the plan, new recipes and groceries land', async () => {
+test('Cheffy plans the week (a Grok bot, through Sentinel): unknown foods go back to be fixed, then the plan, new recipes and groceries land', async () => {
   const recipes = (await call('GET', '/fitness/nutrition/recipes')).body.recipes;
   const breakfast = recipes.find((x) => x.slot === 'breakfast');
   const week = (food) => ({
@@ -332,26 +332,34 @@ test('the nutritionist plans the week through Sentinel: unknown foods go back to
     days: N.weekDates(monday).map((date) => ({ date, note: date === monday ? 'harvest: packed lunch' : undefined, meals: [{ slot: 'breakfast', recipe_id: breakfast.id, servings: 1 }, { slot: 'dinner', new_recipe: 'stew', servings: 1.5 }] })),
     new_recipes: [{ ref: 'stew', name: 'Beef heart stew', slot: 'main', servings: 4, ingredients: [{ food, grams: 800, label: 'Beef heart' }, { food: 'Potatoes, flesh and skin, raw', grams: 900 }], instructions: 'Stew 2 h', why: 'Cheap, iron-rich' }],
   });
-  replies.push(week('Unobtainium, raw'), week('Beef, variety meats and by-products, heart, raw'));
+  // "Ask Cheffy" on the page hands the week to Sentinel, which gives Cheffy the job; no Claude.
+  replies.push({ job: 41, worker: 'Cheffy' });
   const r = await call('POST', '/fitness/nutrition/coach', { task: 'week', week_start: monday, note: 'harvesting Monday' });
   assert.equal(r.status, 202);
   await waitJobs();
   const job = (await call('GET', `/fitness/nutrition/coach/jobs/${r.body.job}`)).body;
   assert.equal(job.status, 'done', job.error);
-  assert.equal(asked[0].url, 'https://sentinel.test/v1/selfhub/nutritionist');
+  assert.equal(job.result.handed_to, 'Cheffy');
+  assert.equal(asked[0].url, 'https://sentinel.test/v1/selfhub/chef');
   assert.equal(asked[0].auth, 'Bearer snt_live_x');
-  const ctx = asked[0].body.context;
-  assert.equal(asked[0].body.task, 'week');
+  assert.deepEqual([asked[0].body.week_start, asked[0].body.note], [monday, 'harvesting Monday']);
+
+  // Cheffy reads what it plans from (Sentinel relays it) and hands back the week.
+  const ctx = (await call('GET', `/fitness/nutrition/chef/context?week_start=${monday}&note=harvesting%20Monday`, null, SENTINEL)).body;
   assert.equal(ctx.week_start, monday);
   assert.equal(ctx.dates.length, 7);
   assert.equal(ctx.note, 'harvesting Monday');
   assert.ok(ctx.recipes.some((x) => x.liver));
   assert.ok(ctx.targets.days.length === 7 && ctx.targets.protein_g === 175);
-  assert.match(asked[1].body.errors[0], /no food like "Unobtainium, raw"/);
-  assert.deepEqual(asked[1].body.previous.summary, week('x').summary);
+  const refused = await call('POST', '/fitness/nutrition/chef/week', { week_start: monday, answer: week('Unobtainium, raw') }, SENTINEL);
+  assert.equal(refused.status, 422);
+  assert.match(refused.body.errors[0], /no food like "Unobtainium, raw"/);
+  const ok = await call('POST', '/fitness/nutrition/chef/week', { week_start: monday, note: 'harvesting Monday', answer: week('Beef, variety meats and by-products, heart, raw') }, SENTINEL);
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.days, 7);
 
   const plan = (await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body;
-  assert.equal(plan.source, 'nutritionist');
+  assert.equal(plan.source, 'chef');
   assert.match(plan.summary, /Batch-cook the stew/);
   assert.deepEqual(plan.prep, ['Sunday: stew, boil a dozen eggs']);
   assert.ok(plan.days.every((d) => d.meals.some((m) => m.recipe.name === 'Beef heart stew') || d.meals.every((m) => m.eaten)));
@@ -622,15 +630,13 @@ test('the family\'s meals (Nov 8): everyone with their own day, portions for eac
   const week = (alex) => ({ summary: 'Family week', days: N.weekDates(monday).map((date) => ({ date, meals: [
     { slot: 'breakfast', recipe_id: b.id, portions: { Jake: 1, Ashley: p(1900), Alex: alex, Ollie: p(1200) } },
     { slot: 'dinner', recipe_id: d.id, portions: { Jake: 1.5, Ashley: p(1900), Alex: alex, Ollie: p(1200) } }] })) });
-  replies.push(week(0.05), week(p(1500)));
-  const r = await call('POST', '/fitness/nutrition/coach', { task: 'week', week_start: monday });
-  await waitJobs();
-  const job = (await call('GET', `/fitness/nutrition/coach/jobs/${r.body.job}`)).body;
-  assert.equal(job.status, 'done', job.error);
-  const sent = asked.at(-2).body;
-  assert.deepEqual(sent.context.household.map((h) => h.name), ['Jake', 'Ashley', 'Alex', 'Ollie']);
-  assert.equal(sent.context.household.find((h) => h.name === 'Ashley').avoid, 'mushrooms');
-  assert.ok(asked.at(-1).body.errors.some((e) => /Alex gets about \d+ kcal against 1500/.test(e)));
+  const sent = (await call('GET', `/fitness/nutrition/chef/context?week_start=${monday}`, null, SENTINEL)).body;
+  assert.deepEqual(sent.household.map((h) => h.name), ['Jake', 'Ashley', 'Alex', 'Ollie']);
+  assert.equal(sent.household.find((h) => h.name === 'Ashley').avoid, 'mushrooms');
+  const off = await call('POST', '/fitness/nutrition/chef/week', { week_start: monday, answer: week(0.05) }, SENTINEL);
+  assert.equal(off.status, 422);
+  assert.ok(off.body.errors.some((e) => /Alex gets about \d+ kcal against 1500/.test(e)));
+  assert.equal((await call('POST', '/fitness/nutrition/chef/week', { week_start: monday, answer: week(p(1500)) }, SENTINEL)).status, 200);
 
   const plan = (await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body;
   const day = plan.days.find((x) => x.meals.length && x.meals.every((m) => !m.eaten && m.people && m.people.length === 4));
