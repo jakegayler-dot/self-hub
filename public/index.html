@@ -1169,6 +1169,11 @@ a.trk-btn{text-decoration:none;display:inline-block}
   function todayISO(){ return new Date().toISOString().slice(0,10); }
   function fmtDate(d){ var dt=new Date(d.slice(0,10)+'T00:00:00'); return dt.toLocaleDateString(undefined,{month:'short',day:'numeric'}); }
 
+  // Everything loaded from the server. Declared first: the Log page reopens the last form on load (openLog, further down),
+  // and a measurement form reads cache.measurements for its last value. Nov 8, on Jake's phone, that ran before this line
+  // existed in the old order, killed the script and left the dashboard blank ("undefined is not an object").
+  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[], gymnastics:[], percentiles:null, open:[] };
+
   function toast(msg){
     var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
     setTimeout(function(){ t.classList.remove('show'); }, 1800);
@@ -1581,7 +1586,6 @@ a.trk-btn{text-decoration:none;display:inline-block}
 
   // ---- state + rendering ----
   var bwChartRef, liftChartRef, measureChartRef, strengthTrendChartRef;
-  var cache = { profile:null, bodyweight:[], lifts:[], benchmarks:[], summary:null, coachNotes:[], measurements:[], benchmarkLifts:[], conditioning:[], gymnastics:[], percentiles:null, open:[] };
 
   (function populateLiftFilters(){
     var names = Array.prototype.map.call(document.getElementById('liftNamesDatalist').options, function(o){ return o.value; });
