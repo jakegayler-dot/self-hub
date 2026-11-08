@@ -42,6 +42,19 @@ let planLock = Promise.resolve();
 class Bad extends Error { constructor(msg, status = 400) { super(msg); this.status = status; } }
 
 // ---- the store: every database read and write, shared with the Sentinel read API and the summary push ----
+// A planned meal's portions by person ({Jake: 1.5, Ashley: 1, ...}); none means Jake's alone (his servings).
+function portionsOf(r) {
+  const p = typeof r.portions === 'string' ? JSON.parse(r.portions) : r.portions;
+  return p && typeof p === 'object' && !Array.isArray(p) && Object.keys(p).length ? p : null;
+}
+function totalServings(m) {
+  return m.portions ? N.round(Object.values(m.portions).reduce((a, v) => a + (Number(v) || 0), 0), 2) : Number(m.servings) || 0;
+}
+function peopleOf(m, per) {
+  const p = m.portions || { Jake: m.servings };
+  return Object.entries(p).filter(([, v]) => Number(v) > 0).map(([name, v]) => ({ name, servings: Number(v), kcal: per ? Math.round(per.kcal * v) : null, protein_g: per ? N.round(per.protein_g * v, 1) : null }));
+}
+
 function createStore(pool) {
   const q = async (sql, params) => (await pool.query(sql, params)).rows;
 
@@ -82,7 +95,8 @@ function createStore(pool) {
   }
   async function recipes({ all = false } = {}) {
     await seedStarters();
-    const [rows, cust] = await Promise.all([q('SELECT * FROM nutrition_recipes ORDER BY kind, slot, name, id'), customs()]);
+    const [rows, cust, pics] = await Promise.all([q('SELECT * FROM nutrition_recipes ORDER BY kind, slot, name, id'), customs(), imageIds()]);
+    for (const r of rows) r.has_image = pics.has(r.id);
     return rows.filter((r) => all || r.archived !== true).map((r) => recipeView(r, cust));
   }
   function recipeView(r, cust) {
@@ -93,13 +107,67 @@ function createStore(pool) {
       ingredients: ingredients.map((i) => { const f = N.foodByKey(i.food_key, cust); return { ...i, food: f ? f.display : null }; }),
       instructions: r.instructions || null, prep_minutes: num(r.prep_minutes), portable: r.portable === true, max_per_week: num(r.max_per_week),
       notes: r.notes || null, source: r.source || 'jake', archived: r.archived === true,
+      image: r.has_image ? `/api/fitness/nutrition/recipes/${r.id}/image` : null,
       per_serving: t.per_serving, total: t.total, missing_foods: t.missing,
       liver: ingredients.some((i) => { const f = N.foodByKey(i.food_key, cust); return f && /liver/i.test(f.name); }),
     };
   }
   async function recipeById(id) {
     const rows = await q('SELECT * FROM nutrition_recipes WHERE id = $1', [Number(id)]);
+    if (rows[0]) rows[0].has_image = (await imageIds()).has(rows[0].id);
     return rows[0] ? recipeView(rows[0], await customs()) : null;
+  }
+  // Recipe pictures (Nov 8): made by Sentinel, kept here.
+  async function imageIds() {
+    return new Set((await q('SELECT recipe_id FROM nutrition_recipe_images')).map((r) => Number(r.recipe_id)));
+  }
+  async function recipeImage(id) {
+    const rows = await q('SELECT jpeg FROM nutrition_recipe_images WHERE recipe_id = $1', [Number(id)]);
+    return rows[0] ? rows[0].jpeg : null;
+  }
+  async function saveRecipeImage(id, jpeg) {
+    await pool.query('DELETE FROM nutrition_recipe_images WHERE recipe_id = $1', [Number(id)]);
+    await pool.query('INSERT INTO nutrition_recipe_images (recipe_id, jpeg) VALUES ($1, $2)', [Number(id), jpeg]);
+  }
+
+  // ---- the family (Nov 8: "correct portions for all family members") ----
+  async function household({ all = false } = {}) {
+    const rows = await q('SELECT * FROM nutrition_household ORDER BY position, id');
+    return rows.filter((m) => all || m.active !== false).map((m) => ({ id: m.id, name: m.name, role: m.role, birth_year: num(m.birth_year), kcal: num(m.kcal), protein_g: num(m.protein_g),
+      avoid: m.avoid || null, notes: m.notes || null, active: m.active !== false }));
+  }
+  async function saveMember(b, id = null) {
+    const name = str(b.name, 40);
+    if (!id && !name) throw new Bad('A name, please');
+    const role = b.role === undefined ? undefined : ['jake', 'adult', 'child'].includes(b.role) ? b.role : 'adult';
+    const ints = {};
+    for (const [k, lo, hi] of [['birth_year', 1900, 2100], ['kcal', 300, 8000], ['protein_g', 5, 500]]) {
+      if (b[k] === undefined) continue;
+      if (b[k] === null || b[k] === '') { ints[k] = null; continue; }
+      const v = Math.round(Number(b[k]));
+      if (!(v >= lo && v <= hi)) throw new Bad(`${k.replace('_', ' ')} must be ${lo} to ${hi}`);
+      ints[k] = v;
+    }
+    if (id) {
+      const cur = (await q('SELECT * FROM nutrition_household WHERE id = $1', [Number(id)]))[0];
+      if (!cur) throw new Bad('No such person', 404);
+      const m = { ...cur, ...(name ? { name } : {}), ...(role ? { role } : {}), ...ints,
+        ...(b.avoid !== undefined ? { avoid: str(b.avoid, 300) || null } : {}), ...(b.notes !== undefined ? { notes: str(b.notes, 500) || null } : {}), ...(b.active !== undefined ? { active: b.active !== false } : {}) };
+      await pool.query('UPDATE nutrition_household SET name = $2, role = $3, birth_year = $4, kcal = $5, protein_g = $6, avoid = $7, notes = $8, active = $9 WHERE id = $1',
+        [cur.id, m.name, m.role, m.birth_year, m.kcal, m.protein_g, m.avoid, m.notes, m.active]);
+    } else {
+      if ((await q('SELECT 1 FROM nutrition_household WHERE lower(name) = lower($1)', [name])).length) throw new Bad(`${name} is already in the family`);
+      await pool.query('INSERT INTO nutrition_household (name, role, birth_year, kcal, protein_g, avoid, notes, position) VALUES ($1, $2, $3, $4, $5, $6, $7, 99)',
+        [name, role || 'adult', ints.birth_year ?? null, ints.kcal ?? null, ints.protein_g ?? null, str(b.avoid, 300) || null, str(b.notes, 500) || null]);
+    }
+    return household({ all: true });
+  }
+  async function deleteMember(id) {
+    const cur = (await q('SELECT * FROM nutrition_household WHERE id = $1', [Number(id)]))[0];
+    if (!cur) throw new Bad('No such person', 404);
+    if (cur.role === 'jake') throw new Bad("Jake stays: his targets drive the plan");
+    await pool.query('DELETE FROM nutrition_household WHERE id = $1', [cur.id]);
+    return household({ all: true });
   }
   // Checks a recipe body and turns {qty, unit} ingredients into grams.
   async function cleanRecipe(b, { partial = false, existing = null } = {}) {
@@ -325,7 +393,7 @@ function createStore(pool) {
   // ---- the plan ----
   async function planRows(weekStart) {
     return (await q('SELECT * FROM nutrition_plan WHERE plan_date >= $1 AND plan_date <= $2 ORDER BY plan_date, id', [weekStart, N.addDays(weekStart, 6)]))
-      .map((r) => ({ id: r.id, date: ymd(r.plan_date), slot: r.slot, recipe_id: r.recipe_id, servings: Number(r.servings), source: r.source || null, eaten: r.eaten === true }));
+      .map((r) => ({ id: r.id, date: ymd(r.plan_date), slot: r.slot, recipe_id: r.recipe_id, servings: Number(r.servings), portions: portionsOf(r), source: r.source || null, eaten: r.eaten === true }));
   }
   async function planView(weekStart) {
     const [rows, list, t, meta] = await Promise.all([planRows(weekStart), recipes({ all: true }), targetsFor(weekStart), q('SELECT * FROM nutrition_plan_weeks WHERE week_start = $1', [weekStart])]);
@@ -336,8 +404,9 @@ function createStore(pool) {
       const meals = rows.filter((m) => m.date === d.date).sort((a, b) => order(a.slot) - order(b.slot) || a.id - b.id).map((m) => {
         const r = byId.get(m.recipe_id);
         const per = r ? r.per_serving : null;
-        return { ...m, recipe: r ? { id: r.id, name: r.name, portable: r.portable, prep_minutes: r.prep_minutes } : { id: m.recipe_id, name: '(deleted recipe)' },
-          kcal: per ? Math.round(per.kcal * m.servings) : 0, protein_g: per ? N.round(per.protein_g * m.servings, 1) : 0 };
+        return { ...m, recipe: r ? { id: r.id, name: r.name, portable: r.portable, prep_minutes: r.prep_minutes, image: r.image } : { id: m.recipe_id, name: '(deleted recipe)' },
+          kcal: per ? Math.round(per.kcal * m.servings) : 0, protein_g: per ? N.round(per.protein_g * m.servings, 1) : 0,
+          people: peopleOf(m, per), total_servings: totalServings(m) };
       });
       return { ...d, meals, planned_kcal: meals.reduce((a, m) => a + m.kcal, 0), planned_protein_g: N.round(meals.reduce((a, m) => a + m.protein_g, 0), 1) };
     });
@@ -354,7 +423,8 @@ function createStore(pool) {
   async function replacePlanNow(weekStart, meals, meta) {
     await pool.query('DELETE FROM nutrition_plan WHERE plan_date >= $1 AND plan_date <= $2 AND (eaten IS NULL OR eaten = false)', [weekStart, N.addDays(weekStart, 6)]);
     for (const m of meals) {
-      await pool.query('INSERT INTO nutrition_plan (plan_date, slot, recipe_id, servings, source, eaten) VALUES ($1, $2, $3, $4, $5, false)', [m.date, m.slot, m.recipe_id, m.servings, meta.source]);
+      await pool.query('INSERT INTO nutrition_plan (plan_date, slot, recipe_id, servings, source, eaten, portions) VALUES ($1, $2, $3, $4, $5, false, $6::jsonb)',
+        [m.date, m.slot, m.recipe_id, m.servings, meta.source, m.portions ? JSON.stringify(m.portions) : null]);
     }
     await pool.query('DELETE FROM nutrition_plan_weeks WHERE week_start = $1', [weekStart]);
     await pool.query('INSERT INTO nutrition_plan_weeks (week_start, source, summary, prep, days) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb)',
@@ -454,8 +524,9 @@ function createStore(pool) {
   // open items that came from the plan; his own items stay. weekStart is only the label.
   async function groceriesFromPlan(weekStart) {
     const today = N.reginaToday();
+    // Enough for everyone who eats each meal (its portions), not just Jake's servings.
     const upcoming = (await q('SELECT * FROM nutrition_plan WHERE plan_date >= $1 ORDER BY plan_date, id', [today]))
-      .map((r) => ({ id: r.id, date: ymd(r.plan_date), slot: r.slot, recipe_id: r.recipe_id, servings: Number(r.servings), eaten: r.eaten === true }));
+      .map((r) => ({ id: r.id, date: ymd(r.plan_date), slot: r.slot, recipe_id: r.recipe_id, servings: totalServings({ servings: Number(r.servings), portions: portionsOf(r) }), eaten: r.eaten === true }));
     const [list, pan, cust, own] = await Promise.all([recipes({ all: true }), pantryMap(), customs(), ownPortions()]);
     const todo = upcoming.filter((m) => !m.eaten);
     void weekStart;
@@ -483,11 +554,12 @@ function createStore(pool) {
       date, targets: tg, week: t.week, totals,
       remaining: { kcal: Math.round(tg.kcal - totals.kcal), protein_g: N.round(tg.protein_g - totals.protein_g, 1), carbs_g: N.round(tg.carbs_g - totals.carbs_g, 1), fat_g: N.round(tg.fat_g - totals.fat_g, 1) },
       entries: list,
-      plan: plan.filter((m) => m.date === date).map((m) => { const r = recipesById.get(m.recipe_id); return { ...m, name: r ? r.name : '(deleted recipe)', kcal: r ? Math.round(r.per_serving.kcal * m.servings) : null, protein_g: r ? N.round(r.per_serving.protein_g * m.servings, 1) : null }; }),
+      plan: plan.filter((m) => m.date === date).map((m) => { const r = recipesById.get(m.recipe_id); return { ...m, name: r ? r.name : '(deleted recipe)', image: r ? r.image : null, kcal: r ? Math.round(r.per_serving.kcal * m.servings) : null, protein_g: r ? N.round(r.per_serving.protein_g * m.servings, 1) : null, people: peopleOf(m, r ? r.per_serving : null) }; }),
     };
   }
 
   return {
+    household, saveMember, deleteMember, recipeImage, saveRecipeImage, imageIds,
     q, customs, ownPortions, settings, recipes, recipeById, cleanRecipe, createRecipe, recipeView, logEntry, deleteEntry, entries, dailyTotals, totalsOf,
     weekTargets, targetsFor, targetHistory, updateSettings, trainingDates, weighins, planRows, planView, replacePlan, generatePlan,
     pantry, pantryMap, setPantry, adjustPantry, groceries, groceryById, addGrocery, patchGrocery, deleteGrocery, groceriesFromPlan, grocerySnapshot, sentinelItem, day,
@@ -496,6 +568,23 @@ function createStore(pool) {
 
 // ---- the nutritionist (Sentinel), in the background ----
 const ALLOWED_TASKS = ['week', 'review', 'recipe'];
+// Portions sent by the screen or Sentinel: only family members, 0 to 4 servings each.
+function cleanPortions(p, fam) {
+  if (p == null) return null;
+  if (typeof p !== 'object' || Array.isArray(p)) throw new Bad('portions is {name: servings}');
+  const names = new Map(fam.map((m) => [m.name.toLowerCase(), m.name]));
+  const out = {};
+  for (const [k, v] of Object.entries(p)) {
+    const name = names.get(String(k).toLowerCase());
+    if (!name) throw new Bad(`${k} isn't in the family`);
+    const n = Number(v);
+    if (!(n >= 0 && n <= 4)) throw new Bad(`${name}'s portion must be 0 to 4 servings`);
+    if (n > 0) out[name] = Math.round(n * 20) / 20;
+  }
+  if (!Object.keys(out).length) throw new Bad('Somebody has to eat it');
+  return out;
+}
+
 function closest(name, cust) {
   return N.searchFoods(String(name).split(',').slice(0, 2).join(' '), { customs: cust, limit: 3 }).map((f) => f.name);
 }
@@ -767,15 +856,37 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
   // ---- the plan ----
   const weekOf = (v) => N.mondayOf(isDate(v) ? v : today());
   router.get('/nutrition/plan', wrap(async (req, res) => res.json(await S.planView(weekOf(req.query.week)))));
+  // The family (Nov 8): who eats, with their own daily calories and protein.
+  router.get('/nutrition/household', wrap(async (req, res) => res.json({ members: await S.household({ all: true }) })));
+  router.post('/nutrition/household', wrap(async (req, res) => res.status(201).json({ members: await S.saveMember(req.body || {}) })));
+  router.put('/nutrition/household/:id', wrap(async (req, res) => res.json({ members: await S.saveMember(req.body || {}, req.params.id) })));
+  router.delete('/nutrition/household/:id', wrap(async (req, res) => res.json({ members: await S.deleteMember(req.params.id) })));
+  // A recipe's picture: kept here; the first time it's asked for, fetched from Sentinel, which makes them.
+  router.get('/nutrition/recipes/:id/image', wrap(async (req, res) => {
+    if (!/^\d+$/.test(req.params.id)) return res.status(404).end();
+    let jpeg = await S.recipeImage(req.params.id);
+    if (!jpeg) {
+      const url = (env.SENTINEL_URL || '').trim().replace(/\/+$/, ''); const key = (env.SENTINEL_API_KEY || '').trim();
+      if (url && key) {
+        try {
+          const r = await (fetchImpl || fetch)(`${url}/v1/selfhub/meal-image/${req.params.id}`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(15000) });
+          if (r.ok) { jpeg = Buffer.from(await r.arrayBuffer()); await S.saveRecipeImage(req.params.id, jpeg); }
+        } catch { /* no picture yet */ }
+      }
+    }
+    if (!jpeg) return res.status(404).end();
+    res.set('Content-Type', 'image/jpeg').set('Cache-Control', 'private, max-age=86400').send(jpeg);
+  }));
   router.post('/nutrition/plan/generate', wrap(async (req, res) => res.json(await S.generatePlan(weekOf((req.body || {}).week_start)))));
   router.post('/nutrition/plan', wrap(async (req, res) => {
     const b = req.body || {};
     if (!isDate(b.date) || !SLOTS.includes(b.slot)) throw new Bad('date and slot are required');
     const r = await S.recipeById(b.recipe_id);
     if (!r || r.archived) throw new Bad('No such recipe', 404);
-    const s = Number(b.servings ?? 1);
-    if (!(s > 0 && s <= 10)) throw new Bad('servings must be more than 0');
-    const rows = await S.q("INSERT INTO nutrition_plan (plan_date, slot, recipe_id, servings, source, eaten) VALUES ($1, $2, $3, $4, 'jake', false) RETURNING id", [b.date, b.slot, r.id, s]);
+    const portions = cleanPortions(b.portions, await S.household());
+    const s = portions ? Number(portions.Jake || 0) : Number(b.servings ?? 1);
+    if (!(s >= (portions ? 0 : 0.01) && s <= 10)) throw new Bad('servings must be more than 0');
+    const rows = await S.q("INSERT INTO nutrition_plan (plan_date, slot, recipe_id, servings, source, eaten, portions) VALUES ($1, $2, $3, $4, 'jake', false, $5::jsonb) RETURNING id", [b.date, b.slot, r.id, s, portions ? JSON.stringify(portions) : null]);
     if (b.groceries !== false) await S.groceriesFromPlan(N.mondayOf(b.date));
     res.status(201).json({ id: rows[0].id });
   }));
@@ -785,11 +896,15 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
     const b = req.body || {};
     const date = b.date !== undefined ? b.date : ymd(cur.plan_date);
     const slot = b.slot !== undefined ? b.slot : cur.slot;
-    const servings = b.servings !== undefined ? Number(b.servings) : Number(cur.servings);
+    // Portions by person (Nov 8); a change to Jake's servings alone moves his portion too.
+    let portions = b.portions !== undefined ? cleanPortions(b.portions, await S.household()) : portionsOf(cur);
+    let servings = b.servings !== undefined ? Number(b.servings) : Number(cur.servings);
+    if (b.portions !== undefined && portions) servings = Number(portions.Jake || 0);
+    else if (b.servings !== undefined && portions) portions = { ...portions, Jake: servings };
     let recipeId = cur.recipe_id;
     if (b.recipe_id !== undefined) { const r = await S.recipeById(b.recipe_id); if (!r || r.archived) throw new Bad('No such recipe', 404); recipeId = r.id; }
-    if (!isDate(date) || !SLOTS.includes(slot) || !(servings > 0 && servings <= 10)) throw new Bad('date, slot and servings (0-10) must be valid');
-    await pool.query('UPDATE nutrition_plan SET plan_date = $1, slot = $2, servings = $3, recipe_id = $4 WHERE id = $5', [date, slot, servings, recipeId, cur.id]);
+    if (!isDate(date) || !SLOTS.includes(slot) || !(servings >= (portions ? 0 : 0.01) && servings <= 10)) throw new Bad('date, slot and servings (0-10) must be valid');
+    await pool.query('UPDATE nutrition_plan SET plan_date = $1, slot = $2, servings = $3, recipe_id = $4, portions = $5::jsonb WHERE id = $6', [date, slot, servings, recipeId, portions ? JSON.stringify(portions) : null, cur.id]);
     if (b.groceries !== false) await S.groceriesFromPlan(N.mondayOf(date));
     res.json({ ok: true });
   }));
@@ -853,7 +968,12 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
       pantry: pan.map((p) => ({ name: p.food || p.name, amount: p.amount })),
       known_foods: [...known].slice(0, 150),
     };
-    if (task === 'week') Object.assign(ctx, { week_start: b.week_start, dates: N.weekDates(b.week_start), slots: s.slots, note: str(b.note, 500) || undefined });
+    if (task === 'week') {
+      const fam = await S.household();
+      Object.assign(ctx, { week_start: b.week_start, dates: N.weekDates(b.week_start), slots: s.slots, note: str(b.note, 500) || undefined,
+        household: fam.map((m) => ({ name: m.name, role: m.role, age: m.birth_year ? Number(today().slice(0, 4)) - m.birth_year : undefined,
+          kcal: m.role === 'jake' ? 'his targets (targets.days)' : m.kcal, protein_g: m.role === 'jake' ? 'his targets' : m.protein_g, avoid: m.avoid || undefined, notes: m.notes || undefined })) });
+    }
     if (task === 'review') {
       const days = Number(b.days) || 14;
       const ents = await S.entries(N.addDays(today(), -days), N.addDays(today(), -1));
@@ -888,10 +1008,31 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
       for (const m of d.meals || []) {
         if (!ctx.slots.includes(m.slot)) errors.push(`${d.date}: slot "${m.slot}" isn't one of ${ctx.slots.join(', ')}`);
         if (m.recipe_id != null ? !ids.has(m.recipe_id) : !refs.has(m.new_recipe)) errors.push(`${d.date} ${m.slot}: recipe ${m.recipe_id ?? m.new_recipe} isn't one of his or the new ones`);
-        if (!(Number(m.servings) > 0 && Number(m.servings) <= 4)) errors.push(`${d.date} ${m.slot}: servings 0.25 to 4`);
+        if (m.portions) {
+          const names = new Set((ctx.household || []).map((h) => h.name));
+          for (const [who, v] of Object.entries(m.portions)) {
+            if (!names.has(who)) errors.push(`${d.date} ${m.slot}: "${who}" isn't in the family (${[...names].join(', ')})`);
+            if (!(Number(v) >= 0 && Number(v) <= 4)) errors.push(`${d.date} ${m.slot}: ${who}'s portion must be 0 to 4 servings`);
+          }
+          if (!Object.values(m.portions).some((v) => Number(v) > 0)) errors.push(`${d.date} ${m.slot}: nobody eats it`);
+        } else if (!(Number(m.servings) > 0 && Number(m.servings) <= 4)) errors.push(`${d.date} ${m.slot}: servings 0.25 to 4`);
       }
     }
     if (!(result.days || []).length) errors.push('No days planned');
+    // Each person's day against their calories (Nov 8: "work toward the dietary caloric and health goals").
+    const fam = (ctx.household || []).filter((h) => h.role !== 'jake' && Number(h.kcal) > 0);
+    if (fam.length && !errors.length) {
+      const per = new Map(ctx.recipes.map((r) => [r.id, r.per_serving ? r.per_serving.kcal : null]));
+      for (const r of recipes) { const t = N.recipeTotals({ servings: r.servings, ingredients: r.ingredients }, cust); per.set(`new:${r.ref}`, t.per_serving ? t.per_serving.kcal : null); }
+      for (const d of result.days || []) {
+        if (!(d.meals || []).some((m) => m.portions)) continue;
+        for (const h of fam) {
+          let kcal = 0;
+          for (const m of d.meals || []) { const k = per.get(m.recipe_id != null ? m.recipe_id : `new:${m.new_recipe}`); kcal += (Number((m.portions || {})[h.name]) || 0) * (k || 0); }
+          if (Math.abs(kcal - h.kcal) > h.kcal * (h.role === 'child' ? 0.2 : 0.15)) errors.push(`${d.date}: ${h.name} gets about ${Math.round(kcal)} kcal against ${h.kcal}; adjust ${h.name}'s portions (snacks count).`);
+        }
+      }
+    }
     return { errors, recipes };
   }
   async function applyAnswer(task, result, checked, ctx) {
@@ -907,7 +1048,11 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
       refIds.set(r.ref, made.id);
     }
     const meals = [];
-    for (const d of result.days || []) for (const m of d.meals || []) meals.push({ date: d.date, slot: m.slot, recipe_id: m.recipe_id ?? refIds.get(m.new_recipe), servings: Math.round(Number(m.servings) * 4) / 4 });
+    const q4 = (v) => Math.round(Number(v) * 20) / 20; // to the nearest 0.05 serving (a child's portion is small)
+    for (const d of result.days || []) for (const m of d.meals || []) {
+      const portions = m.portions ? Object.fromEntries(Object.entries(m.portions).map(([k, v]) => [k, q4(v)]).filter(([, v]) => v > 0)) : null;
+      meals.push({ date: d.date, slot: m.slot, recipe_id: m.recipe_id ?? refIds.get(m.new_recipe), servings: portions ? (portions.Jake || 0) : Math.round(Number(m.servings) * 4) / 4, portions });
+    }
     const eaten = (await S.planRows(ctx.week_start)).filter((m) => m.eaten).map((m) => `${m.date}|${m.slot}`);
     await S.replacePlan(ctx.week_start, meals.filter((m) => !eaten.includes(`${m.date}|${m.slot}`)), {
       source: 'nutritionist', summary: result.summary, prep: result.prep || [], notes: (result.days || []).filter((d) => d.note).map((d) => `${d.date}: ${d.note}`) });

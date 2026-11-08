@@ -663,7 +663,47 @@ const COLLECTIONS = [
     async load({ pool, now, from }) {
       const v = await nutritionStore(pool).planView(N.mondayOf(from || new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10)));
       return v.days.map((d) => ({ id: d.date, date: d.date, day_type: d.day_type, target_kcal: d.kcal, planned_kcal: d.planned_kcal, planned_protein_g: d.planned_protein_g,
-        meals: d.meals.map((m) => `${m.slot}: ${m.recipe.name} x${m.servings}${m.eaten ? ' (eaten)' : ''}`) }));
+        meals: d.meals.map((m) => `${m.slot}: ${m.recipe.name} ${m.people.length > 1 || (m.people[0] && m.people[0].name !== 'Jake') ? `(${m.people.map((p) => `${p.name} ${p.servings}`).join(', ')})` : `x${m.servings}`}${m.eaten ? ' (eaten)' : ''}`) }));
+    },
+  },
+  // Nov 8: the family's menu, meal by meal, for Sentinel to tell Jake the day ("parsed through to sentinel that tells me the
+  // days meal plan ... visuals, correct portions for all family members").
+  {
+    name: 'menu',
+    description: "The family's menu (?from=/to= dates, default this week): each planned meal with its recipe, who eats how much (servings, calories, protein per person), the picture, prep time, whether it packs, the ingredients for everyone and how to make it.",
+    kind: 'list',
+    dated: true,
+    rangeInLoad: true,
+    fields: ['id', 'date', 'slot', 'recipe_id', 'recipe', 'people', 'total_servings', 'kcal_jake', 'image', 'has_image', 'prep_minutes', 'portable', 'ingredients', 'instructions', 'eaten'],
+    async load({ pool, now, from, to }) {
+      const S = nutritionStore(pool);
+      const start = from || new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10);
+      const end = to || N.addDays(N.mondayOf(start), 6);
+      const weeks = [...new Set([N.mondayOf(start), N.mondayOf(end)])];
+      const recipes = new Map((await S.recipes({ all: true })).map((r) => [r.id, r]));
+      const out = [];
+      for (const wk of weeks) {
+        for (const d of (await S.planView(wk)).days) {
+          if (d.date < start || d.date > end) continue;
+          for (const m of d.meals) {
+            const r = recipes.get(m.recipe_id);
+            const k = r ? m.total_servings / (Number(r.servings) || 1) : 0;
+            out.push({ id: m.id, date: d.date, slot: m.slot, recipe_id: m.recipe_id, recipe: m.recipe.name, people: m.people, total_servings: m.total_servings,
+              kcal_jake: m.kcal, image: r ? r.image : null, has_image: !!(r && r.image), prep_minutes: r ? r.prep_minutes : null, portable: r ? r.portable : false,
+              ingredients: r ? r.ingredients.map((i) => `${i.label || i.food} ${Math.round(i.grams * k)} g`).join('; ') : null, instructions: r ? r.instructions : null, eaten: m.eaten });
+          }
+        }
+      }
+      return out;
+    },
+  },
+  {
+    name: 'household',
+    description: "Who eats from the meal plan: Jake (his own targets) and his family, each with daily calories, protein, what to avoid and notes.",
+    kind: 'list',
+    fields: ['id', 'name', 'role', 'birth_year', 'kcal', 'protein_g', 'avoid', 'notes'],
+    async load({ pool }) {
+      return (await nutritionStore(pool).household()).map((m) => ({ id: m.id, name: m.name, role: m.role, birth_year: m.birth_year, kcal: m.kcal, protein_g: m.protein_g, avoid: m.avoid, notes: m.notes }));
     },
   },
   {

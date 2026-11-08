@@ -92,6 +92,9 @@ const fetchImpl = async (url, init) => {
       : /mini.?wheats/i.test(q) ? MINI_WHEATS_OFF
       : /muesli/i.test(q) ? [{ code: '5099856000017', product_name: 'Muesli', brands: ['LifeForce Original Muesli'], nutriments: { 'energy-kcal_100g': 401, proteins_100g: 9.7, carbohydrates_100g: 67, fat_100g: 8.4, sodium_100g: 0 } }] : [] });
   }
+  // Sentinel's meal pictures (Nov 8): a JPEG for recipe ids under 900000, none for the rest.
+  const pic = url.match(/\/v1\/selfhub\/meal-image\/(\d+)$/);
+  if (pic) { web.push({ url, auth: init.headers.authorization }); return Number(pic[1]) < 900000 ? new Response(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), { status: 200, headers: { 'content-type': 'image/jpeg' } }) : new Response('', { status: 404 }); }
   const body = JSON.parse(init.body);
   asked.push({ url, auth: init.headers.Authorization, body });
   const r = replies.shift();
@@ -552,7 +555,7 @@ test('mini wheats (Oct 31): the browser\'s USDA results fit the request, every w
   assert.equal(cfg.require_all_words, true);
   assert.ok(cfg.nutrient_numbers.includes('208') && cfg.nutrient_ids.includes(1008));
   // The page's own slimming (public/js/nutrition.js), run here as the browser runs it.
-  const src = require('fs').readFileSync(require('path').join(__dirname, '../public/js/nutrition.js'), 'utf8');
+  const src = require('fs').readFileSync(require('path').join(__dirname, '../public/js/nutrition.js'), 'utf8').replace(/\r\n/g, '\n'); // a Windows checkout has CRLF
   const fdcSlim = new Function(`${src.match(/  function fdcSlim\(f, cfg\) \{[\s\S]*?\n  \}\n/)[0]}; return fdcSlim;`)();
   const full = JSON.stringify({ query: 'mini wheats', fdc_foods: MINI_WHEATS_FDC });
   assert.ok(full.length > 100 * 1024, `the raw results are over express.json()'s 100 KB default (${full.length})`);
@@ -596,4 +599,80 @@ test('mini wheats (Oct 31): the browser\'s USDA results fit the request, every w
   // Matching: hyphens, apostrophes and plurals are the same words.
   assert.deepEqual(foodSources.wordsOf("Kellogg's Mini-Wheats"), foodSources.wordsOf('kelloggs mini wheat'));
   assert.deepEqual(foodSources.wordsOf('peaches boxes eggs glass'), ['peach', 'box', 'egg', 'glass']);
+});
+
+test('the family\'s meals (Nov 8): everyone with their own day, portions for each, groceries for all, pictures, and what Sentinel reads', async () => {
+  // The family: Jake from his targets, Ashley and the boys with their own.
+  let fam = (await call('GET', '/fitness/nutrition/household')).body.members;
+  assert.deepEqual(fam.map((m) => m.name), ['Jake', 'Ashley', 'Alex', 'Ollie']);
+  assert.equal(fam.find((m) => m.name === 'Alex').kcal, 1500);
+  const ashley = fam.find((m) => m.name === 'Ashley');
+  assert.equal((await call('PUT', `/fitness/nutrition/household/${ashley.id}`, { kcal: 1900, avoid: 'mushrooms' })).status, 200);
+  assert.equal((await call('PUT', `/fitness/nutrition/household/${ashley.id}`, { kcal: 50 })).status, 400);
+  assert.equal((await call('DELETE', `/fitness/nutrition/household/${fam[0].id}`)).status, 400, 'Jake stays');
+  fam = (await call('POST', '/fitness/nutrition/household', { name: 'Grandma', kcal: 1700 })).body.members;
+  fam = (await call('DELETE', `/fitness/nutrition/household/${fam.find((m) => m.name === 'Grandma').id}`)).body.members;
+  assert.equal(fam.length, 4);
+
+  // The chef plans with portions; a child's day way off its calories goes back to be fixed.
+  const recipes = (await call('GET', '/fitness/nutrition/recipes')).body.recipes;
+  const b = recipes.find((x) => x.slot === 'breakfast'); const d = recipes.find((x) => x.slot === 'main');
+  const both = b.per_serving.kcal + d.per_serving.kcal;
+  const p = (kcal) => Math.round((kcal / both) * 20) / 20;
+  const week = (alex) => ({ summary: 'Family week', days: N.weekDates(monday).map((date) => ({ date, meals: [
+    { slot: 'breakfast', recipe_id: b.id, portions: { Jake: 1, Ashley: p(1900), Alex: alex, Ollie: p(1200) } },
+    { slot: 'dinner', recipe_id: d.id, portions: { Jake: 1.5, Ashley: p(1900), Alex: alex, Ollie: p(1200) } }] })) });
+  replies.push(week(0.05), week(p(1500)));
+  const r = await call('POST', '/fitness/nutrition/coach', { task: 'week', week_start: monday });
+  await waitJobs();
+  const job = (await call('GET', `/fitness/nutrition/coach/jobs/${r.body.job}`)).body;
+  assert.equal(job.status, 'done', job.error);
+  const sent = asked.at(-2).body;
+  assert.deepEqual(sent.context.household.map((h) => h.name), ['Jake', 'Ashley', 'Alex', 'Ollie']);
+  assert.equal(sent.context.household.find((h) => h.name === 'Ashley').avoid, 'mushrooms');
+  assert.ok(asked.at(-1).body.errors.some((e) => /Alex gets about \d+ kcal against 1500/.test(e)));
+
+  const plan = (await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body;
+  const day = plan.days.find((x) => x.meals.length && x.meals.every((m) => !m.eaten && m.people && m.people.length === 4));
+  const dinner = day.meals.find((m) => m.slot === 'dinner' && !m.eaten);
+  assert.equal(dinner.servings, 1.5, "Jake's own servings are his portion");
+  assert.deepEqual(dinner.people.map((x) => x.name), ['Jake', 'Ashley', 'Alex', 'Ollie']);
+  assert.ok(dinner.total_servings > 1.5);
+  assert.equal(dinner.people.find((x) => x.name === 'Jake').kcal, dinner.kcal);
+
+  // Portions by hand; strangers refused.
+  assert.equal((await call('PUT', `/fitness/nutrition/plan/${dinner.id}`, { portions: { jake: 1, alex: 0.5 } })).status, 200);
+  const after = (await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body.days.flatMap((x) => x.meals).find((m) => m.id === dinner.id);
+  assert.deepEqual(after.portions, { Jake: 1, Alex: 0.5 });
+  assert.equal(after.servings, 1);
+  assert.equal((await call('PUT', `/fitness/nutrition/plan/${dinner.id}`, { portions: { Bob: 1 } })).status, 400);
+  assert.equal((await call('PUT', `/fitness/nutrition/plan/${dinner.id}`, { servings: 2 })).status, 200);
+  assert.deepEqual((await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body.days.flatMap((x) => x.meals).find((m) => m.id === dinner.id).portions, { Jake: 2, Alex: 0.5 }, "his servings move his portion");
+
+  // Groceries are for everyone who eats: a family-sized dinner needs more than his share.
+  const one = N.groceriesFromPlan([{ recipe_id: d.id, servings: 1 }], new Map([[d.id, d]]));
+  const fourish = N.groceriesFromPlan([{ recipe_id: d.id, servings: 3.5 }], new Map([[d.id, d]]));
+  assert.ok(fourish[0].grams > one[0].grams * 3);
+
+  // Pictures: fetched from Sentinel the first time, kept after; none yet is a 404.
+  const img = await fetch(`${base}/fitness/nutrition/recipes/${d.id}/image`, { headers: { Authorization: JAKE } });
+  assert.equal(img.status, 200);
+  assert.equal(img.headers.get('content-type'), 'image/jpeg');
+  const fetched = web.filter((w) => /meal-image/.test(w.url)).length;
+  assert.equal(web.find((w) => /meal-image/.test(w.url)).auth, 'Bearer snt_live_x');
+  await fetch(`${base}/fitness/nutrition/recipes/${d.id}/image`, { headers: { Authorization: JAKE } });
+  assert.equal(web.filter((w) => /meal-image/.test(w.url)).length, fetched, 'kept, not fetched again');
+  assert.equal((await call('GET', '/fitness/nutrition/recipes')).body.recipes.find((x) => x.id === d.id).image, `/api/fitness/nutrition/recipes/${d.id}/image`);
+  assert.equal((await fetch(`${base}/fitness/nutrition/recipes/999999/image`, { headers: { Authorization: JAKE } })).status, 404);
+
+  // What Sentinel reads: the menu meal by meal, and the family.
+  const menu = (await call('GET', `/sentinel/read/menu?from=${day.date}&to=${day.date}`, null, SENTINEL)).body.rows;
+  const bf = menu.find((m) => m.slot === 'breakfast' && !m.eaten);
+  assert.ok(bf.people.length === 4 && bf.people.every((x) => x.kcal != null));
+  assert.match(bf.ingredients, / g/);
+  assert.ok('instructions' in bf && 'has_image' in bf);
+  assert.equal(menu.find((m) => m.recipe_id === d.id).has_image, true);
+  const hh = (await call('GET', '/sentinel/read/household', null, SENTINEL)).body.rows;
+  assert.equal(hh.find((h) => h.name === 'Ashley').kcal, 1900);
+  assert.match((await call('GET', `/sentinel/read/meal_plan?from=${day.date}`, null, SENTINEL)).body.rows.find((x) => x.date === day.date).meals.join(' '), /Ashley/);
 });

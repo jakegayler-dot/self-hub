@@ -294,7 +294,10 @@
           '<div class="t">' + n0(d.planned_kcal) + ' / ' + n0(d.kcal) + ' kcal · ' + n0(d.planned_protein_g) + ' / ' + d.protein_g + ' g protein</div></div>' +
           '<span class="wk-chip ' + (Math.abs(off) <= d.kcal * 0.05 ? 'green' : 'amber') + '">' + (off >= 0 ? '+' : '') + n0(off) + '</span></div><div style="padding:0 14px 12px">' +
           d.meals.map(function (m) {
-            return '<div class="nu-line"><span><b>' + cap(m.slot) + '</b> ' + esc(m.recipe.name) + (m.recipe.portable ? ' <span class="wk-chip">packs</span>' : '') + '<br><small>' + n0(m.kcal) + ' kcal · ' + n0(m.protein_g) + ' g P</small></span>' +
+            var who = (m.people || []).filter(function (p) { return p.name !== 'Jake'; });
+            return '<div class="nu-line">' + (m.recipe.image ? '<img class="nu-thumb" src="' + m.recipe.image + '" alt="" loading="lazy" onerror="this.remove()">' : '') +
+              '<span style="flex:1"><b>' + cap(m.slot) + '</b> ' + esc(m.recipe.name) + (m.recipe.portable ? ' <span class="wk-chip">packs</span>' : '') + '<br><small>' + (m.servings > 0 ? 'You ' + m.servings + ' · ' + n0(m.kcal) + ' kcal · ' + n0(m.protein_g) + ' g P' : 'Not for you') + '</small>' +
+              (who.length ? '<br><small class="nu-fam">' + who.map(function (p) { return esc(p.name) + ' ' + p.servings + (p.kcal != null ? ' (' + n0(p.kcal) + ' kcal)' : ''); }).join(' · ') + '</small>' : '') + '</span>' +
               (m.eaten ? '<span class="wk-chip green">eaten</span>' : '<span><input type="number" class="nu-serv" data-id="' + m.id + '" value="' + m.servings + '" step="0.25" min="0.25" style="width:60px"> <button class="trk-del" data-pdel="' + m.id + '">✕</button></span>') + '</div>';
           }).join('') +
           '<div class="trk-row" style="margin-top:6px"><select class="nu-addslot" data-date="' + d.date + '">' + SLOTS.map(function (s) { return '<option>' + s + '</option>'; }).join('') + '</select>' +
@@ -332,6 +335,7 @@
         var rs = list.filter(function (r) { return r.slot === g; });
         return '<div class="trk-sec"><h2>' + groups[g] + '</h2>' + (rs.length ? rs.map(function (r) {
           return '<details class="ldg"><summary>' + esc(r.name) + (r.kind === 'meal' ? ' · saved meal' : '') + ' — ' + n0(r.per_serving.kcal) + ' kcal · ' + n0(r.per_serving.protein_g) + ' g P a serving</summary>' +
+            (r.image ? '<img class="nu-photo" src="' + r.image + '" alt="' + esc(r.name) + '" loading="lazy" onerror="this.remove()">' : '') +
             '<p class="trk-note">' + r.servings + ' serving' + (r.servings === 1 ? '' : 's') + (r.prep_minutes ? ' · ' + r.prep_minutes + ' min' : '') + (r.portable ? ' · packs for the truck' : '') + (r.max_per_week ? ' · at most ' + r.max_per_week + '× a week' : '') + (r.source === 'nutritionist' ? ' · by the nutritionist' : '') + '</p>' +
             '<ul class="nu-ings">' + r.ingredients.map(function (i) { return '<li>' + esc(i.label || i.food) + ' <small>' + Math.round(i.grams) + ' g' + (i.label ? ' · ' + esc(i.food) : '') + '</small></li>'; }).join('') + '</ul>' +
             (r.instructions ? '<p class="wk-bnote">' + esc(r.instructions) + '</p>' : '') + (r.notes ? '<p class="trk-note">' + esc(r.notes) + '</p>' : '') +
@@ -436,6 +440,7 @@
   async function targets() {
     var t = await api('GET', '/targets');
     var latest = await api('GET', '/coach/latest?task=review');
+    var fam = (await api('GET', '/household')).members;
     var s = t.settings, w = t.week;
     var rv = latest.latest && latest.latest.result && latest.latest.result.review;
     if (rv && !(rv.target_advice && typeof rv.target_advice === 'object')) rv = null;
@@ -453,6 +458,18 @@
         '<div class="box"><b>Advice</b>' + n0(rv.target_advice.kcal) + ' kcal, ' + rv.target_advice.protein_g + ' g protein: ' + esc(rv.target_advice.why) + '<br><button class="trk-btn" id="tgApply" style="margin-top:8px">Use this</button></div>' +
         (Array.isArray(rv.gaps) && rv.gaps.length ? '<div class="box"><b>Gaps</b>' + rv.gaps.map(function (g, i) { return '<div class="wp"><span class="n">' + (i + 1) + '</span><div><div class="a">' + esc(g.area) + '</div><div class="e">' + esc(g.evidence) + '</div><div class="p">' + esc(g.fix) + '</div></div></div>'; }).join('') + '</div>' : '') +
         (rv.next_week ? '<div class="box"><b>Next week</b>' + esc(rv.next_week) + '</div>' : '') + '</div>' : '') +
+      // The family (Nov 8): who the meal plan feeds, each with their own day.
+      '<div class="trk-sec" style="margin-top:12px"><h2>Family</h2><p class="trk-note">The meal plan feeds everyone here, with a portion for each. Your calories and protein are your targets above; set the others\' to theirs (they start at Health Canada\'s estimates for their age).</p>' +
+      fam.map(function (m) {
+        return '<div class="trk-row nu-fam-row" data-mid="' + m.id + '"><div class="trk-field" style="flex:1.2"><label>Name</label><input data-f="name" value="' + esc(m.name) + '"' + (m.role === 'jake' ? ' disabled' : '') + '></div>' +
+          '<div class="trk-field"><label>Born</label><input type="number" data-f="birth_year" value="' + (m.birth_year || '') + '"></div>' +
+          (m.role === 'jake' ? '<div class="trk-field" style="flex:2"><label>Calories and protein</label><div class="trk-note">From your targets</div></div>' :
+            '<div class="trk-field"><label>kcal / day</label><input type="number" data-f="kcal" value="' + (m.kcal || '') + '"></div><div class="trk-field"><label>Protein g</label><input type="number" data-f="protein_g" value="' + (m.protein_g || '') + '"></div>') +
+          '<div class="trk-field" style="flex:2"><label>Leave out</label><input data-f="avoid" value="' + esc(m.avoid || '') + '" placeholder="e.g. mushrooms, spicy"></div>' +
+          '<button class="trk-btn" data-msave="' + m.id + '">Save</button>' + (m.role === 'jake' ? '' : '<button class="trk-del" data-mdel="' + m.id + '" title="Remove">✕</button>') + '</div>' +
+          (m.notes ? '<p class="trk-note" style="margin-top:-6px">' + esc(m.notes) + '</p>' : '');
+      }).join('') +
+      '<div class="trk-row"><div class="trk-field"><input id="famNew" placeholder="Add someone (name)"></div><button class="trk-btn" id="famAdd">Add</button></div></div>' +
       '<details class="ldg" style="margin-top:12px"><summary>Settings</summary>' +
       '<div class="trk-row" style="margin-top:8px">' + [['base_kcal', 'kcal / day (set by hand)', w.base_kcal], ['protein_g', 'Protein g', s.protein_g], ['training_extra_kcal', 'Training vs rest gap kcal', s.training_extra_kcal], ['fat_pct', 'Fat %', s.fat_pct], ['rate_min_lb', 'Gain min lb/wk', s.rate_min_lb], ['rate_max_lb', 'Gain max lb/wk', s.rate_max_lb]].map(function (f) {
         return '<div class="trk-field"><label>' + f[1] + '</label><input type="number" step="any" data-set="' + f[0] + '" value="' + f[2] + '"></div>';
@@ -463,6 +480,15 @@
       (t.history.length > 1 ? '<div class="trk-sec" style="margin-top:12px"><h2>History</h2><div class="trk-log"><table><thead><tr><th>Week</th><th>kcal</th><th>Decision</th><th>Trend</th></tr></thead><tbody>' +
         t.history.map(function (h) { return '<tr><td>' + fmt(h.week_start) + '</td><td>' + n0(h.base_kcal) + '</td><td title="' + esc(h.rationale) + '">' + h.decision + '</td><td>' + (h.rate_lb_wk == null ? '–' : h.rate_lb_wk) + '</td></tr>'; }).join('') + '</tbody></table></div></div>' : '');
     document.getElementById('tgRecheck').onclick = async function () { try { await api('POST', '/targets/recheck'); show('targets'); } catch (e) { fail(e); } };
+    body.querySelectorAll('[data-msave]').forEach(function (b) {
+      b.onclick = async function () {
+        var row = body.querySelector('[data-mid="' + b.dataset.msave + '"]'); var x = {};
+        row.querySelectorAll('[data-f]').forEach(function (i) { if (!i.disabled) x[i.dataset.f] = i.type === 'number' ? (i.value === '' ? null : Number(i.value)) : i.value; });
+        try { await api('PUT', '/household/' + b.dataset.msave, x); toast('Saved'); show('targets'); } catch (e) { fail(e); }
+      };
+    });
+    body.querySelectorAll('[data-mdel]').forEach(function (b) { b.onclick = async function () { if (!confirm('Take them off the meal plan?')) return; try { await api('DELETE', '/household/' + b.dataset.mdel); show('targets'); } catch (e) { fail(e); } }; });
+    document.getElementById('famAdd').onclick = async function () { var n = document.getElementById('famNew').value.trim(); if (!n) return; try { await api('POST', '/household', { name: n }); show('targets'); } catch (e) { fail(e); } };
     document.getElementById('tgReview').onclick = async function () {
       try { var j = await api('POST', '/coach', { task: 'review' }); waitJob(j.job, 'The nutritionist is reviewing the last two weeks…', function () { show('targets'); }); } catch (e) { fail(e); }
     };
