@@ -76,6 +76,7 @@ button,input,select,textarea{font-family:var(--sans)}
   padding:9px 16px;border-radius:6px;font-size:13px;cursor:pointer;font-family:var(--sans)}
 .trk-btn.primary{background:var(--amber-bg);border-color:var(--amber-dim);color:var(--amber)}
 .trk-err{font-size:12px;color:var(--red);margin-top:4px;display:none}
+.trk-loaderr{margin:0 0 12px;padding:10px 12px;border:1px solid var(--red);border-radius:6px;background:rgba(194,90,67,.1);font-size:13px;line-height:1.5}
 .trk-log{max-height:280px;overflow-y:auto;overflow-x:auto;border:1px solid var(--line);border-radius:8px}
 .trk-log table{width:100%;border-collapse:collapse;font-size:12px}
 .trk-log th{text-align:left;font-size:10px;font-family:var(--display);color:var(--ink3);
@@ -739,6 +740,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     <div class="trk-body">
 
     <div class="trk-pane on" data-pane="dash">
+      <div class="trk-err trk-loaderr" id="loadErr"></div>
       <div class="trk-phase" id="phaseBar"></div>
       <div class="trk-grid" id="statGrid"></div>
       <div class="trk-sec" id="physiqueSec" style="display:none">
@@ -770,6 +772,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
           <button class="trk-btn" id="measureLogBtn" type="button">Log this measurement</button>
         </div>
         <div class="trk-chart-wrap"><canvas id="measureChart"></canvas></div>
+        <p class="trk-note" id="measureNote"></p>
       </div>
       <div class="trk-sec d-load">
         <h2>Weekly training load</h2>
@@ -1180,9 +1183,19 @@ a.trk-btn{text-decoration:none;display:inline-block}
     if(res.status===401){ location.href='/login?next='+encodeURIComponent(location.pathname+location.search); throw new Error('Signed out'); }
     if(res.status===204) return null;
     var data = await res.json().catch(function(){ return null; });
-    if(!res.ok){ throw new Error((data&&data.error)||('HTTP '+res.status)); }
+    if(!res.ok){ var err=new Error((data&&data.error)||('HTTP '+res.status)); err.path=path; throw err; }
     return data;
   }
+
+  // Nov 8 (Jake: "It's not showing data on the website"): a failed load used to be a toast for under two seconds and then a
+  // blank page, with no way to tell what failed. Now the dashboard says what went wrong, and stays saying it.
+  function showLoadError(where, e){
+    var el=document.getElementById('loadErr');
+    var line=where+': '+((e&&e.message)||String(e))+(e&&e.path? ' ('+e.path+')':'');
+    el.textContent=(el.textContent? el.textContent+' · ':'Something didn\'t load. ')+line;
+    el.style.display='block';
+  }
+  window.addEventListener('error', function(ev){ if(ev && ev.message) showLoadError('Page error', { message: ev.message }); });
 
   // ---- tabs ----
   document.getElementById('pageDate').textContent = new Date().toLocaleDateString('en-CA', { weekday:'long', month:'long', day:'numeric' });
@@ -1605,8 +1618,12 @@ a.trk-btn{text-decoration:none;display:inline-block}
   }
 
   function render(){
-    renderPhaseBar(); renderStats(); renderWeeklyLoad(); renderCharts(); renderMeasureChart(); renderTables(); renderLiftNames(); renderStrengthProfile(); renderPercentiles();
-    growMovementDatalists(); renderMovementProfile(); renderLiftHistoryPreview(); renderGymHistoryPreview(); renderPhysique();
+    // Each section on its own (Nov 8): one that fails says so at the top of the dashboard instead of blanking everything after it.
+    document.getElementById('loadErr').textContent=''; document.getElementById('loadErr').style.display='none';
+    [renderPhaseBar, renderStats, renderWeeklyLoad, renderCharts, renderMeasureChart, renderTables, renderLiftNames, renderStrengthProfile, renderPercentiles,
+     growMovementDatalists, renderMovementProfile, renderLiftHistoryPreview, renderGymHistoryPreview, renderPhysique].forEach(function(fn){
+      try{ fn(); }catch(e){ showLoadError(fn.name||'a section', e); }
+    });
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
     document.getElementById('wgStrength').value = cache.profile.weekly_strength_sessions_goal;
     document.getElementById('wgConditioning').value = cache.profile.weekly_conditioning_sessions_goal;
@@ -2460,13 +2477,28 @@ a.trk-btn{text-decoration:none;display:inline-block}
     renderMovementProfile();
   });
 
-  function renderMeasureChart(){
-    var ctx3=document.getElementById('measureChart').getContext('2d');
-    var field = document.getElementById('measureChartFilter').value;
-    var rows = cache.measurements.filter(function(m){
+  var measureChartPicked=false;
+  function measureRows(field){
+    return cache.measurements.filter(function(m){
       if(field==='shoulder_waist_ratio') return m.shoulder_circ!=null && m.waist!=null;
       return m[field]!=null;
     });
+  }
+  function renderMeasureChart(){
+    var ctx3=document.getElementById('measureChart').getContext('2d');
+    var sel=document.getElementById('measureChartFilter');
+    // Nov 8: the chart opened on "Shoulders (around)", never logged, so it drew nothing. Start on the first measurement he has.
+    if(!measureChartPicked && !measureRows(sel.value).length){
+      var first=Array.prototype.find.call(sel.options, function(o){ return measureRows(o.value).length>0; });
+      if(first) sel.value=first.value;
+    }
+    measureChartPicked=true;
+    var field = sel.value;
+    var rows = measureRows(field);
+    var note=document.getElementById('measureNote');
+    var label=sel.options[sel.selectedIndex].textContent;
+    note.textContent = rows.length? (rows.length===1? 'One '+label.toLowerCase()+' reading so far; a second shows the trend.':'') : 'No '+label.toLowerCase()+' logged yet. Log this measurement to start the trend.';
+    document.getElementById('measureChart').parentElement.style.display = rows.length? '':'none';
     var data = field==='shoulder_waist_ratio'
       ? rows.map(function(m){ return Math.round((Number(m.shoulder_circ)/Number(m.waist))*100)/100; })
       : rows.map(function(m){ return Number(m[field]); });
@@ -3321,7 +3353,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
   });
 
 
-  refresh().catch(function(e){ toast('Could not load: '+e.message); });
+  refresh().catch(function(e){ showLoadError('Loading', e); toast('Could not load: '+e.message); });
 })();
 </script>
 <script src="/js/coachChat.js"></script>
