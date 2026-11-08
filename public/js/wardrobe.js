@@ -18,16 +18,18 @@
   function fail(e) { toast(e.message || String(e)); }
   function opts(list, sel) { return list.map(function (v) { return '<option' + (v === sel ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join(''); }
 
-  var VIEWS = [['today', 'Today'], ['items', 'Wardrobe'], ['outfits', 'Outfits'], ['wishlist', 'Wishlist'], ['stylist', 'Stylist']];
+  var VIEWS = [['today', 'Today'], ['items', 'Wardrobe'], ['outfits', 'Outfits'], ['wishlist', 'Wishlist'], ['sizes', 'Measurements'], ['stylist', 'Stylist']];
   pane.innerHTML = '<div class="nu-views">' + VIEWS.map(function (v) { return '<button class="wk-chipbtn" data-wv="' + v[0] + '">' + v[1] + '</button>'; }).join('') + '</div><div id="wdBody"></div>';
-  var body = document.getElementById('wdBody');
+  var host = document.getElementById('wdBody'), body = host;
   pane.querySelectorAll('[data-wv]').forEach(function (b) { b.onclick = function () { show(b.dataset.wv); }; });
   document.querySelectorAll('.trk-tab[data-tab="wardrobe"]').forEach(function (t) { t.addEventListener('click', function () { show(st.view); }); });
   function show(v) {
     st.view = v;
     pane.querySelectorAll('[data-wv]').forEach(function (b) { b.classList.toggle('on', b.dataset.wv === v); });
+    // A fresh element per view (Nov 7): a slow view (Today waits on the forecast) can't paint over the one opened after it.
+    st.el = document.createElement('div'); host.replaceChildren(st.el); body = st.el;
     if (v !== 'stylist') body.innerHTML = '<p class="trk-note">Loading…</p>';
-    ({ today: today, items: items, outfits: outfits, wishlist: wishlist, stylist: stylist })[v]().catch(function (e) { body.innerHTML = '<p class="trk-err" style="display:block">' + esc(e.message) + '</p>'; });
+    ({ today: today, items: items, outfits: outfits, wishlist: wishlist, sizes: sizes, stylist: stylist })[v]().catch(function (e) { body.innerHTML = '<p class="trk-err" style="display:block">' + esc(e.message) + '</p>'; });
   }
   async function load(force) { if (!st.data || force) st.data = await api('GET', '/wardrobe'); return st.data; }
   function byId(id) { return (st.data.items || []).find(function (i) { return i.id === id; }); }
@@ -46,6 +48,7 @@
   }
   var ROLE = { top: 'Top', layer: 'Layer', bottom: 'Bottom', outer: 'Outer', shoes: 'Shoes', accessory: 'Accessory', belt: 'Belt' };
   async function today() {
+    var body = st.el;
     await load();
     var w = await weather();
     var qs = '?date=' + regina() + '&occasion=' + st.occasion + (w ? ['high_c', 'low_c', 'feels_low_c', 'feels_high_c', 'precip_mm', 'precip_chance', 'snow_cm', 'wind_kmh'].map(function (k) { return w[k] == null ? '' : '&' + k + '=' + w[k]; }).join('') : '');
@@ -77,6 +80,7 @@
   var COLS = [['id', 'ID'], ['category', 'Category'], ['type', 'Type'], ['brand', 'Brand'], ['colour', 'Colour'], ['size', 'Size'], ['season', 'Season'], ['condition', 'Condition'], ['style', 'Style'], ['warmth', 'Warmth'], ['status', 'Status'], ['notes', 'Notes']];
   function isGap(i) { return !i.brand || i.brand === 'Unknown' || !i.season || i.season === 'Unknown' || !i.style; }
   async function items(force) {
+    var body = st.el;
     var d = await load(force); var o = d.options; var s = d.stats;
     var list = d.items.filter(function (i) { return st.filter === 'all' ? i.status !== 'Wishlist' : i.status === st.filter; });
     if (st.query) { var q = st.query.toLowerCase(); list = list.filter(function (i) { return COLS.some(function (c) { return String(i[c[0]] == null ? '' : i[c[0]]).toLowerCase().indexOf(q) >= 0; }); }); }
@@ -125,8 +129,35 @@
       '<input name="notes" value="' + esc(i.notes) + '" placeholder="Notes" style="flex:2 1 200px"><button class="trk-btn primary" type="submit">Save</button><button class="trk-btn cancel" type="button">Cancel</button></form></td></tr>';
   }
 
+  // ---- Measurements (Nov 7: "clothing measurements should be shown in wardrobe"): the latest of each tape measurement
+  // clothes are sized by, when it was taken and how; logging is on the Log tab (SelfHubLog, index.html). ----
+  var SIZE_ORDER = ['height', 'neck', 'bust', 'shoulder', 'sleeve', 'arm_length', 'length', 'waist', 'seat_hips', 'inseam'];
+  async function sizes() {
+    var body = st.el;
+    var rows = await api('GET', '/measurements');
+    var prof = await api('GET', '/profile');
+    var M = (window.SelfHubLog && window.SelfHubLog.MEASURES) || {};
+    var latest = function (f) {
+      if (f === 'height') return prof && prof.height_in != null ? { v: prof.height_in + '"', d: null } : null;
+      for (var i = rows.length - 1; i >= 0; i--) {
+        var x = rows[i];
+        if (f === 'inseam' && (x.inseam_low != null || x.inseam_high != null)) return { v: (x.inseam_low != null ? x.inseam_low : '?') + '–' + (x.inseam_high != null ? x.inseam_high : '?') + '"', d: x.entry_date };
+        if (x[f] != null) return { v: x[f] + '"', d: x.entry_date };
+      }
+      return null;
+    };
+    var fmt = function (d) { return d ? new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''; };
+    body.innerHTML = '<div class="trk-sec"><h2>Your measurements</h2><p class="trk-note" style="margin-bottom:10px">What clothes are sized by, latest of each. Tap one to log a new measurement; tape measurements for the physique (shoulders around, arm, thigh, calf) are on the Dashboard.</p>' +
+      SIZE_ORDER.map(function (f) {
+        var m = M[f] || { label: f, how: '' }, l = latest(f);
+        return '<div class="nu-line wd-size" data-size="' + f + '" title="' + esc(m.how) + '"><span><b>' + esc(m.label) + '</b> <small>' + esc(m.how) + '</small></span><span>' + (l ? '<b>' + esc(l.v) + '</b> <small>' + esc(fmt(l.d)) + '</small>' : '<small>not measured · log it</small>') + '</span></div>';
+      }).join('') + '</div>';
+    body.querySelectorAll('[data-size]').forEach(function (el) { el.style.cursor = 'pointer'; el.onclick = function () { if (window.SelfHubLog) window.SelfHubLog.open('m:' + el.dataset.size); }; });
+  }
+
   // ---- Outfits ----
   async function outfits() {
+    var body = st.el;
     await load();
     var d = await api('GET', '/wardrobe/outfits');
     body.innerHTML = (d.outfits.length ? d.outfits.map(function (o) {
@@ -141,6 +172,7 @@
 
   // ---- Wishlist: what to buy (the stylist adds to it) ----
   async function wishlist() {
+    var body = st.el;
     var d = await load(true);
     var list = d.items.filter(function (i) { return i.status === 'Wishlist'; });
     var total = list.reduce(function (a, i) { return a + (i.price_cad || 0); }, 0);
@@ -159,6 +191,7 @@
 
   // ---- Stylist: the coach chat ----
   async function stylist() {
+    var body = st.el;
     body.innerHTML = '<div id="wdChat"></div>';
     if (!window.SelfHubCoach) return;
     window.SelfHubCoach.mount(document.getElementById('wdChat'), 'stylist');

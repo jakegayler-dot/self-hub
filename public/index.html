@@ -59,6 +59,14 @@ button,input,select,textarea{font-family:var(--sans)}
 .trk-phase-seg .pt{font-size:12px;color:var(--ink2);margin-top:2px}
 .trk-phase-seg.active .pt{color:var(--ink)}
 .trk-row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.lg-pick input{width:100%;padding:10px 12px;font-size:15px;margin-bottom:10px;background:var(--panel2);border:1px solid var(--line2);color:var(--ink);border-radius:6px;font-family:inherit}
+.lg-pick input:focus{outline:none;border-color:var(--amber-dim)}
+.lg-grp{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.lg-grp>span{flex:0 0 100%;font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em}
+.lg-grp .wk-chipbtn{font-size:13px;padding:7px 12px}
+.lg-grp .wk-chipbtn.on{color:var(--amber);border-color:var(--amber-dim);background:var(--amber-bg)}
+.trk-field[hidden],.trk-sec[hidden]{display:none}
+.phy-row[data-logk]{cursor:pointer}
 .trk-field{flex:1;min-width:110px}
 .trk-field label{display:block;font-size:11px;color:var(--ink2);margin-bottom:5px}
 .trk-field textarea{resize:vertical;line-height:1.4}
@@ -712,7 +720,6 @@ a.trk-btn{text-decoration:none;display:inline-block}
     <button class="trk-tab" data-tab="train"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 9.5V8a3.5 3.5 0 0 1 7 0v1.5"/><path d="M6.5 15a5.5 5.5 0 1 0 11 0 5.5 5.5 0 0 0-11 0Z"/><path d="M8.5 9.5h7"/></svg><span>Train</span></button>
     <button class="trk-tab nav-more" data-tab="log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19.5 6 15 16.5 4.5l3 3L9 18Z"/><path d="M14.5 6.5l3 3M4 21h16"/></svg><span>Log</span></button>
     <button class="trk-tab nav-more" data-tab="history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11M6.5 20.5h11"/><path d="M8 3.5c0 5 8 5.5 8 8.5s-8 3.5-8 8.5M16 3.5c0 5-8 5.5-8 8.5s8 3.5 8 8.5"/></svg><span>History</span></button>
-    <button class="trk-tab nav-more" data-tab="health"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12.5h4l2-5 3.5 10 2.5-6 1.5 1h4.5"/></svg><span>Health</span></button>
     <button class="trk-tab" data-tab="nutrition"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.5h17a8.5 7.5 0 0 1-17 0Z"/><path d="M9 8c-.6-1 .6-1.8 0-3M13 8c-.6-1 .6-1.8 0-3"/></svg><span>Nutrition</span></button>
     <button class="trk-tab" data-tab="wardrobe"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6.5a2 2 0 1 1 2 2v2"/><path d="M12 10.5 21 17H3Z"/></svg><span>Wardrobe</span></button>
     <button class="trk-tab nav-more" data-tab="role"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 9.5h17v10h-17Z"/><path d="M3.5 9.5 4.6 5l16 3.6-.1.9"/><path d="M8.2 5.9 9.9 9.5M13 7l1.7 2.5"/></svg><span>Andrew</span></button>
@@ -735,6 +742,30 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <p class="trk-note" id="physiqueWords"></p>
         <div id="physiqueRows"></div>
         <p class="trk-note" id="physiqueGapNote"></p>
+      </div>
+      <div class="trk-sec">
+        <h2>Bodyweight trend</h2>
+        <div class="trk-chart-wrap"><canvas id="bwChart"></canvas></div>
+        <p class="trk-note" id="bwNote"></p>
+      </div>
+      <div class="trk-sec">
+        <h2>Measurement trend</h2>
+        <div class="trk-row" style="align-items:flex-end">
+          <div class="trk-field" style="margin:0"><label>Show</label>
+            <select id="measureChartFilter">
+              <option value="shoulder_circ">Shoulders (around)</option>
+              <option value="bust">Chest</option>
+              <option value="waist">Waist</option>
+              <option value="shoulder_waist_ratio">Shoulders : waist</option>
+              <option value="upper_arm">Arm (flexed)</option>
+              <option value="neck">Neck</option>
+              <option value="thigh">Thigh</option>
+              <option value="calf">Calf</option>
+            </select>
+          </div>
+          <button class="trk-btn" id="measureLogBtn" type="button">Log this measurement</button>
+        </div>
+        <div class="trk-chart-wrap"><canvas id="measureChart"></canvas></div>
       </div>
       <div class="trk-sec d-load">
         <h2>Weekly training load</h2>
@@ -872,7 +903,36 @@ a.trk-btn{text-decoration:none;display:inline-block}
     </div>
 
     <div class="trk-pane" data-pane="log">
-      <div class="trk-sec">
+      <!-- Nov 7: one thing at a time. Pick (or type) what you're logging and only that form shows. -->
+      <div class="trk-sec lg-pick">
+        <input type="search" id="lgFind" placeholder="What are you logging? e.g. squat, waist, row, bodyweight, shoulders" autocomplete="off">
+        <div id="lgChips"></div>
+      </div>
+      <div class="trk-sec" data-log="body">
+        <h2>Bodyweight / body fat</h2>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="bwDate"></div>
+          <div class="trk-field"><label>Bodyweight (lb)</label><input type="number" step="0.1" id="bwVal" placeholder="164.2"></div>
+          <div class="trk-field"><label>Body fat % (optional)</label><input type="number" step="0.1" id="bfVal" placeholder="11.5"></div>
+        </div>
+        <p class="trk-note" style="margin-bottom:10px">Morning, after the bathroom, before food. Body fat by the same method each time.</p>
+        <button class="trk-btn primary" id="bwSubmit">Log entry</button>
+        <div class="trk-err" id="bwErr">Enter a date and a bodyweight.</div>
+      </div>
+      <div class="trk-sec" data-log="measure">
+        <h2 id="msTitle">Measurement</h2>
+        <p class="trk-note" id="msHow" style="margin-bottom:6px"></p>
+        <p class="trk-note" id="msLast" style="margin-bottom:10px"></p>
+        <div class="trk-row">
+          <div class="trk-field"><label>Date</label><input type="date" id="msDate"></div>
+          <div class="trk-field" id="msOne"><label id="msLabel">Inches</label><input type="number" step="0.1" id="msVal"></div>
+          <div class="trk-field" id="msLowF"><label>Inseam, short end (in)</label><input type="number" step="0.1" id="msLow" placeholder="29"></div>
+          <div class="trk-field" id="msHighF"><label>Inseam, long end (in)</label><input type="number" step="0.1" id="msHigh" placeholder="30"></div>
+        </div>
+        <button class="trk-btn primary" id="msSubmit">Log it</button>
+        <div class="trk-err" id="msErr">Enter a date and the measurement.</div>
+      </div>
+      <div class="trk-sec" data-log="lift">
         <h2>Lift</h2>
         <div class="trk-row">
           <div class="trk-field"><label>Date</label><input type="date" id="liftDate"></div>
@@ -887,7 +947,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <button class="trk-btn primary" id="liftSubmit" style="margin-left:8px">Log set(s)</button>
         <div class="trk-err" id="liftErr">Enter a date, lift name, and load/reps for at least one set.</div>
       </div>
-      <div class="trk-sec">
+      <div class="trk-sec" data-log="benchmark">
         <h2>Benchmark</h2>
         <div class="trk-row">
           <div class="trk-field"><label>Date</label><input type="date" id="bmDate"></div>
@@ -907,7 +967,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <button class="trk-btn primary" id="bmSubmit">Log entry</button>
         <div class="trk-err" id="bmErr">Enter a date and a result.</div>
       </div>
-      <div class="trk-sec">
+      <div class="trk-sec" data-log="open">
         <h2>CrossFit Open</h2>
         <p class="trk-note" style="margin-bottom:10px">Copy your rank and the number of athletes from the official leaderboard (your division, worldwide). That gives an exact percentile. Log "overall" for your final standing.</p>
         <div class="trk-row">
@@ -923,7 +983,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <button class="trk-btn primary" id="opSubmit">Log Open result</button>
         <div class="trk-err" id="opErr">Enter year, workout, division, rank and total (rank ≤ total).</div>
       </div>
-      <div class="trk-sec">
+      <div class="trk-sec" data-log="conditioning">
         <h2>Conditioning</h2>
         <p class="trk-note" style="margin-bottom:10px">Row, run, bike, or anything tracked by distance/duration instead of load. Fill in distance, duration, or both.</p>
         <div class="trk-row">
@@ -950,7 +1010,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <button class="trk-btn primary" id="cdSubmit">Log entry</button>
         <div class="trk-err" id="cdErr">Enter a date, movement, and a distance or duration.</div>
       </div>
-      <div class="trk-sec">
+      <div class="trk-sec" data-log="gymnastics">
         <h2>Gymnastics / calisthenics</h2>
         <p class="trk-note" style="margin-bottom:10px">Bodyweight-only movements — no load field. Once you add external load to something like pull-ups, log it under Lift instead.</p>
         <div class="trk-row">
@@ -974,7 +1034,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         </div>
         <div class="trk-err" id="gymErr">Enter a date, movement, and reps for at least one set.</div>
       </div>
-      <div class="trk-sec">
+      <div class="trk-sec" data-log="phase">
         <h2>Phase</h2>
         <div class="trk-row">
           <div class="trk-field">
@@ -990,7 +1050,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         </div>
         <button class="trk-btn" id="phaseSubmit">Set phase</button>
       </div>
-      <div class="trk-sec">
+      <div class="trk-sec" data-log="goals">
         <h2>Weekly training goals</h2>
         <p class="trk-note" style="margin-bottom:10px">Minimum sessions/week floor, shown alongside the ACWR rating on the dashboard.</p>
         <div class="trk-row">
@@ -1031,6 +1091,14 @@ a.trk-btn{text-decoration:none;display:inline-block}
           <option>Wide Grip Bench Press + DB Single Arm Bench Press</option>
         </datalist>
       </div>
+      <div class="trk-sec"><h2>Bodyweight log</h2>
+        <div class="trk-log"><table id="bwTable"><thead><tr><th>Date</th><th>Weight</th><th>BF%</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="trk-sec"><h2>Measurements log</h2>
+        <div class="trk-log"><table id="mTable"><thead><tr>
+          <th>Date</th><th>Shoulders</th><th>Chest</th><th>Waist</th><th>Arm</th><th>Neck</th><th>Thigh</th><th>Calf</th><th>Shoulder width</th><th>Sleeve</th><th>Arm length</th><th>Length</th><th>Seat/hips</th><th>Inseam</th><th></th>
+        </tr></thead><tbody></tbody></table></div>
+      </div>
       <div class="trk-sec"><h2>Benchmark log</h2>
         <div class="trk-log"><table id="bmTable"><thead><tr><th>Date</th><th>Benchmark</th><th>Result</th><th></th></tr></thead><tbody></tbody></table></div>
       </div>
@@ -1057,91 +1125,6 @@ a.trk-btn{text-decoration:none;display:inline-block}
         <div id="mvCard" class="trk-grid"></div>
         <div class="trk-chart-wrap" style="margin-top:12px"><canvas id="mvChart"></canvas></div>
         <div class="trk-log" style="margin-top:12px"><table id="mvTable"><thead><tr><th>Date</th><th>Load&times;Reps</th><th>RPE</th><th>e1RM</th></tr></thead><tbody></tbody></table></div>
-      </div>
-    </div>
-
-    <div class="trk-pane" data-pane="health">
-      <div class="trk-sec">
-        <h2>Body profile</h2>
-        <p class="trk-note" style="margin-bottom:10px">Height is used to scale the Physique diagram on the dashboard to your actual proportions — it's the one measurement that isn't in the Clothing measurements section below.</p>
-        <div class="trk-row">
-          <div class="trk-field"><label>Height (in)</label><input type="number" step="0.1" id="heightVal" placeholder="70"></div>
-        </div>
-        <button class="trk-btn" id="heightSubmit">Save height</button>
-      </div>
-      <div class="trk-sec">
-        <h2>Bodyweight / body fat</h2>
-        <div class="trk-row">
-          <div class="trk-field"><label>Date</label><input type="date" id="bwDate"></div>
-          <div class="trk-field"><label>Bodyweight (lb)</label><input type="number" step="0.1" id="bwVal" placeholder="164.2"></div>
-          <div class="trk-field"><label>Body fat % (optional)</label><input type="number" step="0.1" id="bfVal" placeholder="11.5"></div>
-        </div>
-        <button class="trk-btn primary" id="bwSubmit">Log entry</button>
-        <div class="trk-err" id="bwErr">Enter a date and a bodyweight.</div>
-      </div>
-      <div class="trk-sec">
-        <h2>Bodyweight trend</h2>
-        <div class="trk-chart-wrap"><canvas id="bwChart"></canvas></div>
-        <p class="trk-note" id="bwNote"></p>
-      </div>
-      <div class="trk-sec"><h2>Bodyweight log</h2>
-        <div class="trk-log"><table id="bwTable"><thead><tr><th>Date</th><th>Weight</th><th>BF%</th><th></th></tr></thead><tbody></tbody></table></div>
-      </div>
-      <div class="trk-sec">
-        <h2>Clothing measurements</h2>
-        <p class="trk-note" style="margin-bottom:10px">All in inches. Leave any field blank to skip it — only the date and one measurement are required.</p>
-        <div class="trk-row">
-          <div class="trk-field"><label>Date</label><input type="date" id="mDate"></div>
-          <div class="trk-field"><label>Shoulders around (widest)</label><input type="number" step="0.1" id="mShoulderCirc" placeholder="46"></div>
-          <div class="trk-field"><label>Chest (bust)</label><input type="number" step="0.1" id="mBust" placeholder="37"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Arm length</label><input type="number" step="0.1" id="mArmLength" placeholder="22"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Shoulder (back width)</label><input type="number" step="0.1" id="mShoulder" placeholder="18"></div>
-          <div class="trk-field"><label>Length</label><input type="number" step="0.1" id="mLength" placeholder="23"></div>
-          <div class="trk-field"><label>Waist</label><input type="number" step="0.1" id="mWaist" placeholder="29.5"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Seat/hips</label><input type="number" step="0.1" id="mSeatHips" placeholder="34"></div>
-          <div class="trk-field"><label>Neck</label><input type="number" step="0.1" id="mNeck" placeholder="13.5"></div>
-          <div class="trk-field"><label>Sleeve</label><input type="number" step="0.1" id="mSleeve" placeholder="32"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Inseam low</label><input type="number" step="0.1" id="mInseamLow" placeholder="29"></div>
-          <div class="trk-field"><label>Inseam high</label><input type="number" step="0.1" id="mInseamHigh" placeholder="30"></div>
-        </div>
-        <div class="trk-row">
-          <div class="trk-field"><label>Thigh (mid, relaxed)</label><input type="number" step="0.1" id="mThigh" placeholder="22"></div>
-          <div class="trk-field"><label>Calf (widest)</label><input type="number" step="0.1" id="mCalf" placeholder="15"></div>
-          <div class="trk-field"><label>Upper arm (flexed)</label><input type="number" step="0.1" id="mUpperArm" placeholder="15"></div>
-        </div>
-        <button class="trk-btn primary" id="mSubmit">Log entry</button>
-        <div class="trk-err" id="mErr">Enter a date and at least one measurement.</div>
-      </div>
-      <div class="trk-sec">
-        <h2>Measurement trend</h2>
-        <div class="trk-field" style="margin-bottom:8px"><label>Show</label>
-          <select id="measureChartFilter">
-            <option value="shoulder_circ">Shoulders around</option>
-            <option value="shoulder">Shoulder (back width)</option>
-            <option value="waist">Waist</option>
-            <option value="bust">Bust</option>
-            <option value="arm_length">Arm length</option>
-            <option value="shoulder_waist_ratio">Shoulder:waist ratio</option>
-            <option value="seat_hips">Seat/hips</option>
-            <option value="neck">Neck</option>
-            <option value="sleeve">Sleeve</option>
-            <option value="length">Length</option>
-          </select>
-        </div>
-        <div class="trk-chart-wrap"><canvas id="measureChart"></canvas></div>
-      </div>
-      <div class="trk-sec"><h2>Measurements log</h2>
-        <div class="trk-log"><table id="mTable"><thead><tr>
-          <th>Date</th><th>Arm</th><th>Bust</th><th>Shoulder</th><th>Length</th><th>Waist</th><th>Seat/hips</th><th>Neck</th><th>Sleeve</th><th>Inseam</th><th></th>
-        </tr></thead><tbody></tbody></table></div>
       </div>
     </div>
 
@@ -1224,6 +1207,8 @@ a.trk-btn{text-decoration:none;display:inline-block}
   });
   function openFromHash(){
     var p = (location.hash || '').replace(/^#\/?/, '').split('/');
+    if (p[0] === 'health') p = ['log', 'body']; // the Health tab's forms moved to Log (Nov 7)
+    if (p[0] === 'log' && p[1]) { window.SelfHubLog.open(p[1]); return; }
     var btn = p[0] && document.querySelector('.trk-tab[data-tab="' + p[0] + '"]');
     if (!btn) return;
     btn.click();
@@ -1235,7 +1220,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
   window.addEventListener('hashchange', openFromHash);
   window.addEventListener('load', openFromHash);
 
-  ['bwDate','liftDate','bmDate','mDate','cdDate','gymDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
+  ['bwDate','liftDate','bmDate','msDate','cdDate','gymDate'].forEach(function(id){ document.getElementById(id).value = todayISO(); });
 
   // ---- log handlers ----
   document.getElementById('bwSubmit').addEventListener('click', async function(){
@@ -1412,24 +1397,111 @@ a.trk-btn{text-decoration:none;display:inline-block}
     }catch(e){ toast('Could not save: '+e.message); }
   });
 
-  document.getElementById('mSubmit').addEventListener('click', async function(){
-    var d=document.getElementById('mDate').value;
-    var fieldIds={shoulder_circ:'mShoulderCirc',arm_length:'mArmLength',bust:'mBust',shoulder:'mShoulder',length:'mLength',waist:'mWaist',
-      seat_hips:'mSeatHips',neck:'mNeck',sleeve:'mSleeve',inseam_low:'mInseamLow',inseam_high:'mInseamHigh',thigh:'mThigh',calf:'mCalf',upper_arm:'mUpperArm'};
-    var body={entry_date:d}; var any=false;
-    Object.keys(fieldIds).forEach(function(f){
-      var v=document.getElementById(fieldIds[f]).value;
-      if(v!==''){ body[f]=parseFloat(v); any=true; }
+  // ---- Log: one thing at a time (Nov 7: "have an easy way to find what it is I'm logging instead of scrolling through
+  // a bunch of different entry fields") ----
+  // Every tape measurement, where it's shown, and how to take it. Physique ones show on the Dashboard against the
+  // target; clothing ones in Wardrobe → Measurements. Chest, waist and neck count for both.
+  var MEASURES = {
+    shoulder_circ: { label:'Shoulders (around)', group:'physique', how:'All the way round both shoulders at the widest point, arms relaxed at your sides. This is the shoulders in the shoulders : waist ratio.', words:'shoulder delts width v-taper' },
+    bust: { label:'Chest', group:'physique', clothing:true, how:'Round the chest at the nipple line, under the arms, after breathing out.', words:'bust pecs' },
+    waist: { label:'Waist', group:'physique', clothing:true, how:'Round the navel, relaxed, not sucked in.', words:'belly stomach' },
+    upper_arm: { label:'Arm (flexed)', group:'physique', how:'Round the upper arm at the peak of the bicep, flexed.', words:'bicep biceps arms guns' },
+    neck: { label:'Neck', group:'physique', clothing:true, how:'Round the neck just below the Adam\'s apple (your collar size).', words:'collar' },
+    thigh: { label:'Thigh', group:'physique', how:'Round the middle of the thigh, standing relaxed.', words:'quad legs' },
+    calf: { label:'Calf', group:'physique', how:'Round the widest point of the calf, standing.', words:'calves legs' },
+    shoulder: { label:'Shoulder width (back)', group:'clothing', how:'Across the back from one shoulder point to the other, where a jacket\'s shoulder seam sits. Not the same as Shoulders (around).', words:'shoulder jacket seam' },
+    sleeve: { label:'Sleeve', group:'clothing', how:'From the centre back of the neck, over the shoulder, to the wrist bone with the arm slightly bent (shirt sleeve).', words:'shirt' },
+    arm_length: { label:'Arm length', group:'clothing', how:'From the shoulder point to the wrist bone, arm straight.', words:'' },
+    length: { label:'Shirt length', group:'clothing', how:'From the base of the collar at the back down to where you want the hem.', words:'torso back length' },
+    seat_hips: { label:'Seat / hips', group:'clothing', how:'Round the fullest part of the seat, feet together.', words:'hips glutes pants' },
+    inseam: { label:'Inseam', group:'clothing', how:'From the crotch to the floor (or to where the hem should fall). Give a range if you wear two lengths.', words:'pants leg length jeans' },
+    height: { label:'Height', group:'clothing', how:'Standing tall against a wall, no shoes. Scales the Physique figure.', words:'tall' }
+  };
+  var LOG_FORMS = [
+    { k:'lift', label:'Lift', group:'training', words:'weights barbell squat bench deadlift press clean snatch jerk row curl' },
+    { k:'gymnastics', label:'Gymnastics', group:'training', words:'pull-up pullup dip toes muscle-up hspu handstand push-up' },
+    { k:'conditioning', label:'Conditioning', group:'training', words:'row run bike ski swim ruck erg cardio' },
+    { k:'benchmark', label:'Benchmark WOD', group:'training', words:'wod fran grace murph metcon' },
+    { k:'open', label:'CrossFit Open', group:'training', words:'open rank leaderboard' },
+    { k:'body', label:'Bodyweight / body fat', group:'body', words:'weight scale bf fat' }
+  ].concat(Object.keys(MEASURES).map(function(f){ var m=MEASURES[f]; return { k:'m:'+f, label:m.label, group:m.group, words:m.words+' measure tape '+f.replace(/_/g,' ') }; }))
+   .concat([{ k:'phase', label:'Phase', group:'settings', words:'foundation shape sharpen' }, { k:'goals', label:'Weekly goals', group:'settings', words:'sessions target' }]);
+  var LOG_GROUPS = [['training','Training'],['body','Body'],['physique','Physique tape (Dashboard)'],['clothing','Clothing (Wardrobe)'],['settings','Settings']];
+  var lgCurrent = null;
+  try{ lgCurrent = localStorage.getItem('selfhub.log') || 'lift'; }catch(e){ lgCurrent = 'lift'; }
+  function renderLogChips(){
+    var q=document.getElementById('lgFind').value.trim().toLowerCase();
+    var match=function(f){ return !q || (f.label+' '+f.words).toLowerCase().indexOf(q)>=0 || q.split(/\s+/).every(function(w){ return (f.label+' '+f.words).toLowerCase().indexOf(w)>=0; }); };
+    var html='';
+    LOG_GROUPS.forEach(function(g){
+      var fs=LOG_FORMS.filter(function(f){ return f.group===g[0] && match(f); });
+      if(!fs.length) return;
+      html+='<div class="lg-grp"><span>'+g[1]+'</span>'+fs.map(function(f){ return '<button type="button" class="wk-chipbtn'+(f.k===lgCurrent?' on':'')+'" data-lg="'+f.k+'">'+esc(f.label)+'</button>'; }).join('')+'</div>';
     });
-    var err=document.getElementById('mErr');
-    if(!d || !any){ err.style.display='block'; return; }
+    document.getElementById('lgChips').innerHTML = html || '<p class="trk-note">Nothing matches "'+esc(q)+'". Lifts and movements go under Lift, Gymnastics or Conditioning.</p>';
+  }
+  function openLog(k){
+    lgCurrent=k; try{ localStorage.setItem('selfhub.log', k); }catch(e){}
+    var sec = k.indexOf('m:')===0 ? 'measure' : k;
+    document.querySelectorAll('.trk-pane[data-pane="log"] [data-log]').forEach(function(el){ el.hidden = el.dataset.log!==sec; });
+    if(sec==='measure') showMeasure(k.slice(2));
+    renderLogChips();
+  }
+  function lastMeasure(f){
+    if(f==='height') return cache.profile && cache.profile.height_in!=null ? { v: cache.profile.height_in, d: null } : null;
+    for(var i=cache.measurements.length-1;i>=0;i--){
+      var x=cache.measurements[i];
+      if(f==='inseam' && (x.inseam_low!=null || x.inseam_high!=null)) return { v:(x.inseam_low??'?')+'–'+(x.inseam_high??'?'), d:x.entry_date };
+      if(x[f]!=null) return { v:x[f], d:x.entry_date };
+    }
+    return null;
+  }
+  function showMeasure(f){
+    var m=MEASURES[f]; if(!m) return;
+    document.getElementById('msTitle').textContent=m.label;
+    document.getElementById('msHow').textContent='How: '+m.how;
+    var l=lastMeasure(f);
+    document.getElementById('msLast').textContent = l ? 'Last: '+l.v+'"'+(l.d?' on '+fmtDate(l.d):'') : 'Not measured yet.';
+    var ins=f==='inseam';
+    document.getElementById('msOne').hidden=ins; document.getElementById('msLowF').hidden=!ins; document.getElementById('msHighF').hidden=!ins;
+    document.getElementById('msDate').parentElement.hidden = f==='height';
+    document.getElementById('msLabel').textContent=m.label+' (in)';
+    document.getElementById('msVal').placeholder = l && !ins ? String(l.v) : '';
+  }
+  document.getElementById('lgFind').addEventListener('input', renderLogChips);
+  document.getElementById('lgFind').addEventListener('keydown', function(ev){
+    if(ev.key!=='Enter') return;
+    var first=document.querySelector('#lgChips [data-lg]'); if(first){ ev.preventDefault(); first.click(); }
+  });
+  document.getElementById('lgChips').addEventListener('click', function(ev){
+    var b=ev.target.closest('[data-lg]'); if(!b) return;
+    openLog(b.dataset.lg);
+    document.getElementById('lgFind').value=''; renderLogChips();
+    var sec=document.querySelector('.trk-pane[data-pane="log"] [data-log]:not([hidden])');
+    var input=sec && sec.querySelector('input[type=number]:not([hidden]),input[type=text]');
+    if(input && !('ontouchstart' in window)) input.focus();
+  });
+  document.getElementById('msSubmit').addEventListener('click', async function(){
+    var f=lgCurrent.slice(2), d=document.getElementById('msDate').value, err=document.getElementById('msErr');
+    var v=parseFloat(document.getElementById('msVal').value), lo=parseFloat(document.getElementById('msLow').value), hi=parseFloat(document.getElementById('msHigh').value);
+    var ok = f==='inseam' ? (d && (lo>0 || hi>0)) : f==='height' ? v>0 : (d && v>0);
+    if(!ok){ err.style.display='block'; return; }
     err.style.display='none';
     try{
-      await api('POST','/measurements', body);
-      Object.values(fieldIds).forEach(function(id){ document.getElementById(id).value=''; });
-      await refresh(); toast('Logged');
+      if(f==='height') await api('PUT','/profile',{height_in:v});
+      else{
+        var body={entry_date:d};
+        if(f==='inseam'){ if(lo>0) body.inseam_low=lo; if(hi>0) body.inseam_high=hi; } else body[f]=v;
+        await api('POST','/measurements', body);
+      }
+      ['msVal','msLow','msHigh'].forEach(function(id){ document.getElementById(id).value=''; });
+      await refresh(); toast(MEASURES[f].label+' logged');
     }catch(e){ toast('Could not save: '+e.message); }
   });
+  // From anywhere (the dashboard, Wardrobe): open the Log tab on one form, e.g. SelfHubLog.open('m:shoulder_circ').
+  window.SelfHubLog = { open: function(k){ document.querySelector('.trk-tab[data-tab="log"]').click(); openLog(k); history.replaceState(null,'','#/log/'+k); }, MEASURES: MEASURES };
+  document.getElementById('measureLogBtn').addEventListener('click', function(){ SelfHubLog.open('m:'+(document.getElementById('measureChartFilter').value==='shoulder_waist_ratio'?'shoulder_circ':document.getElementById('measureChartFilter').value)); });
+  openLog(lgCurrent);
 
   function parseDuration(s){
     s=(s||'').trim(); if(!s) return null;
@@ -1484,14 +1556,6 @@ a.trk-btn{text-decoration:none;display:inline-block}
     }catch(e){ toast('Could not update: '+e.message); }
   });
 
-  document.getElementById('heightSubmit').addEventListener('click', async function(){
-    var h=parseFloat(document.getElementById('heightVal').value);
-    if(isNaN(h) || h<=0){ toast('Enter a valid height in inches'); return; }
-    try{
-      await api('PUT','/profile',{height_in:h});
-      await refresh(); toast('Height saved');
-    }catch(e){ toast('Could not save: '+e.message); }
-  });
 
   async function delEntry(kind, id){
     try{ await api('DELETE','/'+kind+'/'+id); await refresh(); }
@@ -1542,7 +1606,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     document.getElementById('phaseSelect').value = String(cache.profile.phase);
     document.getElementById('wgStrength').value = cache.profile.weekly_strength_sessions_goal;
     document.getElementById('wgConditioning').value = cache.profile.weekly_conditioning_sessions_goal;
-    document.getElementById('heightVal').value = cache.profile.height_in!=null ? cache.profile.height_in : '';
+    if(lgCurrent && lgCurrent.indexOf('m:')===0) showMeasure(lgCurrent.slice(2));
   }
 
   function renderPhaseBar(){
@@ -1625,7 +1689,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
       bb:['Hip thrusts','Romanian Deadlift','Bulgarian split squat','Walking lunges','Cable kickbacks'],
       note:'For a V-taper ratio, hip growth needs to stay behind shoulder growth — train glutes for strength/aesthetics from behind, not as a size target.' },
     skeletal_arm: { label:'Sleeve / arm length', trainable:'No — skeletal', goal:'—', oly:[], bb:[],
-      note:"Bone-length measurement, fixed in adulthood — no exercise changes it. If you want visible arm size tracked, that's bicep/forearm circumference, which isn't a logged field yet — say the word and I'll add it." },
+      note:"Bone-length measurement, fixed in adulthood — no exercise changes it. Visible arm size is the flexed upper-arm measurement (Log → Arm)." },
     skeletal_leg: { label:'Inseam (leg length)', trainable:'No — skeletal', goal:'—', oly:[], bb:[],
       note:'Bone-length measurement, fixed in adulthood — no exercise changes it.' }
   };
@@ -1746,7 +1810,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     var note = document.getElementById('physiqueNote');
     if(prof.usedDefault.length){
       var missing = prof.usedDefault.map(function(k){ return BODY_FIELD_LABELS[k]||k; }).join(', ');
-      note.textContent = 'Proportions from your height and tape measurements; colour from the last 7 days of training; the faint green shell is the target build. Average values stand in for '+missing+' until you log them in Health.';
+      note.textContent = 'Proportions from your height and tape measurements; colour from the last 7 days of training; the faint green shell is the target build. Average values stand in for '+missing+' until you log them (Log → type the measurement).';
     } else {
       note.textContent = 'Proportions from your height and tape measurements; colour from the last 7 days of training; the faint green shell is the target build.';
     }
@@ -1951,16 +2015,17 @@ a.trk-btn{text-decoration:none;display:inline-block}
       var pct=m.progress!=null? Math.round(m.progress*100) : (m.reached?100:0);
       var trend=m.trend_per_30d==null? '' : (m.trend_per_30d>0?'+':'')+m.trend_per_30d+(m.unit==='in'?'"':m.unit==='%'?'%':' '+m.unit)+'/mo';
       var when=m.reached? 'there' : m.current==null? 'measure it' : m.eta? 'at this pace: '+m.eta.slice(0,7) : m.trend_per_30d==null? 'no trend yet' : 'not at this pace';
-      html+='<div class="phy-row'+(m.stale?' stale':'')+'" title="'+m.how+'">'+
+      html+='<div class="phy-row'+(m.stale?' stale':'')+'" title="'+m.how+' (tap to log)" data-logk="'+(k==='weight_lb'||k==='body_fat_pct'?'body':'m:'+k)+'">'+
         '<span class="phy-lbl">'+m.label+'</span>'+
         '<span class="phy-val">'+u(m,m.current)+' <span class="phy-to">→ '+u(m,m.target)+'</span></span>'+
         '<span class="phy-bar"><i style="width:'+pct+'%"'+(m.reached?' class="done"':'')+'></i></span>'+
         '<span class="phy-trend">'+trend+'</span><span class="phy-when">'+when+'</span></div>';
     });
-    document.getElementById('physiqueRows').innerHTML=html;
+    var rows=document.getElementById('physiqueRows'); rows.innerHTML=html;
+    rows.onclick=function(ev){ var row=ev.target.closest('[data-logk]'); if(row) SelfHubLog.open(row.dataset.logk); };
     var due=(ph.measure_due||[]).map(function(k){ return ph.metrics[k].label.toLowerCase(); });
     document.getElementById('physiqueGapNote').textContent=(ph.biggest_gaps.length? 'Biggest gaps: '+ph.biggest_gaps.map(function(g){ return g.label+' '+(g.gap>0?'+':'')+g.gap+'"'; }).join(', ')+'. ':'')+
-      (due.length? 'Due for a measure: '+due.join(', ')+' (every four weeks; hover a row for how).' : '');
+      (due.length? 'Due for a measure: '+due.join(', ')+' (every four weeks; tap a row to log it and see how).' : '');
   }
 
   function renderCharts(){
@@ -2520,7 +2585,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     fillTable('mTable', cache.measurements.slice().reverse(), function(x){
       var inseam = (x.inseam_low!=null || x.inseam_high!=null) ? (x.inseam_low??'?')+'&ndash;'+(x.inseam_high??'?') : '—';
       var v=function(f){ return x[f]!=null? x[f] : '—'; };
-      return [fmtDate(x.entry_date), v('arm_length'), v('bust'), v('shoulder'), v('length'), v('waist'), v('seat_hips'), v('neck'), v('sleeve'), inseam];
+      return [fmtDate(x.entry_date), v('shoulder_circ'), v('bust'), v('waist'), v('upper_arm'), v('neck'), v('thigh'), v('calf'), v('shoulder'), v('sleeve'), v('arm_length'), v('length'), v('seat_hips'), inseam];
     }, 'measurements');
     fillTable('cdTable', cache.conditioning.slice().reverse(), function(x){
       var dist = x.distance_m!=null ? fmtDistance(Number(x.distance_m)) : '—';

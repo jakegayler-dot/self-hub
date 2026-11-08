@@ -366,7 +366,7 @@ const COLLECTIONS = [
   // ---- summaries ----
   {
     name: 'strength_score',
-    description: "Current strength score and level, overall and per movement pattern (weakest first), with each benchmark lift's 2-month best e1RM and bodyweight ratio. Same numbers as the Health tab and the Sentinel tile.",
+    description: "Current strength score and level, overall and per movement pattern (weakest first), with each benchmark lift's 2-month best e1RM and bodyweight ratio. Same numbers as the dashboard and the Sentinel tile.",
     kind: 'summary',
     custom: { pattern: enumFilter('pattern', ['Overall', ...PATTERNS]) },
     fields: ['id', 'pattern', 'score', 'level', 'lifts', 'bodyweight_avg_lb', 'window', 'as_of', 'needs_input'],
@@ -391,7 +391,7 @@ const COLLECTIONS = [
   },
   {
     name: 'strength_trend',
-    description: 'Weekly strength score per movement pattern over time (the Health tab "Pattern trend" chart), newest first. Use for "is my squat getting stronger".',
+    description: 'Weekly strength score per movement pattern over time (the dashboard "Pattern trend" chart), newest first. Use for "is my squat getting stronger".',
     kind: 'log',
     dated: true,
     custom: { pattern: enumFilter('pattern', PATTERNS) },
@@ -536,7 +536,7 @@ const COLLECTIONS = [
   },
   {
     name: 'training_week',
-    description: "This week's training vs plan: strength and conditioning sessions done vs weekly goal, tonnage/minutes vs 4-week average, ACWR load status, lifts done this week, plus the days trained. Same as the Health tab's weekly-load panel.",
+    description: "This week's training vs plan: strength and conditioning sessions done vs weekly goal, tonnage/minutes vs 4-week average, ACWR load status, lifts done this week, plus the days trained. Same as the dashboard's weekly-load panel.",
     kind: 'summary',
     fields: ['id', 'channel', 'week_start', 'week_end', 'sessions_done', 'sessions_goal', 'sessions_remaining', 'tonnage_this_week_lb', 'tonnage_4wk_avg_lb',
       'minutes_this_week', 'minutes_4wk_avg', 'acwr', 'status', 'lifts_this_week', 'days_trained'],
