@@ -674,13 +674,16 @@ const COLLECTIONS = [
     kind: 'list',
     dated: true,
     rangeInLoad: true,
-    fields: ['id', 'date', 'slot', 'recipe_id', 'recipe', 'people', 'total_servings', 'kcal_jake', 'image', 'has_image', 'prep_minutes', 'portable', 'ingredients', 'instructions', 'eaten'],
+    fields: ['id', 'date', 'slot', 'recipe_id', 'recipe', 'people', 'total_servings', 'kcal_jake', 'image', 'has_image', 'prep_minutes', 'portable', 'ingredients', 'instructions', 'eaten', 'stars', 'recipe_stars'],
     async load({ pool, now, from, to }) {
       const S = nutritionStore(pool);
       const start = from || new Date(now.getTime() - 6 * 3600e3).toISOString().slice(0, 10);
       const end = to || N.addDays(N.mondayOf(start), 6);
       const weeks = [...new Set([N.mondayOf(start), N.mondayOf(end)])];
       const recipes = new Map((await S.recipes({ all: true })).map((r) => [r.id, r]));
+      // This meal's stars and its recipe's average (Nov 14: meals rated when ticked off).
+      const ratings = await S.recipeRatings();
+      const mine = new Map((await pool.query('SELECT plan_id, stars FROM nutrition_meal_ratings')).rows.map((x) => [x.plan_id, Number(x.stars)]));
       const out = [];
       for (const wk of weeks) {
         for (const d of (await S.planView(wk)).days) {
@@ -690,7 +693,8 @@ const COLLECTIONS = [
             const k = r ? m.total_servings / (Number(r.servings) || 1) : 0;
             out.push({ id: m.id, date: d.date, slot: m.slot, recipe_id: m.recipe_id, recipe: m.recipe.name, people: m.people, total_servings: m.total_servings,
               kcal_jake: m.kcal, image: r ? r.image : null, has_image: !!(r && r.image), prep_minutes: r ? r.prep_minutes : null, portable: r ? r.portable : false,
-              ingredients: r ? r.ingredients.map((i) => `${i.label || i.food} ${Math.round(i.grams * k)} g`).join('; ') : null, instructions: r ? r.instructions : null, eaten: m.eaten });
+              ingredients: r ? r.ingredients.map((i) => `${i.label || i.food} ${Math.round(i.grams * k)} g`).join('; ') : null, instructions: r ? r.instructions : null, eaten: m.eaten,
+              stars: mine.get(m.id) ?? null, recipe_stars: ratings[m.recipe_id] || null });
           }
         }
       }

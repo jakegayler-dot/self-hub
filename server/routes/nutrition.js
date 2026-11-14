@@ -297,7 +297,7 @@ function createStore(pool) {
     const used = (typeof e.pantry_used === 'string' ? JSON.parse(e.pantry_used) : e.pantry_used) || [];
     const cust = await customs();
     for (const u of used) { const f = N.foodByKey(u.food_key, cust); await adjustPantry(u.food_key, Number(u.grams), f ? N.shortName(f) : u.food_key); }
-    if (e.plan_id) await pool.query('UPDATE nutrition_plan SET eaten = false WHERE id = $1', [e.plan_id]);
+    if (e.plan_id) { await pool.query('UPDATE nutrition_plan SET eaten = false WHERE id = $1', [e.plan_id]); await pool.query('DELETE FROM nutrition_meal_ratings WHERE plan_id = $1', [e.plan_id]); } // not eaten: no stars (Nov 14)
     await pool.query('DELETE FROM nutrition_diary WHERE id = $1', [e.id]);
     return true;
   }
@@ -581,6 +581,61 @@ function createStore(pool) {
     }
     return groceries();
   }
+  // ---- meals rated, and missed meals brought back (Jake, Nov 14: "when i tick off a meal can you open a 5 star rating for them
+  // so we can rank meals"; "allow previous meals to be picked up and exchanged on the menu - such as the ones that ingridients
+  // were bought for but not made") ----
+  // Each recipe's stars: { recipe_id: { avg, count, last } }.
+  async function recipeRatings() {
+    const rows = await q('SELECT recipe_id, sum(stars) AS total, count(*) AS n, max(rated_at) AS last FROM nutrition_meal_ratings GROUP BY recipe_id');
+    return Object.fromEntries(rows.map((r) => [r.recipe_id, { avg: Math.round((Number(r.total) / Number(r.n)) * 100) / 100, count: Number(r.n), last: r.last ? ymd(r.last) : null }]));
+  }
+  async function planRow(id) {
+    return /^\d+$/.test(String(id)) ? (await q('SELECT * FROM nutrition_plan WHERE id = $1', [Number(id)]))[0] || null : null;
+  }
+  // One meal's stars (1 to 5; null takes it off). Only a meal that was eaten is rated.
+  async function rateMeal(id, stars) {
+    const cur = await planRow(id);
+    if (!cur) throw new Bad('No such meal', 404);
+    if (stars === null) { await pool.query('DELETE FROM nutrition_meal_ratings WHERE plan_id = $1', [cur.id]); return { plan_id: cur.id, stars: null }; }
+    const n = Math.round(Number(stars));
+    if (!(n >= 1 && n <= 5)) throw new Bad('stars is 1 to 5');
+    if (cur.eaten !== true) throw new Bad("Tick the meal off as eaten before rating it");
+    await pool.query(`INSERT INTO nutrition_meal_ratings (plan_id, recipe_id, stars) VALUES ($1, $2, $3)
+      ON CONFLICT (plan_id) DO UPDATE SET stars = EXCLUDED.stars, recipe_id = EXCLUDED.recipe_id, rated_at = now()`, [cur.id, cur.recipe_id, n]);
+    return { plan_id: cur.id, recipe_id: cur.recipe_id, stars: n, recipe: (await recipeRatings())[cur.recipe_id] || null };
+  }
+  // Meals on the menu that weren't made (a past day, not ticked eaten), newest first: their food was likely bought.
+  async function missedMeals(days = 21) {
+    const t = N.reginaToday();
+    const rows = await q('SELECT * FROM nutrition_plan WHERE plan_date < $1 AND plan_date >= $2 AND (eaten IS NULL OR eaten = false) ORDER BY plan_date DESC, id DESC', [t, N.addDays(t, -Math.max(1, Math.min(60, Number(days) || 21)))]);
+    const byId = new Map((await recipes({ all: true })).map((r) => [r.id, r]));
+    const stars = await recipeRatings();
+    return rows.filter((m) => byId.has(m.recipe_id)).map((m) => {
+      const r = byId.get(m.recipe_id);
+      return { id: m.id, date: ymd(m.plan_date), slot: m.slot, recipe_id: r.id, recipe: r.name, image: r.image || null, prep_minutes: r.prep_minutes ?? null,
+        portions: portionsOf(m), kcal_jake: r.per_serving ? Math.round(r.per_serving.kcal * Number(m.servings)) : null, rating: stars[r.id] || null };
+    });
+  }
+  // Two meals change places: the recipe and everyone's portions swap, each keeps its day and slot. Neither may be eaten. A missed
+  // meal swapped onto today goes on the menu; the one it replaced takes the missed meal's old place, to be brought back later.
+  async function swapMeals(aId, bId) {
+    const [a, b] = await Promise.all([planRow(aId), planRow(bId)]);
+    if (!a || !b) throw new Bad('No such meal', 404);
+    if (a.id === b.id) throw new Bad('Pick a different meal to swap with');
+    if (a.eaten === true || b.eaten === true) throw new Bad("A meal that's been eaten can't be swapped");
+    await pool.query('UPDATE nutrition_plan SET recipe_id = $1, servings = $2, portions = $3::jsonb WHERE id = $4', [b.recipe_id, b.servings, b.portions == null ? null : JSON.stringify(portionsOf(b)), a.id]);
+    await pool.query('UPDATE nutrition_plan SET recipe_id = $1, servings = $2, portions = $3::jsonb WHERE id = $4', [a.recipe_id, a.servings, a.portions == null ? null : JSON.stringify(portionsOf(a)), b.id]);
+    await groceriesFromPlan(N.mondayOf(N.reginaToday())); // the list is for what's still to cook, less the pantry
+    return { swapped: [a.id, b.id] };
+  }
+  // Every rated recipe, best first.
+  async function mealRanks() {
+    const stars = await recipeRatings();
+    const byId = new Map((await recipes({ all: true })).map((r) => [r.id, r]));
+    return Object.entries(stars).map(([id, s]) => ({ recipe_id: Number(id), recipe: byId.get(Number(id))?.name || '(deleted recipe)', image: byId.get(Number(id))?.image || null, ...s }))
+      .sort((x, y) => y.avg - x.avg || y.count - x.count || x.recipe.localeCompare(y.recipe));
+  }
+
   // Sentinel's snapshot of the grocery list (open, and bought in the last 14 days).
   async function grocerySnapshot(now = new Date()) {
     const { open, bought } = await groceries();
@@ -606,6 +661,7 @@ function createStore(pool) {
     q, customs, ownPortions, settings, recipes, recipeById, cleanRecipe, createRecipe, recipeView, logEntry, deleteEntry, entries, dailyTotals, totalsOf,
     weekTargets, targetsFor, targetHistory, updateSettings, trainingDates, weighins, planRows, planView, replacePlan, generatePlan,
     pantry, pantryMap, setPantry, adjustPantry, receiptIntake, groceries, groceryById, addGrocery, patchGrocery, deleteGrocery, groceriesFromPlan, grocerySnapshot, sentinelItem, day,
+    recipeRatings, rateMeal, missedMeals, swapMeals, mealRanks,
   };
 }
 
@@ -951,6 +1007,14 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
     if (b.groceries !== false) await S.groceriesFromPlan(N.mondayOf(date));
     res.json({ ok: true });
   }));
+  // Meals rated and missed meals brought back (Nov 14).
+  router.put('/nutrition/plan/:id/rating', wrap(async (req, res) => {
+    const b = req.body || {};
+    res.json(await S.rateMeal(req.params.id, b.stars === null ? null : b.stars));
+  }));
+  router.get('/nutrition/plan/missed', wrap(async (req, res) => res.json({ meals: await S.missedMeals(req.query.days) })));
+  router.post('/nutrition/plan/:id/swap', wrap(async (req, res) => res.json(await S.swapMeals(req.params.id, (req.body || {}).with))));
+  router.get('/nutrition/ratings', wrap(async (req, res) => res.json({ ranks: await S.mealRanks() })));
   router.delete('/nutrition/plan/:id', wrap(async (req, res) => {
     const cur = /^\d+$/.test(req.params.id) ? (await S.q('SELECT * FROM nutrition_plan WHERE id = $1', [Number(req.params.id)]))[0] : null;
     if (cur) {
@@ -996,7 +1060,7 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
   // ---- the nutritionist ----
   const callOpts = { env, ...(fetchImpl ? { fetchImpl } : {}), ...(retryMs != null ? { retryMs } : {}) };
   async function contextFor(task, b) {
-    const [s, list, pan, cust] = await Promise.all([S.settings(), S.recipes(), S.pantry(), S.customs()]);
+    const [s, list, pan, cust, stars] = await Promise.all([S.settings(), S.recipes(), S.pantry(), S.customs(), S.recipeRatings()]);
     const t = await S.targetsFor(task === 'week' ? b.week_start : today());
     const from = N.addDays(today(), -42);
     const w = await S.weighins(from);
@@ -1011,6 +1075,9 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
         ingredients: r.ingredients.map((i) => `${i.label || i.food} ${Math.round(i.grams)} g`) })),
       pantry: pan.map((p) => ({ name: p.food || p.name, amount: p.amount })),
       known_foods: [...known].slice(0, 150),
+      // How the family rated each recipe (Nov 14), 1 to 5 stars: plan more of the 4s and 5s, rarely the 1s and 2s.
+      ratings: list.filter((r) => stars[r.id]).map((r) => ({ recipe_id: r.id, name: r.name, stars: stars[r.id].avg, times_rated: stars[r.id].count })),
+      ratings_note: "The family's stars per recipe (5 best): lean on the 4s and 5s, rarely repeat a 1 or 2, and keep trying new ones too.",
     };
     if (task === 'week') {
       const fam = await S.household();

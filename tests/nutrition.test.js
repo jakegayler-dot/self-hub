@@ -744,3 +744,36 @@ test('a grocery receipt fills the pantry once; a planned meal ticked logs his ca
   await call('DELETE', `/fitness/nutrition/diary/${logged.body.id}`);
   assert.ok(Math.abs((await router.store.pantryMap()).get(ing.food_key) - 50000) < 0.2, 'put back');
 });
+
+test('meals rated when eaten, ranked by their stars and shown to Cheffy; a missed meal swapped back onto the menu (Nov 14)', async () => {
+  const today = N.reginaToday();
+  const recipes = (await call('GET', '/fitness/nutrition/recipes')).body.recipes.filter((r) => r.slot === 'main');
+  const [r1, r2] = recipes;
+  const add = async (date, recipe) => (await call('POST', '/fitness/nutrition/plan', { date, slot: 'dinner', recipe_id: recipe.id, servings: 1, groceries: false })).body.id;
+  const missed = await add(N.addDays(today, -3), r1);   // bought for, not made
+  const tonight = await add(today, r2);
+  const eaten = await add(N.addDays(today, -1), r2);
+  // Rating: only once eaten; 1 to 5.
+  assert.equal((await call('PUT', `/fitness/nutrition/plan/${eaten}/rating`, { stars: 4 })).status, 400, 'not eaten yet');
+  const logged = await call('POST', '/fitness/nutrition/diary', { plan_id: eaten });
+  assert.equal(logged.status, 201, JSON.stringify(logged.body));
+  assert.equal((await call('PUT', `/fitness/nutrition/plan/${eaten}/rating`, { stars: 9 })).status, 400);
+  const rated = (await call('PUT', `/fitness/nutrition/plan/${eaten}/rating`, { stars: 5 }, SENTINEL)).body;
+  assert.deepEqual([rated.stars, rated.recipe.avg, rated.recipe.count], [5, 5, 1]);
+  const ranks = (await call('GET', '/fitness/nutrition/ratings')).body.ranks;
+  assert.equal(ranks[0].recipe_id, r2.id);
+  const ctx = (await call('GET', '/fitness/nutrition/chef/context', null, SENTINEL)).body;
+  assert.ok(ctx.ratings.some((x) => x.recipe_id === r2.id && x.stars === 5), "Cheffy sees the family's stars");
+  // Unticked: the stars come off with it.
+  await call('DELETE', `/fitness/nutrition/diary/${logged.body.id}`);
+  assert.equal((await call('GET', '/fitness/nutrition/ratings')).body.ranks.some((x) => x.recipe_id === r2.id), false);
+  // Missed meals: past, not eaten, newest first.
+  const list = (await call('GET', '/fitness/nutrition/plan/missed', null, SENTINEL)).body.meals;
+  assert.ok(list.some((m) => m.id === missed && m.recipe_id === r1.id));
+  // Swapped onto tonight: tonight has the missed recipe; the missed day has tonight's, to bring back later.
+  assert.equal((await call('POST', `/fitness/nutrition/plan/${tonight}/swap`, { with: missed }, SENTINEL)).status, 200);
+  const recipeOf = async (id) => (await router.store.q('SELECT recipe_id FROM nutrition_plan WHERE id = $1', [id]))[0].recipe_id;
+  const by = { [tonight]: await recipeOf(tonight), [missed]: await recipeOf(missed) };
+  assert.deepEqual([by[tonight], by[missed]], [r1.id, r2.id]);
+  assert.equal((await call('POST', `/fitness/nutrition/plan/${tonight}/swap`, { with: tonight })).status, 400);
+});
