@@ -468,9 +468,19 @@ function receiptGrams(line, food, own = []) {
   const each = portionsFor(food, own).find((p) => WHOLE.test(p.name));
   return each ? round(qty * (unit === 'each' && size > 0 ? size : 1) * each.grams, 1) : null;
 }
+// The printed weight, else the product's usual pack size from Money Hub's reader (Jake, Nov 14: yes to that), marked usual.
+const PACK_UNITS = new Set(['g', 'kg', 'ml', 'l', 'each', 'lb', 'oz']);
+function receiptWeight(line, food, own = []) {
+  const printed = receiptGrams(line, food, own);
+  if (printed) return { grams: printed, usual: false };
+  const unit = String(line.usual_size_unit || '').toLowerCase();
+  if (!(Number(line.usual_size_value) > 0) || !PACK_UNITS.has(unit)) return null;
+  const g = receiptGrams({ qty: line.qty, size_value: line.usual_size_value, size_unit: unit }, food, own);
+  return g ? { grams: g, usual: true } : null;
+}
 
 module.exports = {
-  receiptFood, receiptGrams,
+  receiptFood, receiptGrams, receiptWeight,
   ATTRIBUTION, loadUsda, customFood, foodByKey, searchFoods, resolveFood, portionsFor, toGrams, describeAmount, UNITS,
   NUTRIENTS, nutrientsFor, addInto, rounded, recipeTotals, zero, round,
   reginaToday, addDays, mondayOf, weekDates, dayTargets, adaptTargets, slope, planWeek, SLOT_KIND, aisle, shortName, groceriesFromPlan, starterRecipes,

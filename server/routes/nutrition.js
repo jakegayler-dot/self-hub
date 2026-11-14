@@ -492,10 +492,11 @@ function createStore(pool) {
         const f = N.receiptFood(item, { customs: cust, used });
         if (!f) { skipped.push({ item, why: 'no food matches it surely' }); continue; }
         const mine = own.get(f.key) || [];
-        const grams = N.receiptGrams(l, f, mine);
-        if (!(grams > 0 && grams <= 200000)) { skipped.push({ item, food: N.shortName(f), why: 'no weight or count on the slip' }); continue; }
+        const w = N.receiptWeight(l, f, mine);
+        const grams = w ? w.grams : null;
+        if (!(grams > 0 && grams <= 200000)) { skipped.push({ item, food: N.shortName(f), why: 'no weight on the slip and no usual pack size' }); continue; }
         await adjustPantry(f.key, grams, N.shortName(f));
-        added.push({ item, food_key: f.key, food: N.shortName(f), grams, amount: N.describeAmount(grams, f, mine) });
+        added.push({ item, food_key: f.key, food: N.shortName(f), grams, amount: N.describeAmount(grams, f, mine), ...(w.usual ? { usual_size: true } : {}) });
       }
       await pool.query('UPDATE nutrition_receipts SET added = $2::jsonb, skipped = $3::jsonb WHERE receipt_key = $1', [key, JSON.stringify(added), JSON.stringify(skipped)]);
       return { added, skipped };

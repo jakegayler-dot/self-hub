@@ -720,6 +720,12 @@ test('a grocery receipt fills the pantry once; a planned meal ticked logs his ca
   assert.equal(N.receiptGrams({ qty: 1, size_value: 1, size_unit: 'kg' }, pb), 1000);
   assert.equal(N.receiptGrams({ qty: 2 }, N.receiptFood('avocados')), 272, 'whole things by the count');
   assert.equal(N.receiptGrams({ qty: 1 }, N.receiptFood('rye bread')), null, 'a loaf is not a slice');
+  // The usual pack size when none is printed (his yes, Nov 14), marked as such; the printed weight always wins.
+  assert.deepEqual(N.receiptWeight({ qty: 2, usual_size_value: 1, usual_size_unit: 'kg' }, pb), { grams: 2000, usual: true });
+  assert.deepEqual(N.receiptWeight({ qty: 1, size_value: 500, size_unit: 'g', usual_size_value: 1, usual_size_unit: 'kg' }, pb), { grams: 500, usual: false });
+  assert.equal(N.receiptWeight({ qty: 1, usual_size_value: 1, usual_size_unit: 'jar' }, pb), null);
+  const usual = await call('POST', '/fitness/nutrition/pantry/receipt', { receipt_id: 'mh:4472', lines: [{ item: 'peanut butter', qty: 1, usual_size_value: 1, usual_size_unit: 'kg', food_type: 'pantry' }] }, SENTINEL);
+  assert.deepEqual([usual.body.added[0].grams, usual.body.added[0].usual_size], [1000, true]);
 
   // A family meal ticked: his servings in his log, everyone's portions out of the pantry; deleting the entry puts them back.
   const plan = (await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body;
