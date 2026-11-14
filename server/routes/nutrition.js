@@ -234,14 +234,18 @@ function createStore(pool) {
     return taken;
   }
   async function logEntry(b) {
-    if (b.plan_id == null) return logOne(b, null);
+    if (b.plan_id == null) return logOne({ ...b, pantry_servings: null }, null);
     const p = (await q('SELECT * FROM nutrition_plan WHERE id = $1', [Number(b.plan_id)]))[0];
     if (!p) throw new Bad('No such planned meal', 404);
     // Claim it first: a double tap logs it once. Anything that then fails gives it back.
     const claimed = await q('UPDATE nutrition_plan SET eaten = true WHERE id = $1 AND eaten IS NOT TRUE RETURNING id', [p.id]);
     if (!claimed.length) throw new Bad('That planned meal is already logged');
+    // The pot was cooked for everyone at the table (Nov 14, Jake: "when I tick off a meal ... it automatically adds calories and
+    // adjusts the grocery inventory"): his servings go in his log, the whole family's portions come out of the pantry.
+    const portions = (typeof p.portions === 'string' ? JSON.parse(p.portions) : p.portions) || null;
+    const family = portions ? Object.values(portions).reduce((a, v) => a + (Number(v) > 0 ? Number(v) : 0), 0) : 0;
     try {
-      return await logOne({ ...b, date: ymd(p.plan_date), slot: p.slot, recipe_id: p.recipe_id, servings: b.servings ?? Number(p.servings) }, p.id);
+      return await logOne({ ...b, date: ymd(p.plan_date), slot: p.slot, recipe_id: p.recipe_id, servings: b.servings ?? Number(p.servings), pantry_servings: family > 0 ? family : null }, p.id);
     } catch (err) {
       await pool.query('UPDATE nutrition_plan SET eaten = false WHERE id = $1', [p.id]).catch(() => {});
       throw err;
@@ -261,7 +265,8 @@ function createStore(pool) {
       const k = s / (r.servings || 1);
       const n = N.addInto(N.zero(), N.recipeTotals({ servings: 1, ingredients: r.ingredients }, cust).total, k);
       row = { name: r.name, recipe_id: r.id, servings: s, amount: `${s} serving${s === 1 ? '' : 's'}`, ...N.rounded(n) };
-      uses = r.ingredients.map((i) => ({ food_key: i.food_key, grams: i.grams * k }));
+      const kp = Number(b.pantry_servings) > 0 ? Number(b.pantry_servings) / (r.servings || 1) : k;
+      uses = r.ingredients.map((i) => ({ food_key: i.food_key, grams: i.grams * kp }));
     } else if (b.food_key) {
       const f = N.foodByKey(b.food_key, cust);
       if (!f) throw new Bad('Unknown food', 404);
@@ -462,6 +467,43 @@ function createStore(pool) {
     else await pool.query('INSERT INTO nutrition_pantry (food_key, name, grams) VALUES ($1, $2, $3)', [f.key, name, N.round(next, 1)]);
     return (await pantry()).find((p) => p.food_key === f.key) || { food_key: f.key, grams: 0 };
   }
+  // A grocery receipt's lines into the pantry (Nov 14; Money Hub reads it, Sentinel sends what the list didn't cover).
+  // body { receipt_id, store, date, lines: [{ item, printed, qty, size_value, size_unit, food_type }] }. Once a receipt.
+  const NOT_FOOD = new Set(['household', 'personal care', 'other', 'clothing']);
+  async function receiptIntake(b) {
+    const key = str(String(b.receipt_id ?? ''), 80);
+    if (!key) throw new Bad('receipt_id is required');
+    const lines = Array.isArray(b.lines) ? b.lines.slice(0, 300).filter((l) => l && typeof l === 'object') : [];
+    const seen = async () => {
+      const r = (await q('SELECT added, skipped FROM nutrition_receipts WHERE receipt_key = $1', [key]))[0] || {};
+      const j = (v) => (typeof v === 'string' ? JSON.parse(v) : v) || [];
+      return { already: true, added: j(r.added), skipped: j(r.skipped) };
+    };
+    if ((await q('SELECT 1 FROM nutrition_receipts WHERE receipt_key = $1', [key])).length) return seen();
+    try { await pool.query('INSERT INTO nutrition_receipts (receipt_key, store, bought_on) VALUES ($1, $2, $3)', [key, str(b.store, 80), isDate(b.date) ? b.date : null]); }
+    catch (err) { if (err.code === '23505' || /duplicate|unique/i.test(err.message)) return seen(); throw err; }
+    try {
+      const [cust, own, list, pan, groc] = await Promise.all([customs(), ownPortions(), recipes({ all: true }), pantryMap(), q('SELECT food_key FROM nutrition_groceries WHERE food_key IS NOT NULL')]);
+      const used = new Set([...list.flatMap((r) => (r.ingredients || []).map((i) => i.food_key)), ...pan.keys(), ...groc.map((g) => g.food_key)].filter(Boolean));
+      const added = []; const skipped = [];
+      for (const l of lines) {
+        const item = str(l.item, 120) || str(l.printed, 120);
+        if (!item || NOT_FOOD.has(String(l.food_type || '').toLowerCase())) continue;
+        const f = N.receiptFood(item, { customs: cust, used });
+        if (!f) { skipped.push({ item, why: 'no food matches it surely' }); continue; }
+        const mine = own.get(f.key) || [];
+        const grams = N.receiptGrams(l, f, mine);
+        if (!(grams > 0 && grams <= 200000)) { skipped.push({ item, food: N.shortName(f), why: 'no weight or count on the slip' }); continue; }
+        await adjustPantry(f.key, grams, N.shortName(f));
+        added.push({ item, food_key: f.key, food: N.shortName(f), grams, amount: N.describeAmount(grams, f, mine) });
+      }
+      await pool.query('UPDATE nutrition_receipts SET added = $2::jsonb, skipped = $3::jsonb WHERE receipt_key = $1', [key, JSON.stringify(added), JSON.stringify(skipped)]);
+      return { added, skipped };
+    } catch (err) {
+      await pool.query('DELETE FROM nutrition_receipts WHERE receipt_key = $1', [key]).catch(() => {});
+      throw err;
+    }
+  }
 
   // ---- groceries ----
   const groceryView = (r) => ({ id: r.id, name: r.name, food_key: r.food_key || null, grams: num(r.grams), quantity: r.quantity || null, aisle: r.aisle || 'Pantry',
@@ -562,7 +604,7 @@ function createStore(pool) {
     household, saveMember, deleteMember, recipeImage, saveRecipeImage, imageIds,
     q, customs, ownPortions, settings, recipes, recipeById, cleanRecipe, createRecipe, recipeView, logEntry, deleteEntry, entries, dailyTotals, totalsOf,
     weekTargets, targetsFor, targetHistory, updateSettings, trainingDates, weighins, planRows, planView, replacePlan, generatePlan,
-    pantry, pantryMap, setPantry, adjustPantry, groceries, groceryById, addGrocery, patchGrocery, deleteGrocery, groceriesFromPlan, grocerySnapshot, sentinelItem, day,
+    pantry, pantryMap, setPantry, adjustPantry, receiptIntake, groceries, groceryById, addGrocery, patchGrocery, deleteGrocery, groceriesFromPlan, grocerySnapshot, sentinelItem, day,
   };
 }
 
@@ -920,6 +962,7 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
   // ---- pantry ----
   router.get('/nutrition/pantry', wrap(async (req, res) => res.json({ items: await S.pantry() })));
   router.post('/nutrition/pantry', wrap(async (req, res) => res.status(201).json(await S.setPantry(req.body || {}))));
+  router.post('/nutrition/pantry/receipt', wrap(async (req, res) => res.json(await S.receiptIntake(req.body || {}))));
   router.delete('/nutrition/pantry/:id', wrap(async (req, res) => {
     if (/^\d+$/.test(req.params.id)) await pool.query('DELETE FROM nutrition_pantry WHERE id = $1', [Number(req.params.id)]);
     res.status(204).end();

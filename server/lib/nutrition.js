@@ -414,7 +414,40 @@ const STARTERS = [
 ];
 const starterRecipes = () => STARTERS.map((r) => ({ ...r, ingredients: r.ingredients.map(([food_key, grams, label]) => ({ food_key, grams, label })) }));
 
+// ---- a till slip into the pantry (Jake, Nov 14: "when I scan a receipt for moneyhub, if it's ... groceries, it automatically
+// updates self hubs ... grocery inventory") ----
+// Money Hub reads every line ("ground beef", qty 1, 1.2 kg); Sentinel sends here what the grocery list didn't already cover.
+// The food a line is: one his recipes, pantry or list already use when every word of the line is in its name, else the best
+// search hit whose name holds every word. Nothing sure, nothing added (a wrong food in the pantry is worse than none).
+const RECEIPT_STOP = new Set(['large', 'small', 'medium', 'jumbo', 'extra', 'fresh', 'pack', 'family', 'size', 'organic', 'free', 'range', 'value', 'bag', 'box', 'ct', 'each', 'assorted', 'mixed', 'variety']);
+const hasWord = (fw, t) => fw.some((w) => w === t || w.startsWith(t) || (t.length > 3 && w.length > 3 && t.startsWith(w)));
+function receiptFood(item, { customs = new Map(), used = new Set() } = {}) {
+  const all = words(item).filter((w) => !STOP.has(w) && !RECEIPT_STOP.has(w));
+  for (const q of [all, all.filter((w) => /[a-z]/.test(w) && w !== 'pct')]) {
+    if (!q.length) continue;
+    const covers = (f) => q.every((t) => (SYNONYMS[t] || [t]).some((a) => hasWord(f.words, a)));
+    const mine = [...used].map((k) => foodByKey(k, customs)).filter((f) => f && covers(f)).sort((a, b) => a.words.length - b.words.length);
+    if (mine[0]) return mine[0];
+    const hit = searchFoods(q.join(' '), { customs, boost: used, limit: 8 }).find(covers);
+    if (hit) return hit;
+  }
+  return null;
+}
+// What a line weighs: its weight or volume (a litre of milk taken as a kilo), else its count times the food's first portion.
+const LIQUID = { ml: 1, l: 1000 };
+function receiptGrams(line, food, own = []) {
+  const qty = Number(line.qty) > 0 ? Number(line.qty) : 1;
+  const size = Number(line.size_value);
+  const unit = String(line.size_unit || '').toLowerCase().trim().replace(/^lbs$/, 'lb');
+  if (size > 0 && UNITS[unit]) return round(qty * size * UNITS[unit], 1);
+  if (size > 0 && LIQUID[unit]) return round(qty * size * LIQUID[unit], 1);
+  const each = portionsFor(food, own)[0];
+  if (!each) return null;
+  return round((unit === 'each' && size > 0 ? qty * size : qty) * each.grams, 1);
+}
+
 module.exports = {
+  receiptFood, receiptGrams,
   ATTRIBUTION, loadUsda, customFood, foodByKey, searchFoods, resolveFood, portionsFor, toGrams, describeAmount, UNITS,
   NUTRIENTS, nutrientsFor, addInto, rounded, recipeTotals, zero, round,
   reginaToday, addDays, mondayOf, weekDates, dayTargets, adaptTargets, slope, planWeek, SLOT_KIND, aisle, shortName, groceriesFromPlan, starterRecipes,

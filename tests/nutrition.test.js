@@ -682,3 +682,47 @@ test('the family\'s meals (Nov 8): everyone with their own day, portions for eac
   assert.equal(hh.find((h) => h.name === 'Ashley').kcal, 1900);
   assert.match((await call('GET', `/sentinel/read/meal_plan?from=${day.date}`, null, SENTINEL)).body.rows.find((x) => x.date === day.date).meals.join(' '), /Ashley/);
 });
+
+// Nov 14 (Jake): "when I scan a receipt for moneyhub, if it's ... groceries, it automatically updates self hubs ... grocery
+// inventory. And when I tick off a meal from the weeks meal plan it automatically adds calories and adjusts the grocery inventory".
+test('a grocery receipt fills the pantry once; a planned meal ticked logs his calories and takes the whole family\'s portions out', async () => {
+  const slip = { receipt_id: 'mh:4471', store: 'Sobeys', date: today, lines: [
+    { item: 'ground beef', printed: 'GRND BEEF LEAN 1.2KG', qty: 1, size_value: 1.2, size_unit: 'kg', food_type: 'meat & seafood' },
+    { item: 'large eggs', printed: 'LG EGGS 18', qty: 1, size_value: 18, size_unit: 'each', food_type: 'dairy & eggs' },
+    { item: 'paper towels', printed: 'PPR TWL 6R', qty: 1, food_type: 'household' },
+    { item: 'zorblax crunch', printed: 'ZORBLAX', qty: 1, food_type: 'snacks & sweets' }] };
+  const before = await router.store.pantryMap();
+  const r = await call('POST', '/fitness/nutrition/pantry/receipt', slip, SENTINEL);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const beef = r.body.added.find((a) => a.item === 'ground beef');
+  assert.match(N.foodByKey(beef.food_key).name, /^Beef, ground/);
+  assert.equal(beef.grams, 1200);
+  const eggs = r.body.added.find((a) => a.item === 'large eggs');
+  assert.equal(eggs.food_key, 'usda:14951');
+  assert.equal(eggs.grams, 900, '18 eggs at 50 g');
+  assert.ok(!r.body.added.some((a) => a.item === 'paper towels') && !r.body.skipped.some((a) => a.item === 'paper towels'), 'not food: left alone');
+  assert.deepEqual(r.body.skipped.map((s) => s.item), ['zorblax crunch'], 'nothing sure, nothing added');
+  let now = await router.store.pantryMap();
+  assert.equal(now.get('usda:14951'), (before.get('usda:14951') || 0) + 900);
+  // Sent again (a re-read): nothing more goes in.
+  const again = await call('POST', '/fitness/nutrition/pantry/receipt', slip, SENTINEL);
+  assert.equal(again.body.already, true);
+  assert.equal((await router.store.pantryMap()).get('usda:14951'), now.get('usda:14951'));
+
+  // A family meal ticked: his servings in his log, everyone's portions out of the pantry; deleting the entry puts them back.
+  const plan = (await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body;
+  const meal = plan.days.flatMap((x) => x.meals).find((m) => !m.eaten && m.people && m.people.length === 4);
+  const recipe = (await call('GET', '/fitness/nutrition/recipes')).body.recipes.find((x) => x.id === meal.recipe_id);
+  const ing = recipe.ingredients[0];
+  await call('POST', '/fitness/nutrition/pantry', { food_key: ing.food_key, grams: 50000, mode: 'set' });
+  const logged = await call('POST', '/fitness/nutrition/diary', { plan_id: meal.id });
+  assert.equal(logged.status, 201, JSON.stringify(logged.body));
+  assert.equal(logged.body.servings, meal.servings, "his own servings in his log");
+  const family = meal.people.reduce((a, x) => a + x.servings, 0);
+  const took = logged.body.pantry_used.find((u) => u.food_key === ing.food_key).grams;
+  assert.ok(Math.abs(took - ing.grams * family / recipe.servings) < 0.2, `took ${took} for ${family} servings`);
+  now = await router.store.pantryMap();
+  assert.ok(Math.abs(now.get(ing.food_key) - (50000 - took)) < 0.2);
+  await call('DELETE', `/fitness/nutrition/diary/${logged.body.id}`);
+  assert.ok(Math.abs((await router.store.pantryMap()).get(ing.food_key) - 50000) < 0.2, 'put back');
+});
