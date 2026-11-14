@@ -417,33 +417,56 @@ const starterRecipes = () => STARTERS.map((r) => ({ ...r, ingredients: r.ingredi
 // ---- a till slip into the pantry (Jake, Nov 14: "when I scan a receipt for moneyhub, if it's ... groceries, it automatically
 // updates self hubs ... grocery inventory") ----
 // Money Hub reads every line ("ground beef", qty 1, 1.2 kg); Sentinel sends here what the grocery list didn't already cover.
-// The food a line is: one his recipes, pantry or list already use when every word of the line is in its name, else the best
-// search hit whose name holds every word. Nothing sure, nothing added (a wrong food in the pantry is worse than none).
+// The food a line is: one his recipes, pantry or list already use, else a search hit, and either way only when it's surely that
+// food (a wrong food in the pantry is worse than none; tried on his real slips Nov 14, where "hot dogs" found pickle relish and
+// "chicken broth" canned chicken): every word of the line is in the food's name, the name's head (before its first comma:
+// "Beef" in "Beef, ground, ...") is named on the line, it isn't cooked or made up when the line doesn't say so, and nothing in
+// it is "no <a word of the line>". Search hits also match word for word (no "maltesers" for "malt") and aren't brands or
+// fast food.
 const RECEIPT_STOP = new Set(['large', 'small', 'medium', 'jumbo', 'extra', 'fresh', 'pack', 'family', 'size', 'organic', 'free', 'range', 'value', 'bag', 'box', 'ct', 'each', 'assorted', 'mixed', 'variety']);
-const hasWord = (fw, t) => fw.some((w) => w === t || w.startsWith(t) || (t.length > 3 && w.length > 3 && t.startsWith(w)));
+const STATE = /\b(cooked|sauteed|fried|boiled|roasted|braised|stewed|prepared|condensed|dehydrated|reconstituted|microwaved|baked|grilled|broiled|dry mix|mix)\b/i;
+const MODIFIER = /\b(meatless|imitation|substitute|tofu|soy|turkey|fruit|chocolate|vanilla|strawberry|blueberry|guava|flavou?red|diet|low sodium|reduced sodium|sugar free)\b/i;
 function receiptFood(item, { customs = new Map(), used = new Set() } = {}) {
   const all = words(item).filter((w) => !STOP.has(w) && !RECEIPT_STOP.has(w));
   for (const q of [all, all.filter((w) => /[a-z]/.test(w) && w !== 'pct')]) {
     if (!q.length) continue;
-    const covers = (f) => q.every((t) => (SYNONYMS[t] || [t]).some((a) => hasWord(f.words, a)));
-    const mine = [...used].map((k) => foodByKey(k, customs)).filter((f) => f && covers(f)).sort((a, b) => a.words.length - b.words.length);
+    const named = new Set(q.flatMap((t) => SYNONYMS[t] || [t]));
+    const sure = (f, loose) => {
+      const has = (t) => (SYNONYMS[t] || [t]).some((a) => f.words.some((w) => w === a || (loose && (w.startsWith(a) || (a.length > 3 && w.length > 3 && a.startsWith(w))))));
+      if (!q.every(has)) return false;
+      if (f.source !== 'custom' && !words(String(f.name).split(',')[0]).filter((w) => !STOP.has(w)).every((w) => named.has(w))) return false;
+      const m = String(f.name).match(STATE);
+      if (m && !String(item).toLowerCase().includes(m[1].toLowerCase())) return false;
+      if (q.some((t) => new RegExp(`\\b(no|without) ${t}`, 'i').test(f.name))) return false;
+      // A different food dressed as this one ("Bacon, meatless", "Yogurt, chocolate"), unless the line says so.
+      const odd = String(f.name).match(MODIFIER);
+      if (odd && !String(item).toLowerCase().includes(odd[1].toLowerCase())) return false;
+      // The line's main word only after "with" is something else with it ("Chicken, canned, ... with broth" isn't broth).
+      const head = q[q.length - 1];
+      const [before, after] = String(f.name).toLowerCase().split(/\bwith\b/);
+      if (after != null && !words(before).includes(head) && words(after).includes(head)) return false;
+      return true;
+    };
+    const mine = [...used].map((k) => foodByKey(k, customs)).filter((f) => f && sure(f, true)).sort((a, b) => a.words.length - b.words.length);
     if (mine[0]) return mine[0];
-    const hit = searchFoods(q.join(' '), { customs, boost: used, limit: 8 }).find(covers);
+    const hit = searchFoods(q.join(' '), { customs, boost: used, limit: 12 }).find((f) => sure(f, false) && (f.source === 'custom' || (!NOISE.test(f.name) && !BRANDED.test(f.name))));
     if (hit) return hit;
   }
   return null;
 }
-// What a line weighs: its weight or volume (a litre of milk taken as a kilo), else its count times the food's first portion.
+// What a line weighs: its weight or volume (a litre of milk taken as a kilo), or a count of whole things (18 eggs, 2 avocados)
+// at the food's whole-item portion. A package with no weight on the slip is no weight: never one slice, clove or spoonful.
 const LIQUID = { ml: 1, l: 1000 };
+const WHOLE = /^(large egg|medium |avocado)/;
 function receiptGrams(line, food, own = []) {
   const qty = Number(line.qty) > 0 ? Number(line.qty) : 1;
   const size = Number(line.size_value);
   const unit = String(line.size_unit || '').toLowerCase().trim().replace(/^lbs$/, 'lb');
   if (size > 0 && UNITS[unit]) return round(qty * size * UNITS[unit], 1);
   if (size > 0 && LIQUID[unit]) return round(qty * size * LIQUID[unit], 1);
-  const each = portionsFor(food, own)[0];
-  if (!each) return null;
-  return round((unit === 'each' && size > 0 ? qty * size : qty) * each.grams, 1);
+  if (unit && unit !== 'each') return null;
+  const each = portionsFor(food, own).find((p) => WHOLE.test(p.name));
+  return each ? round(qty * (unit === 'each' && size > 0 ? size : 1) * each.grams, 1) : null;
 }
 
 module.exports = {

@@ -709,6 +709,18 @@ test('a grocery receipt fills the pantry once; a planned meal ticked logs his ca
   assert.equal(again.body.already, true);
   assert.equal((await router.store.pantryMap()).get('usda:14951'), now.get('usda:14951'));
 
+  // Tried on his real slips (Nov 14): sure matches only, and a package with no weight on the slip is no weight.
+  const sure = (item) => { const f = N.receiptFood(item); return f ? f.name : null; };
+  assert.equal(sure('hot dogs'), null, 'not pickle relish');
+  assert.equal(sure('chicken broth'), null, 'not canned chicken with broth');
+  assert.equal(sure('bacon'), null, 'not meatless or turkey bacon');
+  assert.match(sure('bananas'), /^Bananas, raw/);
+  const pb = N.receiptFood('peanut butter');
+  assert.equal(N.receiptGrams({ qty: 1 }, pb), null, 'a jar is not a tablespoon');
+  assert.equal(N.receiptGrams({ qty: 1, size_value: 1, size_unit: 'kg' }, pb), 1000);
+  assert.equal(N.receiptGrams({ qty: 2 }, N.receiptFood('avocados')), 272, 'whole things by the count');
+  assert.equal(N.receiptGrams({ qty: 1 }, N.receiptFood('rye bread')), null, 'a loaf is not a slice');
+
   // A family meal ticked: his servings in his log, everyone's portions out of the pantry; deleting the entry puts them back.
   const plan = (await call('GET', `/fitness/nutrition/plan?week=${monday}`)).body;
   const meal = plan.days.flatMap((x) => x.meals).find((m) => !m.eaten && m.people && m.people.length === 4);
