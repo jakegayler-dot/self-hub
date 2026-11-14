@@ -27,11 +27,11 @@ function createRoleRouter({ pool, env = process.env, fetchImpl = (...a) => fetch
     if (cached && age < FRESH_MS && !fresh) return { ...cached.data, fetched_at: cached.fetched_at };
     const url = (env.SENTINEL_URL || '').trim().replace(/\/+$/, '');
     const key = (env.SENTINEL_API_KEY || '').trim();
-    if (!url || !key) return cached ? { ...cached.data, fetched_at: cached.fetched_at, stale: true } : { error: "Sentinel isn't connected, so the Trinity courses can't be read" };
+    if (!url || !key) return cached ? { ...cached.data, fetched_at: cached.fetched_at, stale: true } : { error: "Andrew isn't connected, so the Trinity courses can't be read" };
     try {
       const res = await fetchImpl(`${url}/v1/role${fresh ? '?fresh=1' : ''}`, { headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' }, signal: AbortSignal.timeout(90000) });
       const data = await res.json().catch(() => null);
-      if (!res.ok || !data || !Array.isArray(data.courses)) throw new Error((data && data.error && (data.error.message || data.error)) || `Sentinel said ${res.status}`);
+      if (!res.ok || !data || !Array.isArray(data.courses)) throw new Error((data && data.error && (data.error.message || data.error)) || `Andrew said ${res.status}`);
       await pool.query(`INSERT INTO role_cache (id, data, fetched_at) VALUES (1, $1::jsonb, now())
         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, fetched_at = now()`, [JSON.stringify(data)]);
       return { ...data, fetched_at: new Date().toISOString() };

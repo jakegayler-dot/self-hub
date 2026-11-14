@@ -38,7 +38,7 @@ const NUTRITIONIST = `${COMMON}
 Foods:
   GET /nutrition/foods/search?q=&online=1  his foods + the built-in USDA list (foods); online: USDA branded and Open Food Facts (online[], keys fdc:… / off:…)
   POST /nutrition/foods/import { key }  save an online result as his food (do this before logging it) → { key: "custom:…", serving }
-  POST /nutrition/foods/lookup { query }  a restaurant item no database has: Sentinel finds the official numbers (saved)
+  POST /nutrition/foods/lookup { query }  a restaurant item no database has: Andrew finds the official numbers (saved)
   GET /nutrition/foods/:key (servings) · POST /nutrition/foods { name, brand?, per_grams, serving_name?, kcal, protein_g, carbs_g, fat_g, fiber_g?, sodium_mg? } (from a label) · POST /nutrition/portions { food_key, name, grams }
 The log:
   GET /nutrition/day?date=  targets, totals, remaining, entries, today's planned meals
@@ -50,7 +50,7 @@ Recipes and saved meals:
 Targets: GET /nutrition/targets · PUT /nutrition/settings { base_kcal?, protein_g?, training_extra_kcal?, fat_pct?, rate_min_lb?, rate_max_lb?, adaptive?, slots? } · POST /nutrition/targets/recheck
 The plan: GET /nutrition/plan?week= · POST /nutrition/plan/generate { week_start } (rules) · POST /nutrition/coach { task: week, week_start, note? } (the full meal planner, in the background) · POST /nutrition/plan { date, slot, recipe_id, servings } · PUT /nutrition/plan/:id { date?, slot?, recipe_id?, servings? } · DELETE /nutrition/plan/:id
 Pantry: GET /nutrition/pantry · POST /nutrition/pantry { food_key, qty, unit, mode: add|set } · DELETE /nutrition/pantry/:id
-Groceries (also on Sentinel's shopping list): GET /nutrition/groceries · POST /nutrition/groceries { name, quantity?, food_key?, grams? } · PATCH /nutrition/groceries/:id { status: open|bought, name?, quantity? } · DELETE /nutrition/groceries/:id · POST /nutrition/groceries/from-plan
+Groceries (also on Andrew's shopping list): GET /nutrition/groceries · POST /nutrition/groceries { name, quantity?, food_key?, grams? } · PATCH /nutrition/groceries/:id { status: open|bought, name?, quantity? } · DELETE /nutrition/groceries/:id · POST /nutrition/groceries/from-plan
 Training (read only for you): GET /workouts?from=&to=`;
 
 const STYLIST = `${COMMON}

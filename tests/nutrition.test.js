@@ -490,7 +490,7 @@ test('foods beyond the list: USDA branded and as-eaten, Open Food Facts, then Se
   assert.equal(asked[asks].body.context.query, 'Double Big Mac');
   assert.equal(lk.body.per_100g.kcal, 260.2);
   assert.equal(lk.body.serving.grams, 269);
-  assert.equal(lk.body.source_label, 'Looked up by Sentinel');
+  assert.equal(lk.body.source_label, 'Looked up by Andrew');
   assert.match(lk.body.source_url, /mcdonalds\.com\/ca/);
   assert.equal((await call('POST', '/fitness/nutrition/foods/lookup', { query: 'double big mac' })).body.key, lk.body.key);
   assert.equal(asked.length, asks + 1);

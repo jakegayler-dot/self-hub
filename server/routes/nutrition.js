@@ -666,7 +666,7 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
   // ---- foods ----
   const foodOpts = { env, ...(fetchImpl ? { fetchImpl } : {}) };
   const per100 = (f) => ({ kcal: f.kcal, protein_g: f.protein_g, carbs_g: f.carbs_g, fat_g: f.fat_g, fiber_g: f.fiber_g, sugar_g: f.sugar_g, sat_fat_g: f.sat_fat_g, sodium_mg: f.sodium_mg });
-  const SOURCE_LABEL = { usda: 'USDA', fdc: 'USDA', off: 'Open Food Facts', sentinel: 'Looked up by Sentinel', jake: 'Yours' };
+  const SOURCE_LABEL = { usda: 'USDA', fdc: 'USDA', off: 'Open Food Facts', sentinel: 'Looked up by Andrew', jake: 'Yours' };
   // A food as the page uses it; the first portion is its usual serving (what a tap logs).
   const foodView = (f, own) => {
     const portions = N.portionsFor(f, own.get(f.key) || []);
@@ -761,21 +761,21 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
     const cust = await S.customs();
     const prev = [...cust.values()].find((f) => f.origin === 'sentinel' && f.external_id === query.toLowerCase());
     if (prev) return res.json(foodView(prev, await S.ownPortions()));
-    if (!coach.trainerReady(env)) throw new Bad("Sentinel isn't connected, so it can't look foods up", 503);
+    if (!coach.trainerReady(env)) throw new Bad("Andrew isn't connected, so it can't look foods up", 503);
     let answer;
     try { answer = await coach.callNutritionist('food', { context: { query, country: 'Canada' } }, foodOpts); }
     catch (e) { throw new Bad(e.message, e.status === 429 ? 429 : 502); }
     const r = answer.result || {};
-    if (r.found === false) throw new Bad(r.note || `Sentinel couldn't find reliable numbers for "${query}"`, 404);
+    if (r.found === false) throw new Bad(r.note || `Andrew couldn't find reliable numbers for "${query}"`, 404);
     const g = Number(r.serving_g);
     const ps = r.per_serving || {};
-    if (!(g > 0 && g <= 3000) || !(Number(ps.kcal) >= 0)) throw new Bad("Sentinel's answer didn't have a serving size and calories", 502);
+    if (!(g > 0 && g <= 3000) || !(Number(ps.kcal) >= 0)) throw new Bad("Andrew's answer didn't have a serving size and calories", 502);
     const k = 100 / g;
     const v = (x) => (x == null || x === '' || !Number.isFinite(Number(x)) ? null : N.round(Number(x) * k, 1));
     const c = { name: str(r.name, 120) || query, brand: str(r.brand, 80), external_id: query.toLowerCase(), source_url: str(r.source_url, 500),
       per_100g: { kcal: v(ps.kcal), protein_g: v(ps.protein_g) ?? 0, carbs_g: v(ps.carbs_g) ?? 0, fat_g: v(ps.fat_g) ?? 0, fiber_g: v(ps.fiber_g), sugar_g: v(ps.sugar_g), sat_fat_g: v(ps.sat_fat_g), sodium_mg: v(ps.sodium_mg) },
       portions: [{ name: str(r.serving_name, 40) || '1 serving', grams: N.round(g, 1) }] };
-    if (!sane(c.per_100g)) throw new Bad("Sentinel's numbers don't add up for that serving size", 502);
+    if (!sane(c.per_100g)) throw new Bad("Andrew's numbers don't add up for that serving size", 502);
     const fk = await saveFood(c, 'sentinel');
     res.status(201).json({ ...foodView(N.foodByKey(fk, await S.customs()), await S.ownPortions()), note: str(r.note, 300) });
   }));
@@ -1152,7 +1152,7 @@ function createNutritionRouter({ pool, env = process.env, fetchImpl, retryMs } =
   router.post('/nutrition/coach', wrap(async (req, res) => {
     const b = { ...(req.body || {}) };
     if (!ALLOWED_TASKS.includes(b.task)) throw new Bad('task is week, review or recipe');
-    if (!coach.trainerReady(env)) throw new Bad("Sentinel isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so the nutritionist is off", 503);
+    if (!coach.trainerReady(env)) throw new Bad("Andrew isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so the nutritionist is off", 503);
     if (b.task === 'week') b.week_start = N.mondayOf(isDate(b.week_start) ? b.week_start : today());
     if (b.task === 'recipe' && !str(b.request, 500)) throw new Bad('Say what you want a recipe for');
     const key = `${b.task}|${b.week_start || ''}`;

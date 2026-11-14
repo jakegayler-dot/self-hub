@@ -2909,7 +2909,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
   function renderWeek(){
     var el=document.getElementById('cwWeek'); if(!el) return;
     var wk=train.week;
-    if(!wk){ el.innerHTML = train.trainerReady===false ? '<p class="trk-note">Sentinel isn\'t connected, so the trainer is off.</p>' : ''; return; }
+    if(!wk){ el.innerHTML = train.trainerReady===false ? '<p class="trk-note">Andrew isn\'t connected, so the trainer is off.</p>' : ''; return; }
     var p=wk.plan||{}, rv=wk.review;
     var h='<div class="cw tr-week">';
     if(p.objective) h+='<div class="wk-obj">'+esc(p.objective)+'</div>';
@@ -2940,7 +2940,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     document.getElementById('cwReview').addEventListener('click', reviewNow);
   }
   async function reviewNow(){
-    var b=document.getElementById('cwReview'); if(b){ b.disabled=true; b.textContent='Sentinel is reviewing… (about a minute)'; }
+    var b=document.getElementById('cwReview'); if(b){ b.disabled=true; b.textContent='Andrew is reviewing… (about a minute)'; }
     try{
       train.week = await api('POST','/workouts/review-week', { start_date: train.week.week_start });
       train.workouts = await api('GET','/workouts'); renderTrain(); toast('Week reviewed');
@@ -3229,7 +3229,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         toast(act==='finish'?'Workout done':'Saved');
         if(act==='finish' && train.week && train.trainerReady){
           await api('PUT','/workouts/'+id+'/status', {status:'done'});
-          toast('Sentinel is reviewing your week — adjustments land in a minute or two');
+          toast('Andrew is reviewing your week — adjustments land in a minute or two');
           setTimeout(async function(){ try{ var rv=await api('GET','/workouts/week?start='+w.date); train.week=rv.week; train.workouts=await api('GET','/workouts'); renderTrain(); }catch(e){} }, 90000);
         }
       }
@@ -3249,7 +3249,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
         out=await api('PUT','/workouts/'+id+'/status', {status:t.dataset.status});
         // In a coached week, finishing a session sets off the review: show it when it's in.
         if(t.dataset.status==='done' && train.week && train.trainerReady){
-          toast('Sentinel is reviewing your week — adjustments land in a minute or two');
+          toast('Andrew is reviewing your week — adjustments land in a minute or two');
           setTimeout(async function(){ try{ var r=await api('GET','/workouts/week?start='+w.date); train.week=r.week; train.workouts=await api('GET','/workouts'); renderTrain(); }catch(e){} }, 90000);
         }
       }

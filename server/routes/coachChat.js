@@ -294,7 +294,7 @@ function createCoachChatRouter({ pool, workouts = null, nutrition = null, wardro
     const c = coachOf(req, res); if (!c) return;
     const text = typeof (req.body && req.body.text) === 'string' ? req.body.text.trim().slice(0, 4000) : '';
     if (!text) return res.status(400).json({ error: 'Say something' });
-    if (!coach.trainerReady(env)) return res.status(503).json({ error: "Sentinel isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so the coaches are off" });
+    if (!coach.trainerReady(env)) return res.status(503).json({ error: "Andrew isn't connected (SENTINEL_URL and SENTINEL_API_KEY), so the coaches are off" });
     if (running.has(c)) return res.status(409).json({ error: 'Still working on the last one — a moment' });
     // Claimed before anything is awaited, so a double send starts one reply.
     let release; running.set(c, new Promise((r) => { release = r; }));

@@ -122,14 +122,14 @@
       });
     }
     function sentinelButton(text) {
-      return '<button class="trk-btn nu-ask" style="margin-top:6px">Not here? Look up “' + esc(text) + '” with Sentinel</button>';
+      return '<button class="trk-btn nu-ask" style="margin-top:6px">Not here? Look up “' + esc(text) + '” with Andrew</button>';
     }
     function wireAsk(text) {
       var b = more.querySelector('.nu-ask'); if (!b) return;
       b.onclick = async function () {
-        b.disabled = true; b.textContent = 'Sentinel is finding the official numbers (10–30 s)…';
+        b.disabled = true; b.textContent = 'Andrew is finding the official numbers (10–30 s)…';
         try { var f = await api('POST', '/foods/lookup', { query: text }); toast('Found: ' + f.display + (f.note ? ' — ' + f.note : '')); show1(f); }
-        catch (e) { b.disabled = false; b.textContent = 'Look it up with Sentinel'; fail(e); }
+        catch (e) { b.disabled = false; b.textContent = 'Look it up with Andrew'; fail(e); }
       };
     }
     function show1(f) { out.innerHTML = row(f, 0, 'l'); more.innerHTML = ''; wire([f], 'l', out); open(f, 'l', false); }
@@ -400,7 +400,7 @@
   // ---- Pantry ----
   async function pantry() {
     var p = (await api('GET', '/pantry')).items;
-    body.innerHTML = '<p class="trk-note">What\'s in the house. Logging a meal takes from it; ticking groceries off (here or in Sentinel) adds to it. The plan and the grocery list use it first.</p>' +
+    body.innerHTML = '<p class="trk-note">What\'s in the house. Logging a meal takes from it; ticking groceries off (here or in Andrew) adds to it. The plan and the grocery list use it first.</p>' +
       '<div id="paPick"></div>' +
       '<div class="trk-sec" style="margin-top:12px"><h2>On hand</h2>' + (p.length ? p.map(function (x) {
         return '<div class="nu-line"><span>' + esc(x.name) + ' <small>' + esc(x.amount) + ' · ' + esc(x.aisle) + '</small></span><span><input type="number" class="nu-pset" data-key="' + esc(x.food_key) + '" value="' + Math.round(x.grams) + '" style="width:80px"> g <button class="trk-del" data-padel="' + x.id + '">✕</button></span></div>';
@@ -414,7 +414,7 @@
   async function groceries() {
     var g = await api('GET', '/groceries');
     var aisles = {}; g.open.forEach(function (x) { (aisles[x.aisle] = aisles[x.aisle] || []).push(x); });
-    body.innerHTML = '<p class="trk-note">This list is on Sentinel\'s shopping list too (Personal): tick things off in either place. Bought items go into the pantry.</p>' +
+    body.innerHTML = '<p class="trk-note">This list is on Andrew\'s shopping list too (Personal): tick things off in either place. Bought items go into the pantry.</p>' +
       '<div class="trk-row"><button class="trk-btn" id="grRebuild">Rebuild from this week\'s plan</button></div>' +
       '<div class="trk-row"><div class="trk-field" style="flex:2"><input id="grName" placeholder="Add an item"></div><div class="trk-field"><input id="grQty" placeholder="How much"></div><button class="trk-btn primary" id="grAdd">Add</button></div>' +
       (g.open.length ? Object.keys(aisles).sort().map(function (a) {

@@ -39,7 +39,7 @@
   function trinityLine(d) {
     var t = d.trinity || {};
     if (t.error) return '<p class="rl-warn">' + esc(t.error) + '. The character pages still work.</p>';
-    if (t.stale) return '<p class="trk-note">The courses below are from ' + esc(fmtD(t.fetched_at)) + '; Trinity or Sentinel didn\'t answer just now.</p>';
+    if (t.stale) return '<p class="trk-note">The courses below are from ' + esc(fmtD(t.fetched_at)) + '; Trinity or Andrew didn\'t answer just now.</p>';
     return '';
   }
   function bar(done, total) { var p = total ? Math.round(100 * done / total) : 0; return '<span class="rl-bar"><i style="width:' + p + '%"></i></span>'; }

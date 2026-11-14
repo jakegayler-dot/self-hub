@@ -675,7 +675,7 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
         return out;
       };
       const plan = await askTrainer('week', context, check);
-      if (plan.errors.length) throw Object.assign(new Error("Sentinel's plan didn't fit Self Hub's workout format, even after a fix — try again"), { errors: plan.errors.slice(0, 20) });
+      if (plan.errors.length) throw Object.assign(new Error("Andrew's plan didn't fit Self Hub's workout format, even after a fix — try again"), { errors: plan.errors.slice(0, 20) });
       // Replace untouched planned workouts that week; anything started stays.
       const existing = await q("SELECT * FROM fitness_workouts WHERE status = 'planned' AND workout_date >= $1 AND workout_date <= $2", [inputs.date, end]);
       const kept = [];
@@ -716,7 +716,7 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
   // Review the week: what he did against the plan, adjust the days not started, rank where to work.
   async function reviewWeek(start) {
     const wk = await weekOf(start);
-    if (!wk) { const e = new Error('No coached week starts then — plan one with Sentinel first'); e.status = 404; throw e; }
+    if (!wk) { const e = new Error('No coached week starts then — plan one with Andrew first'); e.status = 404; throw e; }
     const today = gen.ymd(new Date(Date.now() - 6 * 3600e3));
     const end = addDaysStr(wk.week_start, 6);
     const rows = await q('SELECT * FROM fitness_workouts WHERE workout_date >= $1 AND workout_date <= $2 ORDER BY workout_date ASC, id ASC', [wk.week_start, end]);
@@ -1169,7 +1169,7 @@ function createWorkoutsRouter({ pool, fetchImpl = (...a) => fetch(...a) }) {
           return [...sf.errors, ...rules.checkWeek([{ date: w.date, body: sf.body }], { weather: wx, block, coverage: false, label: 'session', e1rm: ctx.athlete.e1rm_60d_lb }),
             ...recovery.checkRecovery([{ date: w.date, body: sf.body }], ctx.recent_training, { note })];
         });
-        if (out.errors.length) return res.status(502).json({ error: "Sentinel's session didn't fit Self Hub's workout format — try again", errors: out.errors.slice(0, 20) });
+        if (out.errors.length) return res.status(502).json({ error: "Andrew's session didn't fit Self Hub's workout format — try again", errors: out.errors.slice(0, 20) });
         const { body, meta } = sessionFrom(out.result, 'session', fb);
         await calibrated(body, w.date, w.id);
         await pool.query(

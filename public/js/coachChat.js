@@ -64,7 +64,7 @@
       send.disabled = busy; ta.disabled = false;
       el.querySelector('.cc-mem-btn').textContent = 'Memory (' + (d.memory || []).length + ')';
       if (state.memOpen) renderMem(d.memory || []);
-      if (!d.ready) err.textContent = "Sentinel isn't connected, so the coaches are off."; else err.textContent = '';
+      if (!d.ready) err.textContent = "Andrew isn't connected, so the coaches are off."; else err.textContent = '';
       err.style.display = err.textContent ? 'block' : 'none';
       clearTimeout(state.poll);
       if (busy) state.poll = setTimeout(load, 1500);

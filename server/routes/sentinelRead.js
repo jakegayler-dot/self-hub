@@ -233,7 +233,7 @@ const COLLECTIONS = [
   },
   {
     name: 'workouts',
-    description: "Generated workouts (planned, done or skipped): title, focus, minutes, whether Sentinel refined it, progress, and the full workout as readable lines (plan). Use for \"what's my workout today\" or \"what's planned this week\".",
+    description: "Generated workouts (planned, done or skipped): title, focus, minutes, whether Andrew refined it, progress, and the full workout as readable lines (plan). Use for \"what's my workout today\" or \"what's planned this week\".",
     kind: 'log',
     dated: true,
     search: ['title', 'focus', 'plan'],
@@ -331,7 +331,7 @@ const COLLECTIONS = [
   },
   {
     name: 'coach_notes',
-    description: 'Coaching notes left for Jake (by Sentinel or by hand), newest first. Use for "what did my coach say".',
+    description: 'Coaching notes left for Jake (by Andrew or by hand), newest first. Use for "what did my coach say".',
     kind: 'log',
     dated: true,
     search: ['note', 'source'],
@@ -366,7 +366,7 @@ const COLLECTIONS = [
   // ---- summaries ----
   {
     name: 'strength_score',
-    description: "Current strength score and level, overall and per movement pattern (weakest first), with each benchmark lift's 2-month best e1RM and bodyweight ratio. Same numbers as the dashboard and the Sentinel tile.",
+    description: "Current strength score and level, overall and per movement pattern (weakest first), with each benchmark lift's 2-month best e1RM and bodyweight ratio. Same numbers as the dashboard and the Andrew tile.",
     kind: 'summary',
     custom: { pattern: enumFilter('pattern', ['Overall', ...PATTERNS]) },
     fields: ['id', 'pattern', 'score', 'level', 'lifts', 'bodyweight_avg_lb', 'window', 'as_of', 'needs_input'],
@@ -718,7 +718,7 @@ const COLLECTIONS = [
   },
   {
     name: 'groceries',
-    description: "Self Hub's grocery list (from the meal plan, minus the pantry, plus anything added): open items and those bought in the last two weeks. Sentinel's shopping list shows the same items.",
+    description: "Self Hub's grocery list (from the meal plan, minus the pantry, plus anything added): open items and those bought in the last two weeks. Andrew's shopping list shows the same items.",
     kind: 'list',
     search: ['name', 'aisle'],
     custom: { status: enumFilter('status', ['open', 'bought']) },
