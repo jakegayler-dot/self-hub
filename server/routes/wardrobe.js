@@ -25,7 +25,9 @@ function createWardrobeStore(pool, { fetchImpl = (...a) => fetch(...a) } = {}) {
   const q = async (sql, params) => (await pool.query(sql, params)).rows;
   const view = (r) => ({ id: r.id, category: r.category, type: r.type, brand: r.brand || null, colour: r.colour || null, size: r.size || null, season: r.season || null,
     condition: r.condition || null, style: r.style || null, warmth: r.warmth == null ? null : Number(r.warmth), notes: r.notes || null, status: r.status,
-    price_cad: r.price_cad == null ? null : Number(r.price_cad), link: r.link || null });
+    price_cad: r.price_cad == null ? null : Number(r.price_cad), link: r.link || null,
+    // The day it went into the wardrobe, in Regina (Nov 14: a receipt's clothes go in the day it's scanned; its notes say where and when bought).
+    added_on: r.created_at ? new Date(new Date(r.created_at).getTime() - 6 * 3600000).toISOString().slice(0, 10) : null });
 
   async function seed() {
     const claimed = await q('UPDATE wardrobe_settings SET seeded = true WHERE id = 1 AND seeded IS NOT TRUE RETURNING id');

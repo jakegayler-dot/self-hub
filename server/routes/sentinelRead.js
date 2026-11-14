@@ -741,16 +741,17 @@ const COLLECTIONS = [
   },
   {
     name: 'wardrobe',
-    description: "Jake's clothes (his wardrobe in Self Hub): category, type, brand, colour, size, season, condition, style, warmth 1-5, notes, status (Wear, Repair, Retired, Wishlist = to buy) and when he last wore it. Use for \"what should I wear\", \"do I have a…\", what needs repairing or what's on his clothes wishlist.",
+    description: "Jake's clothes (his wardrobe in Self Hub): category, type, brand, colour, size, season, condition, style, warmth 1-5, notes, status (Wear, Repair, Retired, Wishlist = to buy), when he last wore it, and added_on (the day it went in; clothes from a scanned receipt go in that day, and their notes say the store and the day he bought them). Use for \"what did I buy\" (newest added_on first), \"what should I wear\", \"do I have a…\", what needs repairing or what's on his clothes wishlist.",
     kind: 'list',
     search: ['type', 'brand', 'colour', 'notes', 'category', 'style'],
     custom: { category: enumFilter('category', ['Top', 'Bottom', 'Dress', 'Outerwear', 'Footwear', 'Accessory', 'Sleepwear']), status: enumFilter('status', ['Wear', 'Repair', 'Retired', 'Wishlist']) },
-    fields: ['id', 'category', 'type', 'brand', 'colour', 'size', 'season', 'condition', 'style', 'warmth', 'status', 'notes', 'last_worn', 'price_cad'],
+    fields: ['id', 'category', 'type', 'brand', 'colour', 'size', 'season', 'condition', 'style', 'warmth', 'status', 'notes', 'last_worn', 'price_cad', 'added_on'],
     async load({ pool }) {
       const S = require('./wardrobe').createWardrobeStore(pool);
       const [items, worn] = await Promise.all([S.items(), S.lastWorn()]);
       return items.map((i) => ({ id: i.id, category: i.category, type: i.type, brand: i.brand, colour: i.colour, size: i.size, season: i.season, condition: i.condition,
-        style: i.style, warmth: i.warmth, status: i.status, notes: i.notes, last_worn: worn[i.id] || null, price_cad: i.price_cad }));
+        style: i.style, warmth: i.warmth, status: i.status, notes: i.notes, last_worn: worn[i.id] || null, price_cad: i.price_cad, added_on: i.added_on }))
+        .sort((a, b) => String(b.added_on || '').localeCompare(String(a.added_on || '')));
     },
   },
   {
