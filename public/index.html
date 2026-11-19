@@ -962,6 +962,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
             <label>Benchmark</label>
             <select id="bmName">
               <optgroup label="Benchmark WODs"><option>Fran</option><option>Grace</option><option>Helen</option><option>Filthy 50</option><option>Fight Gone Bad</option><option>Diane</option><option>Murph</option></optgroup>
+              <optgroup label="Wall balls (Rx 20 lb to 10 ft)"><option value="Karen">Karen: 150 for time</option><option>Wall balls: max unbroken</option><option>Wall balls: 1 min max</option><option>Wall balls: 2 min max</option></optgroup>
               <optgroup label="Runs"><option>400m run</option><option>5k run</option></optgroup>
               <optgroup label="Concept2 row"><option>500m row</option><option>2k row</option><option>5k row</option></optgroup>
               <option>Other</option>
@@ -970,7 +971,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
           <div class="trk-field"><label>Result</label><input type="text" id="bmResult" placeholder="4:12"></div>
           <div class="trk-field" style="flex:0 0 80px;min-width:70px"><label>Rx</label><label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin-top:8px"><input type="checkbox" id="bmRx" checked style="width:auto"> Rx</label></div>
         </div>
-        <p class="trk-note" style="margin-bottom:8px">Times as m:ss (or h:mm:ss). Fight Gone Bad as total reps. Only Rx results count toward percentiles.</p>
+        <p class="trk-note" style="margin-bottom:8px" id="bmHint">Times as m:ss (or h:mm:ss). Fight Gone Bad as total reps. Only Rx results count toward percentiles.</p>
         <button class="trk-btn primary" id="bmSubmit">Log entry</button>
         <div class="trk-err" id="bmErr">Enter a date and a result.</div>
       </div>
@@ -1407,6 +1408,17 @@ a.trk-btn{text-decoration:none;display:inline-block}
     this.disabled=false;
   });
 
+  // The result box asks for the right thing: reps for the max-rep tests, a time for the rest (Nov 13: wall balls).
+  function bmHint(){
+    var n=document.getElementById('bmName').value, reps=/max|Fight Gone Bad/.test(n), res=document.getElementById('bmResult');
+    res.placeholder = reps ? (n==='Fight Gone Bad' ? '312' : '45') : (n==='Karen' ? '7:30' : '4:12');
+    document.getElementById('bmHint').textContent = /^Wall balls/.test(n)
+      ? 'Reps as a number. Rx is a 20 lb ball to a 10 ft target, full squat below parallel; untick Rx for anything else and say what in the result (e.g. "45, 14 lb").'
+      : n==='Karen' ? 'Your time as m:ss for 150 wall balls. Rx: 20 lb ball, 10 ft target.'
+      : 'Times as m:ss (or h:mm:ss). Fight Gone Bad as total reps. Only Rx results count toward percentiles.';
+  }
+  document.getElementById('bmName').addEventListener('change', bmHint);
+  bmHint();
   document.getElementById('bmSubmit').addEventListener('click', async function(){
     var d=document.getElementById('bmDate').value, name=document.getElementById('bmName').value, res=document.getElementById('bmResult').value.trim();
     var err=document.getElementById('bmErr');
@@ -1443,7 +1455,7 @@ a.trk-btn{text-decoration:none;display:inline-block}
     { k:'lift', label:'Lift', group:'training', words:'weights barbell squat bench deadlift press clean snatch jerk row curl' },
     { k:'gymnastics', label:'Gymnastics', group:'training', words:'pull-up pullup dip toes muscle-up hspu handstand push-up' },
     { k:'conditioning', label:'Conditioning', group:'training', words:'row run bike ski swim ruck erg cardio' },
-    { k:'benchmark', label:'Benchmark WOD', group:'training', words:'wod fran grace murph metcon' },
+    { k:'benchmark', label:'Benchmark WOD', group:'training', words:'wod fran grace murph metcon karen wall ball wallball wall-ball test' },
     { k:'open', label:'CrossFit Open', group:'training', words:'open rank leaderboard' },
     { k:'body', label:'Bodyweight / body fat', group:'body', words:'weight scale bf fat' }
   ].concat(Object.keys(MEASURES).map(function(f){ var m=MEASURES[f]; return { k:'m:'+f, label:m.label, group:m.group, words:m.words+' measure tape '+f.replace(/_/g,' ') }; }))
